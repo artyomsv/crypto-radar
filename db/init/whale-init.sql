@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS whale_transactions (
     price DOUBLE PRECISION NOT NULL,
     quantity DOUBLE PRECISION NOT NULL,
     value_usd DOUBLE PRECISION NOT NULL,
-    side VARCHAR(4) NOT NULL,  -- 'BUY' or 'SELL'
+    side VARCHAR(10) NOT NULL,  -- 'BUY', 'SELL', or 'TRANSFER'
     source VARCHAR(50) NOT NULL DEFAULT 'binance',
     trade_id VARCHAR(100),
     from_address VARCHAR(255),

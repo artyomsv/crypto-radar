@@ -143,7 +143,7 @@ export interface WhaleTransaction {
   price: number;
   quantity: number;
   valueUsd: number;
-  side: 'BUY' | 'SELL';
+  side: 'BUY' | 'SELL' | 'TRANSFER';
   source: string;
   tradeId?: string;
   fromLabel?: string;

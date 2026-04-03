@@ -337,27 +337,32 @@ function getTradeExplorerUrl(tx: WhaleTransaction): string {
 
 function WhaleTradeLine({ tx }: { tx: WhaleTransaction }) {
   const isBuy = tx.side === 'BUY';
+  const isSell = tx.side === 'SELL';
+  const isTransfer = tx.side === 'TRANSFER';
   const icon = SYMBOL_ICONS[tx.symbol] || '?';
   const explorerUrl = getTradeExplorerUrl(tx);
   const sourceLabel = SOURCE_CONFIG[tx.source]?.label || tx.source;
   const isMega = tx.valueUsd >= 200000;
   const isGiga = tx.valueUsd >= 1000000;
 
+  const sideColor = isBuy ? 'text-gain' : isSell ? 'text-loss' : 'text-accent';
+  const sideBg = isBuy ? 'bg-gain' : isSell ? 'bg-loss' : 'bg-accent';
+
   return (
     <div className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs ${
       isGiga
-        ? isBuy ? 'bg-gain/20 border-l-4 border-gain animate-pulse' : 'bg-loss/20 border-l-4 border-loss animate-pulse'
+        ? isBuy ? 'bg-gain/20 border-l-4 border-gain animate-pulse' : isSell ? 'bg-loss/20 border-l-4 border-loss animate-pulse' : 'bg-accent/20 border-l-4 border-accent animate-pulse'
         : isMega
-          ? isBuy ? 'bg-gain/10 border-l-3 border-gain/70' : 'bg-loss/10 border-l-3 border-loss/70'
-          : isBuy ? 'bg-gain/5 border-l-2 border-gain/40' : 'bg-loss/5 border-l-2 border-loss/40'
+          ? `${sideBg}/10 border-l-3 ${sideBg}/70`
+          : `${sideBg}/5 border-l-2 ${sideBg}/40`
     }`}>
-      <span className={`font-bold w-7 ${isBuy ? 'text-gain' : 'text-loss'}`}>
-        {isBuy ? 'BUY' : 'SELL'}
+      <span className={`font-bold w-12 ${sideColor}`}>
+        {isBuy ? 'BUY' : isSell ? 'SELL' : 'MOVE'}
       </span>
       <span className="font-mono text-accent">{icon}</span>
       <span className="text-text-primary font-medium">{tx.symbol.replace('USDT', '')}</span>
       <span className="text-text-secondary">@{formatPrice(tx.price)}</span>
-      <span className={`ml-auto font-bold font-mono ${isBuy ? 'text-gain' : 'text-loss'} ${isGiga ? 'text-sm' : isMega ? 'text-xs' : ''}`}>
+      <span className={`ml-auto font-bold font-mono ${sideColor} ${isGiga ? 'text-sm' : isMega ? 'text-xs' : ''}`}>
         {formatLargeNumber(tx.valueUsd)}
       </span>
       {isGiga && <Flame className="h-3.5 w-3.5 text-yellow-400 animate-pulse shrink-0" />}

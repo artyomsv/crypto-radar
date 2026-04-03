@@ -198,19 +198,19 @@ public class WhaleAlertProvider {
     }
 
     /**
-     * Determine trade side based on address ownership.
-     * Exchange withdrawal (from=exchange, to=unknown) = BUY (someone bought and withdrew).
-     * Exchange deposit (from=unknown, to=exchange) = SELL (someone deposited to sell).
-     * All other transfers default to BUY.
+     * Determine trade side from Whale Alert owner types:
+     * - Exchange → Wallet = BUY (withdrawal = someone bought and is holding)
+     * - Wallet → Exchange = SELL (deposit = likely planning to sell)
+     * - Exchange → Exchange = TRANSFER (inter-exchange, neutral)
+     * - Wallet → Wallet = TRANSFER (on-chain movement, neutral)
      */
     private String determineSide(String fromOwnerType, String toOwnerType) {
-        if ("exchange".equals(fromOwnerType) && !"exchange".equals(toOwnerType)) {
-            return "BUY";
-        }
-        if (!"exchange".equals(fromOwnerType) && "exchange".equals(toOwnerType)) {
-            return "SELL";
-        }
-        return "BUY";
+        boolean fromExchange = "exchange".equals(fromOwnerType);
+        boolean toExchange = "exchange".equals(toOwnerType);
+
+        if (fromExchange && !toExchange) return "BUY";
+        if (!fromExchange && toExchange) return "SELL";
+        return "TRANSFER";
     }
 
     private boolean acquireRateLimit() {
