@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 import type { PriceData, MarketAnalysis } from '@/types';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import { formatPrice, formatPercent, formatLargeNumber, getTrendBadgeColor } from '@/lib/utils';
+import { BullIcon, BearIcon, SealIcon } from '@/components/icons/TrendIcons';
 
 interface PriceCardProps {
   data: PriceData;
@@ -10,13 +11,26 @@ interface PriceCardProps {
   analysis?: MarketAnalysis;
 }
 
-const TREND_CONFIG: Record<string, { label: string; icon: string }> = {
-  STRONG_BULLISH: { label: 'Strong Bull', icon: '\u{1F402}' },  // 🐂
-  BULLISH:        { label: 'Bullish',     icon: '\u{1F402}' },  // 🐂
-  NEUTRAL:        { label: 'Neutral',     icon: '\u{1F9AD}' },  // 🦭
-  BEARISH:        { label: 'Bearish',     icon: '\u{1F43B}' },  // 🐻
-  STRONG_BEARISH: { label: 'Strong Bear', icon: '\u{1F43B}' },  // 🐻
+const TREND_LABELS: Record<string, string> = {
+  STRONG_BULLISH: 'Strong Bull',
+  BULLISH: 'Bullish',
+  NEUTRAL: 'Neutral',
+  BEARISH: 'Bearish',
+  STRONG_BEARISH: 'Strong Bear',
 };
+
+function TrendIcon({ trend }: { trend: string }) {
+  switch (trend) {
+    case 'STRONG_BULLISH':
+    case 'BULLISH':
+      return <BullIcon className="w-3.5 h-3.5" />;
+    case 'BEARISH':
+    case 'STRONG_BEARISH':
+      return <BearIcon className="w-3.5 h-3.5" />;
+    default:
+      return <SealIcon className="w-3.5 h-3.5" />;
+  }
+}
 
 export function PriceCard({ data, flash, analysis }: PriceCardProps) {
   const isPositive = data.priceChangePct24h >= 0;
@@ -55,10 +69,10 @@ export function PriceCard({ data, flash, analysis }: PriceCardProps) {
 
       <div className="flex items-center justify-between text-xs text-text-secondary">
         <span>Vol {formatLargeNumber(data.volume24h)}</span>
-        {trend && TREND_CONFIG[trend] && (
+        {trend && (
           <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${getTrendBadgeColor(trend)}`}>
-            <span className="text-sm leading-none">{TREND_CONFIG[trend].icon}</span>
-            {TREND_CONFIG[trend].label}
+            <TrendIcon trend={trend} />
+            {TREND_LABELS[trend] || trend}
           </span>
         )}
       </div>
