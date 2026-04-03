@@ -2,10 +2,15 @@ package com.cryptoradar.whale.scheduler;
 
 import com.cryptoradar.whale.event.RedisEventPublisher;
 import com.cryptoradar.whale.model.WhaleMarketOverview;
+import com.cryptoradar.whale.model.WhaleTransaction;
+import com.cryptoradar.whale.provider.alert.WhaleAlertProvider;
 import com.cryptoradar.whale.service.WhaleAnalyticsService;
+import com.cryptoradar.whale.service.WhaleFlowService;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
+
+import java.util.List;
 
 @ApplicationScoped
 public class WhaleScheduler {
@@ -14,10 +19,17 @@ public class WhaleScheduler {
 
     private final WhaleAnalyticsService analyticsService;
     private final RedisEventPublisher redisPublisher;
+    private final WhaleAlertProvider whaleAlertProvider;
+    private final WhaleFlowService whaleFlowService;
 
-    public WhaleScheduler(WhaleAnalyticsService analyticsService, RedisEventPublisher redisPublisher) {
+    public WhaleScheduler(WhaleAnalyticsService analyticsService,
+                          RedisEventPublisher redisPublisher,
+                          WhaleAlertProvider whaleAlertProvider,
+                          WhaleFlowService whaleFlowService) {
         this.analyticsService = analyticsService;
         this.redisPublisher = redisPublisher;
+        this.whaleAlertProvider = whaleAlertProvider;
+        this.whaleFlowService = whaleFlowService;
     }
 
     @Scheduled(every = "${scheduler.flow.interval}", identity = "whale-flow-recompute")
@@ -44,6 +56,21 @@ public class WhaleScheduler {
                     overview.getOverallPressureLabel());
         } catch (Exception e) {
             LOG.errorf(e, "Failed to compute/publish whale market overview");
+        }
+    }
+
+    /** Fetch whale transactions from Whale Alert every 10 seconds (within free tier rate limit) */
+    @Scheduled(every = "10s", identity = "whale-alert-fetch")
+    void fetchWhaleAlertTransactions() {
+        if (!whaleAlertProvider.isEnabled()) return;
+
+        try {
+            List<WhaleTransaction> transactions = whaleAlertProvider.fetchRecentTransactions();
+            for (WhaleTransaction tx : transactions) {
+                whaleFlowService.processWhaleTransaction(tx);
+            }
+        } catch (Exception e) {
+            LOG.errorf(e, "Whale Alert fetch failed");
         }
     }
 }
