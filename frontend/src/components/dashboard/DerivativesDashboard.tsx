@@ -9,7 +9,7 @@ import { LiquidationMap } from './LiquidationMap';
 
 export function DerivativesDashboard() {
   const { overview, liquidations, loading, connected } = useDerivativesData();
-  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
+  const [expandedSymbol, setExpandedSymbol] = useState<string>('BTCUSDT');
 
   if (loading) {
     return (
@@ -144,7 +144,7 @@ export function DerivativesDashboard() {
                   key={symbol.symbol}
                   className="transition-all duration-700 ease-in-out cursor-pointer"
                   style={{ order: index }}
-                  onClick={() => setExpandedSymbol(expandedSymbol === symbol.symbol ? null : symbol.symbol)}
+                  onClick={() => setExpandedSymbol(symbol.symbol)}
                 >
                   <SymbolDerivativesCard data={symbol} expanded={expandedSymbol === symbol.symbol} />
                 </div>
@@ -155,19 +155,21 @@ export function DerivativesDashboard() {
         {/* Right Column: Liquidation Map + Feed */}
         <div className="flex flex-col gap-4">
           {/* Liquidation Map for selected symbol */}
-          <div className="glass-card p-4">
+          <div>
             <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-accent" />
               Estimated Liquidation Levels
               {expandedSymbol && <span className="text-accent">— {SYMBOL_NAMES[expandedSymbol] || expandedSymbol}</span>}
             </h3>
-            {expandedSymbol ? (
-              <LiquidationMap symbol={expandedSymbol} />
-            ) : (
-              <p className="text-text-secondary text-xs text-center py-6">
-                Select a symbol from the left to view liquidation levels
-              </p>
-            )}
+            <div className="glass-card p-4">
+              {expandedSymbol ? (
+                <LiquidationMap symbol={expandedSymbol} />
+              ) : (
+                <p className="text-text-secondary text-xs text-center py-6">
+                  Select a symbol from the left to view liquidation levels
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Live Liquidation Feed */}
