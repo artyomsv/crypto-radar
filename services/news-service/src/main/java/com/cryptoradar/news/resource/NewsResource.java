@@ -2,6 +2,7 @@ package com.cryptoradar.news.resource;
 
 import com.cryptoradar.news.model.DailySentiment;
 import com.cryptoradar.news.model.NewsArticle;
+import com.cryptoradar.news.provider.NewsAggregator;
 import com.cryptoradar.news.service.NewsService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
@@ -21,6 +22,9 @@ public class NewsResource {
 
     @Inject
     NewsService newsService;
+
+    @Inject
+    NewsAggregator newsAggregator;
 
     @GET
     public List<NewsArticle> getNews(
@@ -43,6 +47,12 @@ public class NewsResource {
     @Path("/sentiment/{symbol}")
     public Map<String, Object> getSentiment(@PathParam("symbol") String symbol) {
         return newsService.getSentimentBySymbol(symbol);
+    }
+
+    @GET
+    @Path("/providers")
+    public List<String> getProviders() {
+        return newsAggregator.getProviderNames();
     }
 
     @GET

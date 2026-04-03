@@ -1,9 +1,9 @@
 package com.cryptoradar.news.service;
 
-import com.cryptoradar.news.client.CryptoNewsClient;
 import com.cryptoradar.news.event.RedisEventPublisher;
 import com.cryptoradar.news.model.DailySentiment;
 import com.cryptoradar.news.model.NewsArticle;
+import com.cryptoradar.news.provider.NewsAggregator;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -23,7 +23,7 @@ public class NewsService {
     private static final Logger LOG = Logger.getLogger(NewsService.class);
 
     @Inject
-    CryptoNewsClient cryptoNewsClient;
+    NewsAggregator newsAggregator;
 
     @Inject
     SentimentAnalyzer sentimentAnalyzer;
@@ -36,31 +36,36 @@ public class NewsService {
 
     @Transactional
     public int fetchAndStoreNews() {
-        List<NewsArticle> fetched = cryptoNewsClient.fetchLatestNews();
+        List<NewsArticle> fetched = newsAggregator.fetchFromAllSources();
         List<NewsArticle> newArticles = new ArrayList<>();
 
         for (NewsArticle article : fetched) {
-            // Deduplicate by externalId
-            NewsArticle existing = NewsArticle.findByExternalId(article.externalId);
-            if (existing != null) {
-                continue;
+            try {
+                // Deduplicate by externalId
+                NewsArticle existing = NewsArticle.findByExternalId(article.externalId);
+                if (existing != null) {
+                    continue;
+                }
+
+                // Run sentiment analysis
+                SentimentResult sentiment = sentimentAnalyzer.analyze(article.title, article.body);
+                article.sentimentScore = sentiment.score();
+                article.sentimentLabel = sentiment.label();
+                article.fetchedAt = Instant.now();
+
+                article.persist();
+                entityManager.flush();
+                newArticles.add(article);
+            } catch (Exception e) {
+                // Skip duplicates from race conditions
+                entityManager.clear();
+                LOG.debugf("Skipped duplicate article: %s", article.externalId);
             }
-
-            // Run sentiment analysis
-            SentimentResult sentiment = sentimentAnalyzer.analyze(article.title, article.body);
-            article.sentimentScore = sentiment.score();
-            article.sentimentLabel = sentiment.label();
-            article.fetchedAt = Instant.now();
-
-            article.persist();
-            newArticles.add(article);
         }
 
         if (!newArticles.isEmpty()) {
             LOG.infof("Stored %d new articles (out of %d fetched)", newArticles.size(), fetched.size());
             redisEventPublisher.publishNewsUpdate(newArticles);
-        } else {
-            LOG.info("No new articles to store");
         }
 
         return newArticles.size();
