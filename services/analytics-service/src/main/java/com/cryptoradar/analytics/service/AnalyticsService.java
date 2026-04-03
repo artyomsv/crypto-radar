@@ -171,9 +171,12 @@ public class AnalyticsService {
 
     private List<Object[]> queryCandles(String symbol) {
         List<Object[]> results = new ArrayList<>();
-        String sql = "SELECT close, high, low, volume FROM candles " +
-                "WHERE symbol = ? AND interval = '1h' " +
-                "ORDER BY time ASC LIMIT 200";
+        // Subquery gets latest 200 candles (DESC), outer query reverses to ASC for indicator math
+        String sql = "SELECT close, high, low, volume FROM (" +
+                "  SELECT close, high, low, volume, time FROM candles " +
+                "  WHERE symbol = ? AND interval = '1h' " +
+                "  ORDER BY time DESC LIMIT 200" +
+                ") sub ORDER BY time ASC";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, symbol);
