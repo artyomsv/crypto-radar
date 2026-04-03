@@ -18,8 +18,10 @@ const PERIODS = [
 
 export function WhaleTracker() {
   const [period, setPeriod] = useState('1d');
+  const [hideTransfers, setHideTransfers] = useState(false);
   const { overview, recentTrades, loading, connected } = useWhaleData(period);
 
+  const filteredTrades = hideTransfers ? recentTrades.filter(t => t.side !== 'TRANSFER') : recentTrades;
   const exchangeTrades = recentTrades.filter(t => t.source !== 'whale-alert');
   const whaleTrades = recentTrades.filter(t => t.source === 'whale-alert');
   const exchangeDist = calcDistribution(exchangeTrades);
@@ -168,22 +170,34 @@ export function WhaleTracker() {
 
         {/* Live Whale Trade Feed */}
         <div className="flex flex-col">
-          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2 shrink-0">
-            <Zap className="h-4 w-4 text-accent" />
-            Live Whale Trades
-          </h3>
+          <div className="flex items-center justify-between mb-3 shrink-0">
+            <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              <Zap className="h-4 w-4 text-accent" />
+              Live Whale Trades
+            </h3>
+            <button
+              onClick={() => setHideTransfers(!hideTransfers)}
+              className={`flex items-center gap-1.5 px-2 py-1 text-[10px] rounded transition-colors ${
+                hideTransfers
+                  ? 'bg-accent/20 text-accent border border-accent/30'
+                  : 'bg-surface-light text-text-secondary border border-surface-border hover:text-text-primary'
+              }`}
+            >
+              {hideTransfers ? 'Transfers hidden' : 'Hide transfers'}
+            </button>
+          </div>
           <div className="glass-card p-3 overflow-y-auto space-y-2 flex-1 min-h-0">
             <div className="space-y-2 mb-3">
               <DistributionBar label="Exchanges" data={exchangeDist} />
               <DistributionBar label="On-Chain" data={whaleDist} />
             </div>
-            {recentTrades.length === 0 ? (
+            {filteredTrades.length === 0 ? (
               <p className="text-text-secondary text-sm text-center py-8">
                 Waiting for whale trades...<br />
                 <span className="text-xs">Threshold: $50K+</span>
               </p>
             ) : (
-              recentTrades.slice(0, 30).map((tx, i) => (
+              filteredTrades.slice(0, 30).map((tx, i) => (
                 <WhaleTradeLine key={`${tx.tradeId || i}-${tx.time}`} tx={tx} />
               ))
             )}
