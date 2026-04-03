@@ -161,12 +161,12 @@ export function WhaleTracker() {
         </div>
 
         {/* Live Whale Trade Feed */}
-        <div>
-          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+        <div className="flex flex-col">
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2 shrink-0">
             <Zap className="h-4 w-4 text-accent" />
             Live Whale Trades
           </h3>
-          <div className="glass-card p-3 max-h-[500px] overflow-y-auto space-y-2">
+          <div className="glass-card p-3 overflow-y-auto space-y-2 flex-1 min-h-0">
             {recentTrades.length === 0 ? (
               <p className="text-text-secondary text-sm text-center py-8">
                 Waiting for whale trades...<br />
