@@ -27,6 +27,9 @@ public class ServiceClient {
     @ConfigProperty(name = "analytics-service.url")
     String analyticsServiceUrl;
 
+    @ConfigProperty(name = "whale-service.url")
+    String whaleServiceUrl;
+
     private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -132,5 +135,29 @@ public class ServiceClient {
 
     public String getAnalyticsServiceUrl() {
         return analyticsServiceUrl;
+    }
+
+    public String getWhaleServiceUrl() {
+        return whaleServiceUrl;
+    }
+
+    public JsonNode getWhaleTransactions(String symbol, int limit) {
+        String url = whaleServiceUrl + "/api/whales/transactions?limit=" + limit;
+        if (symbol != null && !symbol.isEmpty()) {
+            url += "&symbol=" + symbol;
+        }
+        return get(url);
+    }
+
+    public JsonNode getWhaleAnalytics() {
+        return get(whaleServiceUrl + "/api/whales/analytics");
+    }
+
+    public JsonNode getWhaleFlow(String symbol, String window) {
+        String url = whaleServiceUrl + "/api/whales/flow/" + symbol;
+        if (window != null && !window.isEmpty()) {
+            url += "?window=" + window;
+        }
+        return get(url);
     }
 }

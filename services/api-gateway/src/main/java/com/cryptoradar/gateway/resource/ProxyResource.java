@@ -71,6 +71,45 @@ public class ProxyResource {
         return proxyResponse(result);
     }
 
+    // --- Whale proxies ---
+
+    @GET
+    @Path("/whales/transactions")
+    public Response getWhaleTransactions(
+            @QueryParam("symbol") String symbol,
+            @QueryParam("limit") @DefaultValue("50") int limit) {
+        String url = serviceClient.getWhaleServiceUrl() + "/api/whales/transactions?limit=" + limit;
+        if (symbol != null && !symbol.isEmpty()) {
+            url += "&symbol=" + symbol;
+        }
+        String result = serviceClient.getRaw(url);
+        return proxyResponse(result);
+    }
+
+    @GET
+    @Path("/whales/analytics")
+    public Response getWhaleAnalytics() {
+        String result = serviceClient.getRaw(serviceClient.getWhaleServiceUrl() + "/api/whales/analytics");
+        return proxyResponse(result);
+    }
+
+    @GET
+    @Path("/whales/flow/{symbol}")
+    public Response getWhaleFlow(
+            @PathParam("symbol") String symbol,
+            @QueryParam("window") @DefaultValue("24h") String window) {
+        String result = serviceClient.getRaw(
+                serviceClient.getWhaleServiceUrl() + "/api/whales/flow/" + symbol + "?window=" + window);
+        return proxyResponse(result);
+    }
+
+    @GET
+    @Path("/whales/summary")
+    public Response getWhaleSummary() {
+        String result = serviceClient.getRaw(serviceClient.getWhaleServiceUrl() + "/api/whales/summary");
+        return proxyResponse(result);
+    }
+
     private Response proxyResponse(String body) {
         if (body == null) {
             return Response.status(Response.Status.BAD_GATEWAY)

@@ -83,6 +83,10 @@ public class RedisEventSubscriber {
                     LOG.debugf("Redis → WS broadcast: analytics (%d chars)", payload.length());
                     broadcaster.broadcastAnalytics(payload);
                 }
+                case "crypto:whales" -> {
+                    LOG.debugf("Redis → WS broadcast: whales (%d chars)", payload.length());
+                    broadcaster.broadcastWhales(payload);
+                }
             }
         });
 
@@ -95,9 +99,9 @@ public class RedisEventSubscriber {
 
         // Subscribe to all channels
         RedisAPI api = RedisAPI.api(conn);
-        api.subscribe(List.of("crypto:prices", "crypto:news", "crypto:analytics"))
+        api.subscribe(List.of("crypto:prices", "crypto:news", "crypto:analytics", "crypto:whales"))
                 .subscribe().with(
-                        response -> LOG.info("Subscribed to Redis channels: crypto:prices, crypto:news, crypto:analytics"),
+                        response -> LOG.info("Subscribed to Redis channels: crypto:prices, crypto:news, crypto:analytics, crypto:whales"),
                         error -> {
                             LOG.errorf("Failed to subscribe to Redis channels: %s", error.getMessage());
                             conn.close();

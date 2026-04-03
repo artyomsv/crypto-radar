@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -22,4 +22,12 @@ export const api = {
   getAnalysis: (symbol: string) => fetchJson<any>(`/api/analytics/${symbol}`),
   getLatestNews: (limit = 20) => fetchJson<any[]>(`/api/news/latest?limit=${limit}`),
   getSentiment: (symbol: string) => fetchJson<any>(`/api/news/sentiment/${symbol}`),
+  getWhaleTransactions: (symbol?: string, limit = 50) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (symbol) params.set('symbol', symbol);
+    return fetchJson<WhaleTransaction[]>(`/api/whales/transactions?${params}`);
+  },
+  getWhaleAnalytics: () => fetchJson<WhaleMarketOverview>('/api/whales/analytics'),
+  getWhaleFlow: (symbol: string, window = '1h') =>
+    fetchJson<WhaleFlowSummary>(`/api/whales/flow/${symbol}?window=${window}`),
 };

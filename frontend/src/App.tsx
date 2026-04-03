@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import { Header } from './components/layout/Header';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { CryptoDetailView } from './components/dashboard/CryptoDetailView';
+import { WhaleTracker } from './components/dashboard/WhaleTracker';
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/crypto/:symbol" element={<CryptoDetailView />} />
+          <Route path="/whales" element={<WhaleTracker />} />
         </Routes>
       </main>
     </div>

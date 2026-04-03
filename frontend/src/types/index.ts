@@ -128,3 +128,62 @@ export const SYMBOL_ICONS: Record<string, string> = {
   LINKUSDT: '\u2b21',
   DOGEUSDT: '\u00d0',
 };
+
+export interface WhaleTransaction {
+  time: string;
+  symbol: string;
+  price: number;
+  quantity: number;
+  valueUsd: number;
+  side: 'BUY' | 'SELL';
+  source: string;
+  tradeId?: string;
+  fromLabel?: string;
+  toLabel?: string;
+  blockchain?: string;
+}
+
+export interface WhaleFlowSummary {
+  bucket: string;
+  symbol: string;
+  buyCount: number;
+  sellCount: number;
+  buyVolumeUsd: number;
+  sellVolumeUsd: number;
+  netFlowUsd: number;
+  avgTradeSizeUsd: number;
+  largestTradeUsd: number;
+  whalePressure: number;
+}
+
+export interface WhaleAnalytics {
+  symbol: string;
+  timestamp: string;
+  whaleActivityScore: number;
+  whalePressure: number;
+  pressureLabel: string;
+  buyVolumeUsd1h: number;
+  sellVolumeUsd1h: number;
+  netFlowUsd1h: number;
+  tradeCount1h: number;
+  largestTradeUsd: number;
+  avgTradeSizeUsd: number;
+  buyVolumeUsd24h: number;
+  sellVolumeUsd24h: number;
+  netFlowUsd24h: number;
+  tradeCount24h: number;
+}
+
+export interface WhaleMarketOverview {
+  timestamp: string;
+  totalWhaleVolume24h: number;
+  totalBuyVolume24h: number;
+  totalSellVolume24h: number;
+  overallPressure: number;
+  overallPressureLabel: string;
+  mostBought: string;
+  mostSold: string;
+  activeSymbolCount: number;
+  totalTradeCount24h: number;
+  symbolAnalytics: WhaleAnalytics[];
+}

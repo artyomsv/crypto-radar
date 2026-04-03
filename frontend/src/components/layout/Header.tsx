@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Activity, Radio } from 'lucide-react';
+import { Activity, Radio, Waves } from 'lucide-react';
 
 export function Header() {
   return (
@@ -19,6 +19,10 @@ export function Header() {
             </div>
           </Link>
           <div className="flex items-center gap-4">
+            <Link to="/whales" className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-accent transition-colors">
+              <Waves className="h-4 w-4" />
+              <span>Whales</span>
+            </Link>
             <div className="flex items-center gap-2 text-sm text-text-secondary">
               <Radio className="h-4 w-4 text-gain animate-pulse" />
               <span>Live</span>

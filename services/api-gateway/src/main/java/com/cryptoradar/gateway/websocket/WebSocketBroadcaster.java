@@ -32,6 +32,11 @@ public class WebSocketBroadcaster {
         broadcast(message);
     }
 
+    public void broadcastWhales(String json) {
+        String message = "{\"type\":\"whales\",\"data\":" + json + "}";
+        broadcast(message);
+    }
+
     private void broadcast(String message) {
         connections.forEach(connection -> {
             connection.sendText(message).subscribe().with(
