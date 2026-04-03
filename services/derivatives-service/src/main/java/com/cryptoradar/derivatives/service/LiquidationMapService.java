@@ -49,10 +49,27 @@ public class LiquidationMapService {
     @Inject
     DerivativesService derivativesService;
 
+    // Cache: pre-computed every 15 minutes by scheduler
+    private final java.util.concurrent.ConcurrentHashMap<String, LiquidationMap> cache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Get cached map or compute on-demand if not cached yet */
+    public LiquidationMap getLiquidationMap(String symbol) {
+        LiquidationMap cached = cache.get(symbol);
+        if (cached != null) return cached;
+        return computeAndCache(symbol);
+    }
+
+    /** Compute and store in cache — called by scheduler every 15 min */
+    public LiquidationMap computeAndCache(String symbol) {
+        LiquidationMap map = computeLiquidationMap(symbol);
+        cache.put(symbol, map);
+        return map;
+    }
+
     /**
      * Compute estimated liquidation map for a symbol.
      */
-    public LiquidationMap computeLiquidationMap(String symbol) {
+    private LiquidationMap computeLiquidationMap(String symbol) {
         SymbolDerivatives data = derivativesService.getSymbolDerivatives(symbol);
         if (data == null || data.getOpenInterestUsd() <= 0) {
             return emptyMap(symbol);

@@ -75,7 +75,7 @@ public class DerivativesResource {
         if (!SYMBOL_PATTERN.matcher(normalized).matches()) {
             return Response.status(400).entity(Map.of("error", "Invalid symbol")).build();
         }
-        LiquidationMap map = liquidationMapService.computeLiquidationMap(normalized);
+        LiquidationMap map = liquidationMapService.getLiquidationMap(normalized);
         return Response.ok(map).build();
     }
 }

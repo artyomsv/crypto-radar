@@ -126,13 +126,14 @@ export function DerivativesDashboard() {
         </section>
       )}
 
-      {/* Two-Column Layout: Symbol Cards + Liquidation Feed */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6">
+      {/* Two-Column Layout: Symbol Cards + Liq Map + Feed */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6">
         {/* Per-Symbol Derivatives Cards */}
         <div>
           <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
             <Activity className="h-4 w-4 text-accent" />
             Derivatives by Symbol
+            <span className="text-[10px] text-text-secondary font-normal ml-1">Click a card to view liquidation levels</span>
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {overview?.symbolData
@@ -141,32 +142,35 @@ export function DerivativesDashboard() {
               .map((symbol, index) => (
                 <div
                   key={symbol.symbol}
-                  className="transition-all duration-700 ease-in-out"
+                  className="transition-all duration-700 ease-in-out cursor-pointer"
                   style={{ order: index }}
+                  onClick={() => setExpandedSymbol(expandedSymbol === symbol.symbol ? null : symbol.symbol)}
                 >
-                  <div
-                    className="cursor-pointer"
-                    onClick={() => setExpandedSymbol(expandedSymbol === symbol.symbol ? null : symbol.symbol)}
-                  >
-                    <SymbolDerivativesCard data={symbol} expanded={expandedSymbol === symbol.symbol} />
-                  </div>
-                  {expandedSymbol === symbol.symbol && (
-                    <div className="glass-card p-4 mt-2 border-accent/30">
-                      <h4 className="text-xs font-semibold text-accent mb-3">Estimated Liquidation Levels</h4>
-                      <LiquidationMap symbol={symbol.symbol} />
-                    </div>
-                  )}
+                  <SymbolDerivativesCard data={symbol} expanded={expandedSymbol === symbol.symbol} />
                 </div>
               ))}
           </div>
         </div>
 
-        {/* Live Liquidation Feed */}
-        <div className="flex flex-col">
-          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2 shrink-0">
-            <Flame className="h-4 w-4 text-yellow-400" />
-            Live Liquidations
-          </h3>
+        {/* Right Column: Liquidation Map + Feed */}
+        <div className="flex flex-col gap-4">
+          {/* Liquidation Map for selected symbol */}
+          {expandedSymbol && (
+            <div className="glass-card p-4">
+              <h3 className="text-sm font-semibold text-accent mb-3 flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Liquidation Levels — {SYMBOL_NAMES[expandedSymbol] || expandedSymbol}
+              </h3>
+              <LiquidationMap symbol={expandedSymbol} />
+            </div>
+          )}
+
+          {/* Live Liquidation Feed */}
+          <div className="flex flex-col flex-1 min-h-0">
+            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2 shrink-0">
+              <Flame className="h-4 w-4 text-yellow-400" />
+              Live Liquidations
+            </h3>
           <div className="glass-card p-3 overflow-y-auto space-y-2 flex-1 min-h-0">
             {liquidations.length === 0 ? (
               <p className="text-text-secondary text-sm text-center py-8">
@@ -177,6 +181,7 @@ export function DerivativesDashboard() {
                 <LiquidationLine key={`${liq.symbol}-${liq.time}-${i}`} liq={liq} />
               ))
             )}
+          </div>
           </div>
         </div>
       </div>

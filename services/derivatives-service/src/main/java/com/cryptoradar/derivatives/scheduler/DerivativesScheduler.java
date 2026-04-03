@@ -4,7 +4,9 @@ import com.cryptoradar.derivatives.client.BinanceFuturesClient;
 import com.cryptoradar.derivatives.event.RedisEventPublisher;
 import com.cryptoradar.derivatives.model.DerivativesOverview;
 import com.cryptoradar.derivatives.model.Liquidation;
+import com.cryptoradar.derivatives.model.LiquidationMap;
 import com.cryptoradar.derivatives.service.DerivativesService;
+import com.cryptoradar.derivatives.service.LiquidationMapService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.runtime.StartupEvent;
@@ -45,6 +47,9 @@ public class DerivativesScheduler {
     RedisEventPublisher redisPublisher;
 
     @Inject
+    LiquidationMapService liquidationMapService;
+
+    @Inject
     ObjectMapper objectMapper;
 
     private final AtomicBoolean wsConnected = new AtomicBoolean(false);
@@ -81,6 +86,19 @@ public class DerivativesScheduler {
             derivativesService.refreshLongShortRatios();
         } catch (Exception e) {
             LOG.errorf(e, "Scheduled long/short ratio fetch failed");
+        }
+    }
+
+    @Scheduled(every = "15m", identity = "liquidation-maps")
+    void computeLiquidationMaps() {
+        try {
+            Set<String> symbols = futuresClient.getTrackedSymbols();
+            for (String symbol : symbols) {
+                liquidationMapService.computeAndCache(symbol);
+            }
+            LOG.infof("Pre-computed liquidation maps for %d symbols", symbols.size());
+        } catch (Exception e) {
+            LOG.errorf(e, "Scheduled liquidation map computation failed");
         }
     }
 
