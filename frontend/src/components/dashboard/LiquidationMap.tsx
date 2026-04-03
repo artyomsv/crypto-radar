@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Loader2, Target } from 'lucide-react';
+import { Loader2, Target, Info } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatLargeNumber, formatPrice } from '@/lib/utils';
 import { SYMBOL_NAMES } from '@/types';
@@ -97,6 +97,24 @@ export function LiquidationMap({ symbol }: LiquidationMapProps) {
           <span className="text-text-secondary">Short liq magnet:</span>
           <span className="font-mono text-gain font-medium">{formatPrice(data.highestLiquidityShortPrice)}</span>
         </div>
+      </div>
+
+      {/* Column headers with info tooltip */}
+      <div className="flex items-center gap-2 text-[10px] text-text-secondary mb-1">
+        <div className="w-8 text-right group relative cursor-help">
+          <span className="flex items-center gap-0.5 justify-end">Lev <Info className="h-2.5 w-2.5" /></span>
+          <div className="absolute bottom-full right-0 mb-1 w-56 p-2 bg-surface border border-surface-border rounded-lg shadow-lg text-[10px] text-text-primary hidden group-hover:block z-10 leading-relaxed">
+            <p className="font-semibold text-accent mb-1">Leverage Tier</p>
+            <p>Shows which traders get liquidated at each price level based on their leverage:</p>
+            <p className="mt-1"><span className="text-yellow-400">100x</span> = liquidated at 1% move</p>
+            <p><span className="text-yellow-400">10x</span> = liquidated at 10% move</p>
+            <p><span className="text-yellow-400">2x</span> = liquidated at 50% move</p>
+            <p className="mt-1 text-text-secondary">Higher leverage = closer to current price = higher risk of cascade liquidations</p>
+          </div>
+        </div>
+        <span className="flex-1">Est. Value at Risk</span>
+        <span className="w-20 text-right">Liq Price</span>
+        <span className="w-12 text-right">Dist</span>
       </div>
 
       {/* Visual liquidation bars — sorted by price */}
