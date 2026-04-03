@@ -25,19 +25,19 @@ public class BackfillService {
     private static final int BINANCE_MAX_LIMIT = 1000;
     // Rate limiting is handled by BinanceRateLimiter
 
-    // How far back to backfill for each interval on first run
+    // How far back to backfill — maxed out to Binance limits
     private static final Map<String, Duration> BACKFILL_DEPTH = Map.ofEntries(
-            Map.entry("1m", Duration.ofDays(7)),
-            Map.entry("5m", Duration.ofDays(30)),
-            Map.entry("15m", Duration.ofDays(60)),
-            Map.entry("30m", Duration.ofDays(90)),
-            Map.entry("1h", Duration.ofDays(180)),
-            Map.entry("2h", Duration.ofDays(365)),
-            Map.entry("4h", Duration.ofDays(365)),
-            Map.entry("8h", Duration.ofDays(500)),
-            Map.entry("12h", Duration.ofDays(730)),
-            Map.entry("1d", Duration.ofDays(1000)),
-            Map.entry("1w", Duration.ofDays(1500))
+            Map.entry("1m", Duration.ofDays(30)),
+            Map.entry("5m", Duration.ofDays(180)),
+            Map.entry("15m", Duration.ofDays(365)),
+            Map.entry("30m", Duration.ofDays(730)),
+            Map.entry("1h", Duration.ofDays(1000)),
+            Map.entry("2h", Duration.ofDays(1500)),
+            Map.entry("4h", Duration.ofDays(1500)),
+            Map.entry("8h", Duration.ofDays(1500)),
+            Map.entry("12h", Duration.ofDays(1500)),
+            Map.entry("1d", Duration.ofDays(2500)),
+            Map.entry("1w", Duration.ofDays(3000))
     );
 
     // Candle duration for gap calculation
