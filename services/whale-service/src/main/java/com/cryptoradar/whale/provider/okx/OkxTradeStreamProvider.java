@@ -11,6 +11,9 @@ import java.util.Map;
 @ApplicationScoped
 public class OkxTradeStreamProvider extends AbstractExchangeStreamProvider {
 
+    @Override
+    protected String getPingMessage() { return "ping"; }
+
     private static final Map<String, String> SYMBOL_MAP = Map.ofEntries(
             Map.entry("BTC-USDT", "BTCUSDT"), Map.entry("ETH-USDT", "ETHUSDT"),
             Map.entry("XRP-USDT", "XRPUSDT"), Map.entry("BNB-USDT", "BNBUSDT"),

@@ -75,6 +75,12 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
         connected.set(false);
     }
 
+    /** Override to provide a ping message (e.g. Bybit needs {"op":"ping"}) */
+    protected String getPingMessage() { return null; }
+
+    /** Ping interval in seconds. Override if exchange needs custom interval. */
+    protected int getPingIntervalSeconds() { return 20; }
+
     @Override
     public void connect() {
         String url = getWsUrl();
@@ -87,6 +93,16 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
                     this.webSocket = ws;
                     connected.set(true);
                     LOG.infof("[%s] WebSocket connected", getExchangeName());
+
+                    // Start heartbeat if configured
+                    String pingMsg = getPingMessage();
+                    if (pingMsg != null) {
+                        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(() -> {
+                            if (connected.get() && webSocket != null) {
+                                webSocket.sendText(pingMsg, true);
+                            }
+                        }, getPingIntervalSeconds(), getPingIntervalSeconds(), TimeUnit.SECONDS);
+                    }
 
                     String subMsg = getSubscribeMessage();
                     if (subMsg != null) {

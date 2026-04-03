@@ -304,7 +304,18 @@ function WhaleSymbolCard({ analytics, rank }: { analytics: WhaleAnalytics; rank?
   );
 }
 
-function getTradeExplorerUrl(tx: WhaleTransaction): string | null {
+const SOURCE_CONFIG: Record<string, { label: string; url: (sym: string) => string }> = {
+  'binance':     { label: 'Binance',    url: (s) => `https://www.binance.com/en/trade/${s.replace('USDT', '_USDT')}` },
+  'coinbase':    { label: 'Coinbase',   url: (s) => `https://www.coinbase.com/advanced-trade/spot/${s.replace('USDT', '-USD')}` },
+  'kraken':      { label: 'Kraken',     url: (s) => `https://www.kraken.com/prices/${s.replace('USDT', '').toLowerCase()}` },
+  'okx':         { label: 'OKX',        url: (s) => `https://www.okx.com/trade-spot/${s.replace('USDT', '-usdt').toLowerCase()}` },
+  'bybit':       { label: 'Bybit',      url: (s) => `https://www.bybit.com/en/trade/spot/${s}` },
+  'bitfinex':    { label: 'Bitfinex',   url: (s) => `https://trading.bitfinex.com/t/${s.replace('USDT', ':USD')}` },
+  'whale-alert': { label: 'On-Chain',   url: () => 'https://whale-alert.io' },
+};
+
+function getTradeExplorerUrl(tx: WhaleTransaction): string {
+  // Whale Alert with tx hash → blockchain explorer
   if (tx.source === 'whale-alert' && tx.txHash && tx.blockchain) {
     const explorers: Record<string, string> = {
       bitcoin: 'https://blockchain.com/btc/tx/',
@@ -312,21 +323,23 @@ function getTradeExplorerUrl(tx: WhaleTransaction): string | null {
       solana: 'https://solscan.io/tx/',
       ripple: 'https://xrpscan.com/tx/',
       cardano: 'https://cardanoscan.io/transaction/',
+      tron: 'https://tronscan.org/#/transaction/',
+      litecoin: 'https://blockchair.com/litecoin/transaction/',
     };
     const base = explorers[tx.blockchain];
     if (base) return base + tx.txHash;
   }
-  if (tx.source === 'binance') {
-    return `https://www.binance.com/en/trade/${tx.symbol.replace('USDT', '_USDT')}`;
-  }
-  return null;
+  // Exchange → trade page
+  const config = SOURCE_CONFIG[tx.source];
+  if (config) return config.url(tx.symbol);
+  return '#';
 }
 
 function WhaleTradeLine({ tx }: { tx: WhaleTransaction }) {
   const isBuy = tx.side === 'BUY';
   const icon = SYMBOL_ICONS[tx.symbol] || '?';
   const explorerUrl = getTradeExplorerUrl(tx);
-  const sourceLabel = tx.source === 'whale-alert' ? 'WA' : 'BN';
+  const sourceLabel = SOURCE_CONFIG[tx.source]?.label || tx.source;
   const isMega = tx.valueUsd >= 200000;
   const isGiga = tx.valueUsd >= 1000000;
 
@@ -349,19 +362,15 @@ function WhaleTradeLine({ tx }: { tx: WhaleTransaction }) {
       </span>
       {isGiga && <Flame className="h-3.5 w-3.5 text-yellow-400 animate-pulse shrink-0" />}
       {isMega && !isGiga && <Zap className="h-3 w-3 text-accent shrink-0" />}
-      {explorerUrl ? (
-        <a
-          href={explorerUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[10px] text-accent hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {sourceLabel}
-        </a>
-      ) : (
-        <span className="text-[10px] text-text-secondary">{sourceLabel}</span>
-      )}
+      <a
+        href={explorerUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[10px] text-accent hover:underline shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {sourceLabel}
+      </a>
       <span className="text-text-secondary text-[10px] w-12 text-right">{formatTimeAgo(tx.time)}</span>
     </div>
   );

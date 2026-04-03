@@ -21,6 +21,11 @@ public class BybitTradeStreamProvider extends AbstractExchangeStreamProvider {
     }
 
     @Override
+    protected String getPingMessage() {
+        return "{\"op\":\"ping\"}";
+    }
+
+    @Override
     protected String getSubscribeMessage() {
         return """
                 {"op":"subscribe","args":["publicTrade.BTCUSDT","publicTrade.ETHUSDT","publicTrade.XRPUSDT","publicTrade.BNBUSDT","publicTrade.SOLUSDT","publicTrade.TRXUSDT","publicTrade.DOGEUSDT","publicTrade.BCHUSDT","publicTrade.ADAUSDT","publicTrade.LINKUSDT","publicTrade.XMRUSDT","publicTrade.XLMUSDT","publicTrade.LTCUSDT","publicTrade.ZECUSDT"]}""";
