@@ -105,27 +105,95 @@ public class MarketDataResource {
 
     // --- Crypto Configuration CRUD ---
 
-    /** List all configured cryptos (active + inactive) */
+    /** List all configured cryptos with storage stats */
     @GET
     @Path("/config/cryptos")
     public List<Map<String, Object>> getConfiguredCryptos() {
         List<Map<String, Object>> results = new ArrayList<>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT symbol, name, rank, is_active FROM crypto_assets ORDER BY rank");
-             ResultSet rs = stmt.executeQuery()) {
-            while (rs.next()) {
-                results.add(Map.of(
-                        "symbol", rs.getString("symbol"),
-                        "name", rs.getString("name"),
-                        "rank", rs.getInt("rank"),
-                        "isActive", rs.getBoolean("is_active")
-                ));
+        try (Connection conn = dataSource.getConnection()) {
+            // Get assets
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "SELECT symbol, name, rank, is_active FROM crypto_assets ORDER BY rank");
+                 ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String symbol = rs.getString("symbol");
+                    var entry = new java.util.HashMap<String, Object>();
+                    entry.put("symbol", symbol);
+                    entry.put("name", rs.getString("name"));
+                    entry.put("rank", rs.getInt("rank"));
+                    entry.put("isActive", rs.getBoolean("is_active"));
+
+                    // Candle stats per interval
+                    entry.put("candleStats", getCandleStats(conn, symbol));
+                    entry.put("totalCandles", getTotalCandles(conn, symbol));
+
+                    // Price snapshot count
+                    entry.put("priceSnapshots", getCount(conn,
+                            "SELECT COUNT(*) FROM price_snapshots WHERE symbol = ?", symbol));
+
+                    // Whale trade count
+                    entry.put("whaleTrades", getCount(conn,
+                            "SELECT COUNT(*) FROM whale_transactions WHERE symbol = ?", symbol));
+
+                    // Oldest/newest candle
+                    entry.put("oldestCandle", getTimestamp(conn,
+                            "SELECT MIN(time) FROM candles WHERE symbol = ?", symbol));
+                    entry.put("newestCandle", getTimestamp(conn,
+                            "SELECT MAX(time) FROM candles WHERE symbol = ?", symbol));
+
+                    results.add(entry);
+                }
             }
         } catch (Exception e) {
             return results;
         }
         return results;
+    }
+
+    private List<Map<String, Object>> getCandleStats(Connection conn, String symbol) {
+        List<Map<String, Object>> stats = new ArrayList<>();
+        try (PreparedStatement stmt = conn.prepareStatement(
+                "SELECT interval, COUNT(*) as cnt, MIN(time) as oldest, MAX(time) as newest " +
+                        "FROM candles WHERE symbol = ? GROUP BY interval ORDER BY cnt DESC")) {
+            stmt.setString(1, symbol);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    stats.add(Map.of(
+                            "interval", rs.getString("interval"),
+                            "count", rs.getLong("cnt"),
+                            "oldest", rs.getTimestamp("oldest").toInstant().toString(),
+                            "newest", rs.getTimestamp("newest").toInstant().toString()
+                    ));
+                }
+            }
+        } catch (Exception ignored) {}
+        return stats;
+    }
+
+    private long getTotalCandles(Connection conn, String symbol) {
+        return getCount(conn, "SELECT COUNT(*) FROM candles WHERE symbol = ?", symbol);
+    }
+
+    private long getCount(Connection conn, String sql, String symbol) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, symbol);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) return rs.getLong(1);
+            }
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
+    private String getTimestamp(Connection conn, String sql, String symbol) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, symbol);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next() && rs.getTimestamp(1) != null) {
+                    return rs.getTimestamp(1).toInstant().toString();
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     /** Add a new crypto to track */

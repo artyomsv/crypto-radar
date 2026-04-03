@@ -1,18 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Search, Plus, Trash2, Loader2, Check, Power, PowerOff, ArrowLeft } from 'lucide-react';
+import { Settings, Search, Plus, Trash2, Loader2, Power, PowerOff, ArrowLeft, ChevronDown, ChevronRight, Database } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
-import { formatPrice } from '@/lib/utils';
+import { formatPrice, formatLargeNumber } from '@/lib/utils';
+
+interface CandleStat {
+  interval: string;
+  count: number;
+  oldest: string;
+  newest: string;
+}
 
 interface CryptoAsset {
   symbol: string;
   name: string;
   rank: number;
   isActive: boolean;
+  totalCandles?: number;
+  priceSnapshots?: number;
+  whaleTrades?: number;
+  oldestCandle?: string;
+  newestCandle?: string;
+  candleStats?: CandleStat[];
 }
 
 export function CryptoConfig() {
   const [cryptos, setCryptos] = useState<CryptoAsset[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -140,48 +154,97 @@ export function CryptoConfig() {
         </h2>
         <div className="border border-surface-border rounded-lg overflow-hidden">
           {/* Table header */}
-          <div className="grid grid-cols-[40px_1fr_1fr_100px_80px] px-4 py-2 bg-surface-light/50 text-xs text-text-secondary font-medium">
+          <div className="grid grid-cols-[24px_40px_80px_1fr_120px_100px_80px] px-4 py-2 bg-surface-light/50 text-xs text-text-secondary font-medium">
+            <span></span>
             <span>#</span>
             <span>Symbol</span>
             <span>Name</span>
+            <span className="text-right">Data Stored</span>
             <span className="text-center">Status</span>
             <span className="text-center">Actions</span>
           </div>
           {/* Rows */}
           {cryptos.map(crypto => (
-            <div key={crypto.symbol} className={`grid grid-cols-[40px_1fr_1fr_100px_80px] px-4 py-3 border-t border-surface-border items-center ${!crypto.isActive ? 'opacity-50' : ''}`}>
-              <span className="text-xs text-text-secondary">{crypto.rank}</span>
-              <span className="text-sm font-medium font-mono text-text-primary">{crypto.symbol.replace('USDT', '')}</span>
-              <span className="text-sm text-text-secondary">{crypto.name}</span>
-              <div className="flex justify-center">
-                <button
-                  onClick={() => handleToggle(crypto.symbol, crypto.isActive)}
-                  disabled={actionLoading === crypto.symbol}
-                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
-                    crypto.isActive
-                      ? 'bg-gain/10 text-gain border border-gain/30'
-                      : 'bg-loss/10 text-loss border border-loss/30'
-                  }`}
-                >
-                  {actionLoading === crypto.symbol ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : crypto.isActive ? (
-                    <><Power className="h-3 w-3" /> Active</>
-                  ) : (
-                    <><PowerOff className="h-3 w-3" /> Paused</>
+            <div key={crypto.symbol}>
+              <div
+                className={`grid grid-cols-[24px_40px_80px_1fr_120px_100px_80px] px-4 py-3 border-t border-surface-border items-center cursor-pointer hover:bg-surface-light/30 ${!crypto.isActive ? 'opacity-50' : ''}`}
+                onClick={() => setExpanded(expanded === crypto.symbol ? null : crypto.symbol)}
+              >
+                <span className="text-text-secondary">
+                  {expanded === crypto.symbol ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </span>
+                <span className="text-xs text-text-secondary">{crypto.rank}</span>
+                <span className="text-sm font-medium font-mono text-text-primary">{crypto.symbol.replace('USDT', '')}</span>
+                <span className="text-sm text-text-secondary">{crypto.name}</span>
+                <span className="text-right text-xs font-mono text-accent">
+                  {(crypto.totalCandles || 0).toLocaleString()} candles
+                </span>
+                <div className="flex justify-center">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleToggle(crypto.symbol, crypto.isActive); }}
+                    disabled={actionLoading === crypto.symbol}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
+                      crypto.isActive
+                        ? 'bg-gain/10 text-gain border border-gain/30'
+                        : 'bg-loss/10 text-loss border border-loss/30'
+                    }`}
+                  >
+                    {actionLoading === crypto.symbol ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : crypto.isActive ? (
+                      <><Power className="h-3 w-3" /> Active</>
+                    ) : (
+                      <><PowerOff className="h-3 w-3" /> Paused</>
+                    )}
+                  </button>
+                </div>
+                <div className="flex justify-center">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRemove(crypto.symbol); }}
+                    disabled={actionLoading === crypto.symbol}
+                    className="p-1.5 text-text-secondary hover:text-loss hover:bg-loss/10 rounded transition-colors"
+                    title="Remove and delete data"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Expanded stats */}
+              {expanded === crypto.symbol && (
+                <div className="px-4 py-3 border-t border-surface-border/50 bg-surface-light/20">
+                  <div className="grid grid-cols-3 gap-4 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Database className="h-3.5 w-3.5 text-accent" />
+                      <span className="text-xs text-text-secondary">Total Candles:</span>
+                      <span className="text-xs font-mono text-text-primary font-medium">{(crypto.totalCandles || 0).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-text-secondary">Whale Trades:</span>
+                      <span className="text-xs font-mono text-text-primary font-medium ml-1">{(crypto.whaleTrades || 0).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-text-secondary">Price Snapshots:</span>
+                      <span className="text-xs font-mono text-text-primary font-medium ml-1">{(crypto.priceSnapshots || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  {crypto.oldestCandle && (
+                    <div className="text-[10px] text-text-secondary mb-3">
+                      History: {new Date(crypto.oldestCandle).toLocaleDateString()} — {crypto.newestCandle ? new Date(crypto.newestCandle).toLocaleDateString() : 'now'}
+                    </div>
                   )}
-                </button>
-              </div>
-              <div className="flex justify-center">
-                <button
-                  onClick={() => handleRemove(crypto.symbol)}
-                  disabled={actionLoading === crypto.symbol}
-                  className="p-1.5 text-text-secondary hover:text-loss hover:bg-loss/10 rounded transition-colors"
-                  title="Remove and delete data"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+                  {crypto.candleStats && crypto.candleStats.length > 0 && (
+                    <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-11 gap-2">
+                      {crypto.candleStats.map((stat: CandleStat) => (
+                        <div key={stat.interval} className="text-center px-2 py-1.5 bg-surface/50 rounded border border-surface-border">
+                          <p className="text-[10px] text-accent font-medium">{stat.interval}</p>
+                          <p className="text-xs font-mono text-text-primary">{stat.count.toLocaleString()}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
