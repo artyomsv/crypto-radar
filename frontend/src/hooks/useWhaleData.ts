@@ -3,17 +3,17 @@ import { api } from '@/lib/api';
 import { useWebSocket } from './useWebSocket';
 import type { WhaleTransaction, WhaleMarketOverview } from '@/types';
 
-export function useWhaleData() {
+export function useWhaleData(period: string = '1d') {
   const [overview, setOverview] = useState<WhaleMarketOverview | null>(null);
   const [recentTrades, setRecentTrades] = useState<WhaleTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const maxTrades = 100;
+  const maxTrades = 200;
 
   const fetchData = useCallback(async () => {
     try {
       const [analyticsData, tradesData] = await Promise.all([
         api.getWhaleAnalytics(),
-        api.getWhaleTransactions(undefined, 50),
+        api.getWhaleTransactions(undefined, 100, period),
       ]);
       if (analyticsData) setOverview(analyticsData);
       if (tradesData) setRecentTrades(tradesData);
@@ -22,9 +22,10 @@ export function useWhaleData() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [period]);
 
   useEffect(() => {
+    setLoading(true);
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);

@@ -1,11 +1,23 @@
+import { useState } from 'react';
 import { useWhaleData } from '@/hooks/useWhaleData';
 import { Loader2, Activity, TrendingUp, TrendingDown, Waves, Zap } from 'lucide-react';
 import { formatLargeNumber, formatPrice, formatTimeAgo } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import type { WhaleTransaction, WhaleAnalytics } from '@/types';
 
+const PERIODS = [
+  { value: '1d', label: '1 Day' },
+  { value: '1w', label: '1 Week' },
+  { value: '2w', label: '2 Weeks' },
+  { value: '1m', label: '1 Month' },
+  { value: '3m', label: '3 Months' },
+  { value: '6m', label: '6 Months' },
+  { value: '1y', label: '1 Year' },
+] as const;
+
 export function WhaleTracker() {
-  const { overview, recentTrades, loading, connected } = useWhaleData();
+  const [period, setPeriod] = useState('1d');
+  const { overview, recentTrades, loading, connected } = useWhaleData(period);
 
   if (loading) {
     return (
@@ -28,11 +40,28 @@ export function WhaleTracker() {
               <Waves className="h-5 w-5 text-accent" />
               <h2 className="text-lg font-semibold text-text-primary">Whale Activity</h2>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className={`live-dot ${connected ? 'connected' : 'disconnected'}`} />
-              <span className={`text-xs ${connected ? 'text-gain' : 'text-loss'}`}>
-                {connected ? 'Live' : 'Offline'}
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1">
+                {PERIODS.map((p) => (
+                  <button
+                    key={p.value}
+                    onClick={() => setPeriod(p.value)}
+                    className={`px-2 py-1 text-xs font-medium rounded transition-all ${
+                      period === p.value
+                        ? 'bg-accent text-background'
+                        : 'bg-surface-light text-text-secondary hover:text-text-primary'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`live-dot ${connected ? 'connected' : 'disconnected'}`} />
+                <span className={`text-xs ${connected ? 'text-gain' : 'text-loss'}`}>
+                  {connected ? 'Live' : 'Offline'}
+                </span>
+              </div>
             </div>
           </div>
 

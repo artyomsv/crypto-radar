@@ -30,7 +30,7 @@ public class WhaleFlowService {
             SELECT time, symbol, price, quantity, value_usd, side, source,
                    trade_id, from_address, to_address, from_label, to_label, blockchain, tx_hash
             FROM whale_transactions
-            WHERE symbol = ?
+            WHERE symbol = ? AND time >= NOW() - ?::interval
             ORDER BY time DESC
             LIMIT ?
             """;
@@ -39,6 +39,7 @@ public class WhaleFlowService {
             SELECT time, symbol, price, quantity, value_usd, side, source,
                    trade_id, from_address, to_address, from_label, to_label, blockchain, tx_hash
             FROM whale_transactions
+            WHERE time >= NOW() - ?::interval
             ORDER BY time DESC
             LIMIT ?
             """;
@@ -74,12 +75,14 @@ public class WhaleFlowService {
                 tx.getSide(), tx.getSymbol(), tx.getQuantity(), tx.getPrice(), tx.getValueUsd());
     }
 
-    public List<WhaleTransaction> getRecentTransactions(String symbol, int limit) {
+    public List<WhaleTransaction> getRecentTransactions(String symbol, int limit, String period) {
+        String interval = mapPeriodToInterval(period);
         List<WhaleTransaction> results = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(SELECT_RECENT_SQL)) {
             stmt.setString(1, symbol);
-            stmt.setInt(2, limit);
+            stmt.setString(2, interval);
+            stmt.setInt(3, limit);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     results.add(mapTransaction(rs));
@@ -91,11 +94,13 @@ public class WhaleFlowService {
         return results;
     }
 
-    public List<WhaleTransaction> getAllRecentTransactions(int limit) {
+    public List<WhaleTransaction> getAllRecentTransactions(int limit, String period) {
+        String interval = mapPeriodToInterval(period);
         List<WhaleTransaction> results = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(SELECT_ALL_RECENT_SQL)) {
-            stmt.setInt(1, limit);
+            stmt.setString(1, interval);
+            stmt.setInt(2, limit);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     results.add(mapTransaction(rs));
@@ -189,6 +194,19 @@ public class WhaleFlowService {
                 rs.getDouble("largest_trade"),
                 pressure
         );
+    }
+
+    private String mapPeriodToInterval(String period) {
+        return switch (period) {
+            case "1d" -> "1 day";
+            case "1w" -> "7 days";
+            case "2w" -> "14 days";
+            case "1m" -> "30 days";
+            case "3m" -> "90 days";
+            case "6m" -> "180 days";
+            case "1y" -> "365 days";
+            default -> "1 day";
+        };
     }
 
     private String mapWindowToBucket(String window) {

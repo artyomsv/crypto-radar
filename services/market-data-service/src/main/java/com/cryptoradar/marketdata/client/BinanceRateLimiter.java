@@ -21,7 +21,7 @@ public class BinanceRateLimiter {
 
     private static final Logger LOG = Logger.getLogger(BinanceRateLimiter.class);
 
-    private static final int MAX_WEIGHT_PER_MINUTE = 400;
+    private static final int MAX_WEIGHT_PER_MINUTE = 800;
     private static final long MINUTE_MS = 60_000;
     private static final long MIN_DELAY_BETWEEN_REQUESTS_MS = 150;
 

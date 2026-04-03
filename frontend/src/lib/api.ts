@@ -22,8 +22,8 @@ export const api = {
   getAnalysis: (symbol: string) => fetchJson<any>(`/api/analytics/${symbol}`),
   getLatestNews: (limit = 20) => fetchJson<any[]>(`/api/news/latest?limit=${limit}`),
   getSentiment: (symbol: string) => fetchJson<any>(`/api/news/sentiment/${symbol}`),
-  getWhaleTransactions: (symbol?: string, limit = 50) => {
-    const params = new URLSearchParams({ limit: String(limit) });
+  getWhaleTransactions: (symbol?: string, limit = 100, period = '1d') => {
+    const params = new URLSearchParams({ limit: String(limit), period });
     if (symbol) params.set('symbol', symbol);
     return fetchJson<WhaleTransaction[]>(`/api/whales/transactions?${params}`);
   },

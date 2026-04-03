@@ -68,8 +68,8 @@ public class MarketDataScheduler {
 
     // --- Price schedulers: dual-fetch strategy ---
 
-    /** Lightweight price fetch every 1 second — only publishes to Redis/WebSocket (weight 4) */
-    @Scheduled(every = "1s", identity = "prices-realtime")
+    /** Lightweight price fetch every 3 seconds — only publishes to Redis/WebSocket (weight 4) */
+    @Scheduled(every = "3s", identity = "prices-realtime")
     void fetchRealtimePrices() {
         try {
             marketDataService.fetchAndPublishLightweightPrices();

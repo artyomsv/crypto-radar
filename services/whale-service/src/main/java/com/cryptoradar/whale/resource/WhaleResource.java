@@ -43,11 +43,12 @@ public class WhaleResource {
     @Path("/transactions")
     public List<WhaleTransaction> getTransactions(
             @QueryParam("symbol") String symbol,
-            @QueryParam("limit") @DefaultValue("50") int limit) {
+            @QueryParam("limit") @DefaultValue("50") int limit,
+            @QueryParam("period") @DefaultValue("1d") String period) {
         if (symbol != null && !symbol.isBlank()) {
-            return flowService.getRecentTransactions(symbol.toUpperCase(), limit);
+            return flowService.getRecentTransactions(symbol.toUpperCase(), limit, period);
         }
-        return flowService.getAllRecentTransactions(limit);
+        return flowService.getAllRecentTransactions(limit, period);
     }
 
     @GET
