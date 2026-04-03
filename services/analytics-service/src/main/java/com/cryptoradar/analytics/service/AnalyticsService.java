@@ -24,8 +24,9 @@ public class AnalyticsService {
     private static final Logger LOG = Logger.getLogger(AnalyticsService.class);
 
     private static final List<String> TOP_SYMBOLS = List.of(
-            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-            "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "DOGEUSDT"
+            "BTCUSDT", "ETHUSDT", "XRPUSDT", "BNBUSDT", "SOLUSDT",
+            "TRXUSDT", "DOGEUSDT", "BCHUSDT", "ADAUSDT", "LINKUSDT",
+            "XMRUSDT", "XLMUSDT", "LTCUSDT", "ZECUSDT"
     );
 
     private static final long CACHE_TTL_MS = 30_000;

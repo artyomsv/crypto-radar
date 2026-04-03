@@ -15,14 +15,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BitfinexTradeStreamProvider extends AbstractExchangeStreamProvider {
 
     private static final List<String> BFX_SYMBOLS = List.of(
-            "tBTCUSD", "tETHUSD", "tSOLUSD", "tXRPUSD", "tADAUSD",
-            "tDOGEUSD", "tLINKUSD", "tDOTUSD", "tAVAXUSD"
+            "tBTCUSD", "tETHUSD", "tXRPUSD", "tSOLUSD", "tTRXUSD",
+            "tDOGEUSD", "tBCHUSD", "tADAUSD", "tLINKUSD", "tXMRUSD",
+            "tXLMUSD", "tLTCUSD", "tZECUSD"
     );
 
-    private static final Map<String, String> SYMBOL_MAP = Map.of(
-            "tBTCUSD", "BTCUSDT", "tETHUSD", "ETHUSDT", "tSOLUSD", "SOLUSDT",
-            "tXRPUSD", "XRPUSDT", "tADAUSD", "ADAUSDT", "tDOGEUSD", "DOGEUSDT",
-            "tLINKUSD", "LINKUSDT", "tDOTUSD", "DOTUSDT", "tAVAXUSD", "AVAXUSDT"
+    private static final Map<String, String> SYMBOL_MAP = Map.ofEntries(
+            Map.entry("tBTCUSD", "BTCUSDT"), Map.entry("tETHUSD", "ETHUSDT"),
+            Map.entry("tXRPUSD", "XRPUSDT"), Map.entry("tSOLUSD", "SOLUSDT"),
+            Map.entry("tTRXUSD", "TRXUSDT"), Map.entry("tDOGEUSD", "DOGEUSDT"),
+            Map.entry("tBCHUSD", "BCHUSDT"), Map.entry("tADAUSD", "ADAUSDT"),
+            Map.entry("tLINKUSD", "LINKUSDT"), Map.entry("tXMRUSD", "XMRUSDT"),
+            Map.entry("tXLMUSD", "XLMUSDT"), Map.entry("tLTCUSD", "LTCUSDT"),
+            Map.entry("tZECUSD", "ZECUSDT")
     );
 
     /** Bitfinex uses numeric channel IDs — mapped after subscription confirmation */

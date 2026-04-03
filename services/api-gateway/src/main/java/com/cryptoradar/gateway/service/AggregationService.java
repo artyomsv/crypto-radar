@@ -24,17 +24,21 @@ public class AggregationService {
 
     private static final Logger LOG = Logger.getLogger(AggregationService.class);
 
-    private static final Map<String, String> SYMBOL_NAMES = Map.of(
-            "BTCUSDT", "Bitcoin",
-            "ETHUSDT", "Ethereum",
-            "BNBUSDT", "BNB",
-            "SOLUSDT", "Solana",
-            "XRPUSDT", "XRP",
-            "ADAUSDT", "Cardano",
-            "AVAXUSDT", "Avalanche",
-            "DOTUSDT", "Polkadot",
-            "LINKUSDT", "Chainlink",
-            "DOGEUSDT", "Dogecoin"
+    private static final Map<String, String> SYMBOL_NAMES = Map.ofEntries(
+            Map.entry("BTCUSDT", "Bitcoin"),
+            Map.entry("ETHUSDT", "Ethereum"),
+            Map.entry("XRPUSDT", "XRP"),
+            Map.entry("BNBUSDT", "BNB"),
+            Map.entry("SOLUSDT", "Solana"),
+            Map.entry("TRXUSDT", "TRON"),
+            Map.entry("DOGEUSDT", "Dogecoin"),
+            Map.entry("BCHUSDT", "Bitcoin Cash"),
+            Map.entry("ADAUSDT", "Cardano"),
+            Map.entry("LINKUSDT", "Chainlink"),
+            Map.entry("XMRUSDT", "Monero"),
+            Map.entry("XLMUSDT", "Stellar"),
+            Map.entry("LTCUSDT", "Litecoin"),
+            Map.entry("ZECUSDT", "Zcash")
     );
 
     private final ObjectMapper objectMapper = new ObjectMapper();

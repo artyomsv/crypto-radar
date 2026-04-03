@@ -23,7 +23,7 @@ public class BybitTradeStreamProvider extends AbstractExchangeStreamProvider {
     @Override
     protected String getSubscribeMessage() {
         return """
-                {"op":"subscribe","args":["publicTrade.BTCUSDT","publicTrade.ETHUSDT","publicTrade.SOLUSDT","publicTrade.XRPUSDT","publicTrade.ADAUSDT","publicTrade.AVAXUSDT","publicTrade.DOTUSDT","publicTrade.LINKUSDT","publicTrade.DOGEUSDT","publicTrade.BNBUSDT"]}""";
+                {"op":"subscribe","args":["publicTrade.BTCUSDT","publicTrade.ETHUSDT","publicTrade.XRPUSDT","publicTrade.BNBUSDT","publicTrade.SOLUSDT","publicTrade.TRXUSDT","publicTrade.DOGEUSDT","publicTrade.BCHUSDT","publicTrade.ADAUSDT","publicTrade.LINKUSDT","publicTrade.XMRUSDT","publicTrade.XLMUSDT","publicTrade.LTCUSDT","publicTrade.ZECUSDT"]}""";
     }
 
     @Override

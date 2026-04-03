@@ -28,8 +28,9 @@ public class BinanceClient {
     private static final Logger LOG = Logger.getLogger(BinanceClient.class);
 
     private static final Set<String> TRACKED_SYMBOLS = Set.of(
-            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-            "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "DOGEUSDT"
+            "BTCUSDT", "ETHUSDT", "XRPUSDT", "BNBUSDT", "SOLUSDT",
+            "TRXUSDT", "DOGEUSDT", "BCHUSDT", "ADAUSDT", "LINKUSDT",
+            "XMRUSDT", "XLMUSDT", "LTCUSDT", "ZECUSDT"
     );
 
     private final HttpClient httpClient;

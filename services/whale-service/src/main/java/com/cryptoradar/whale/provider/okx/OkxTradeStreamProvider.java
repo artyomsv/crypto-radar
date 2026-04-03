@@ -13,10 +13,12 @@ public class OkxTradeStreamProvider extends AbstractExchangeStreamProvider {
 
     private static final Map<String, String> SYMBOL_MAP = Map.ofEntries(
             Map.entry("BTC-USDT", "BTCUSDT"), Map.entry("ETH-USDT", "ETHUSDT"),
-            Map.entry("SOL-USDT", "SOLUSDT"), Map.entry("XRP-USDT", "XRPUSDT"),
-            Map.entry("ADA-USDT", "ADAUSDT"), Map.entry("AVAX-USDT", "AVAXUSDT"),
-            Map.entry("DOT-USDT", "DOTUSDT"), Map.entry("LINK-USDT", "LINKUSDT"),
-            Map.entry("DOGE-USDT", "DOGEUSDT"), Map.entry("BNB-USDT", "BNBUSDT")
+            Map.entry("XRP-USDT", "XRPUSDT"), Map.entry("BNB-USDT", "BNBUSDT"),
+            Map.entry("SOL-USDT", "SOLUSDT"), Map.entry("TRX-USDT", "TRXUSDT"),
+            Map.entry("DOGE-USDT", "DOGEUSDT"), Map.entry("BCH-USDT", "BCHUSDT"),
+            Map.entry("ADA-USDT", "ADAUSDT"), Map.entry("LINK-USDT", "LINKUSDT"),
+            Map.entry("XMR-USDT", "XMRUSDT"), Map.entry("XLM-USDT", "XLMUSDT"),
+            Map.entry("LTC-USDT", "LTCUSDT"), Map.entry("ZEC-USDT", "ZECUSDT")
     );
 
     @Override
@@ -32,7 +34,7 @@ public class OkxTradeStreamProvider extends AbstractExchangeStreamProvider {
     @Override
     protected String getSubscribeMessage() {
         return """
-                {"op":"subscribe","args":[{"channel":"trades","instId":"BTC-USDT"},{"channel":"trades","instId":"ETH-USDT"},{"channel":"trades","instId":"SOL-USDT"},{"channel":"trades","instId":"XRP-USDT"},{"channel":"trades","instId":"ADA-USDT"},{"channel":"trades","instId":"AVAX-USDT"},{"channel":"trades","instId":"DOT-USDT"},{"channel":"trades","instId":"LINK-USDT"},{"channel":"trades","instId":"DOGE-USDT"},{"channel":"trades","instId":"BNB-USDT"}]}""";
+                {"op":"subscribe","args":[{"channel":"trades","instId":"BTC-USDT"},{"channel":"trades","instId":"ETH-USDT"},{"channel":"trades","instId":"XRP-USDT"},{"channel":"trades","instId":"BNB-USDT"},{"channel":"trades","instId":"SOL-USDT"},{"channel":"trades","instId":"TRX-USDT"},{"channel":"trades","instId":"DOGE-USDT"},{"channel":"trades","instId":"BCH-USDT"},{"channel":"trades","instId":"ADA-USDT"},{"channel":"trades","instId":"LINK-USDT"},{"channel":"trades","instId":"XMR-USDT"},{"channel":"trades","instId":"XLM-USDT"},{"channel":"trades","instId":"LTC-USDT"},{"channel":"trades","instId":"ZEC-USDT"}]}""";
     }
 
     @Override

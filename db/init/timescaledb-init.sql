@@ -59,18 +59,22 @@ CREATE TABLE IF NOT EXISTS backfill_status (
     PRIMARY KEY (symbol, interval)
 );
 
--- Insert top 10 crypto assets
+-- Insert top 14 crypto assets
 INSERT INTO crypto_assets (symbol, name, rank) VALUES
     ('BTCUSDT', 'Bitcoin', 1),
     ('ETHUSDT', 'Ethereum', 2),
-    ('BNBUSDT', 'BNB', 3),
-    ('SOLUSDT', 'Solana', 4),
-    ('XRPUSDT', 'XRP', 5),
-    ('ADAUSDT', 'Cardano', 6),
-    ('AVAXUSDT', 'Avalanche', 7),
-    ('DOTUSDT', 'Polkadot', 8),
-    ('LINKUSDT', 'Chainlink', 9),
-    ('DOGEUSDT', 'Dogecoin', 10)
+    ('XRPUSDT', 'XRP', 3),
+    ('BNBUSDT', 'BNB', 4),
+    ('SOLUSDT', 'Solana', 5),
+    ('TRXUSDT', 'TRON', 6),
+    ('DOGEUSDT', 'Dogecoin', 7),
+    ('BCHUSDT', 'Bitcoin Cash', 8),
+    ('ADAUSDT', 'Cardano', 9),
+    ('LINKUSDT', 'Chainlink', 10),
+    ('XMRUSDT', 'Monero', 11),
+    ('XLMUSDT', 'Stellar', 12),
+    ('LTCUSDT', 'Litecoin', 13),
+    ('ZECUSDT', 'Zcash', 14)
 ON CONFLICT (symbol) DO NOTHING;
 
 -- Continuous aggregates for faster dashboard queries (derived from 1h candles)

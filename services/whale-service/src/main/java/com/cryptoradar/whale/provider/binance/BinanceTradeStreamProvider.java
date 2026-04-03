@@ -16,8 +16,9 @@ public class BinanceTradeStreamProvider extends AbstractExchangeStreamProvider {
     private static final Logger LOG = Logger.getLogger(BinanceTradeStreamProvider.class);
 
     private static final List<String> SYMBOLS = List.of(
-            "btcusdt", "ethusdt", "bnbusdt", "solusdt", "xrpusdt",
-            "adausdt", "avaxusdt", "dotusdt", "linkusdt", "dogeusdt"
+            "btcusdt", "ethusdt", "xrpusdt", "bnbusdt", "solusdt",
+            "trxusdt", "dogeusdt", "bchusdt", "adausdt", "linkusdt",
+            "xmrusdt", "xlmusdt", "ltcusdt", "zecusdt"
     );
 
     @ConfigProperty(name = "whale.binance.ws.url")

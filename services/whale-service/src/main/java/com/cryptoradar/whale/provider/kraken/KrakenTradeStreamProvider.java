@@ -11,10 +11,14 @@ import java.util.Map;
 @ApplicationScoped
 public class KrakenTradeStreamProvider extends AbstractExchangeStreamProvider {
 
-    private static final Map<String, String> SYMBOL_MAP = Map.of(
-            "BTC/USD", "BTCUSDT", "ETH/USD", "ETHUSDT", "SOL/USD", "SOLUSDT",
-            "XRP/USD", "XRPUSDT", "ADA/USD", "ADAUSDT", "AVAX/USD", "AVAXUSDT",
-            "DOT/USD", "DOTUSDT", "LINK/USD", "LINKUSDT", "DOGE/USD", "DOGEUSDT"
+    private static final Map<String, String> SYMBOL_MAP = Map.ofEntries(
+            Map.entry("BTC/USD", "BTCUSDT"), Map.entry("ETH/USD", "ETHUSDT"),
+            Map.entry("XRP/USD", "XRPUSDT"), Map.entry("BNB/USD", "BNBUSDT"),
+            Map.entry("SOL/USD", "SOLUSDT"), Map.entry("TRX/USD", "TRXUSDT"),
+            Map.entry("DOGE/USD", "DOGEUSDT"), Map.entry("BCH/USD", "BCHUSDT"),
+            Map.entry("ADA/USD", "ADAUSDT"), Map.entry("LINK/USD", "LINKUSDT"),
+            Map.entry("XMR/USD", "XMRUSDT"), Map.entry("XLM/USD", "XLMUSDT"),
+            Map.entry("LTC/USD", "LTCUSDT"), Map.entry("ZEC/USD", "ZECUSDT")
     );
 
     @Override
@@ -30,7 +34,7 @@ public class KrakenTradeStreamProvider extends AbstractExchangeStreamProvider {
     @Override
     protected String getSubscribeMessage() {
         return """
-                {"method":"subscribe","params":{"channel":"trade","symbol":["BTC/USD","ETH/USD","SOL/USD","XRP/USD","ADA/USD","AVAX/USD","DOT/USD","LINK/USD","DOGE/USD"]}}""";
+                {"method":"subscribe","params":{"channel":"trade","symbol":["BTC/USD","ETH/USD","XRP/USD","BNB/USD","SOL/USD","TRX/USD","DOGE/USD","BCH/USD","ADA/USD","LINK/USD","XMR/USD","XLM/USD","LTC/USD","ZEC/USD"]}}""";
     }
 
     @Override

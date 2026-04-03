@@ -34,14 +34,18 @@ public class WhaleAlertProvider {
     private static final Map<String, String> SYMBOL_MAP = Map.ofEntries(
             Map.entry("btc", "BTCUSDT"),
             Map.entry("eth", "ETHUSDT"),
-            Map.entry("sol", "SOLUSDT"),
             Map.entry("xrp", "XRPUSDT"),
-            Map.entry("ada", "ADAUSDT"),
-            Map.entry("doge", "DOGEUSDT"),
             Map.entry("bnb", "BNBUSDT"),
-            Map.entry("dot", "DOTUSDT"),
+            Map.entry("sol", "SOLUSDT"),
+            Map.entry("trx", "TRXUSDT"),
+            Map.entry("doge", "DOGEUSDT"),
+            Map.entry("bch", "BCHUSDT"),
+            Map.entry("ada", "ADAUSDT"),
             Map.entry("link", "LINKUSDT"),
-            Map.entry("avax", "AVAXUSDT"),
+            Map.entry("xmr", "XMRUSDT"),
+            Map.entry("xlm", "XLMUSDT"),
+            Map.entry("ltc", "LTCUSDT"),
+            Map.entry("zec", "ZECUSDT"),
             // Stablecoins — map to BTCUSDT for general whale activity tracking
             Map.entry("usdt", "BTCUSDT"),
             Map.entry("usdc", "ETHUSDT")
