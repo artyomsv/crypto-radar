@@ -29,6 +29,7 @@ public class BinanceRateLimiter {
     private final AtomicLong windowStart = new AtomicLong(System.currentTimeMillis());
     private final AtomicLong lastRequestTime = new AtomicLong(0);
     private final Semaphore concurrencyLimit = new Semaphore(3);
+    private final Object lock = new Object();
 
     private volatile int backoffMs = 0;
 
@@ -42,38 +43,40 @@ public class BinanceRateLimiter {
         try {
             concurrencyLimit.acquire();
 
-            // Apply backoff if we got a 429 recently
-            if (backoffMs > 0) {
-                LOG.warnf("Rate limit backoff: waiting %dms", backoffMs);
-                Thread.sleep(backoffMs);
-            }
+            synchronized (lock) {
+                // Apply backoff if we got a 429 recently
+                if (backoffMs > 0) {
+                    LOG.warnf("Rate limit backoff: waiting %dms", backoffMs);
+                    Thread.sleep(backoffMs);
+                }
 
-            // Check and reset the weight window
-            long now = System.currentTimeMillis();
-            long elapsed = now - windowStart.get();
-            if (elapsed >= MINUTE_MS) {
-                usedWeight.set(0);
-                windowStart.set(now);
-            }
+                // Check and reset the weight window
+                long now = System.currentTimeMillis();
+                long elapsed = now - windowStart.get();
+                if (elapsed >= MINUTE_MS) {
+                    usedWeight.set(0);
+                    windowStart.set(now);
+                }
 
-            // If we'd exceed the budget, wait for the window to reset
-            if (usedWeight.get() + weight > MAX_WEIGHT_PER_MINUTE) {
-                long sleepMs = MINUTE_MS - elapsed + 1000;
-                LOG.infof("Rate limit budget exhausted (%d/%d). Sleeping %dms for window reset.",
-                        usedWeight.get(), MAX_WEIGHT_PER_MINUTE, sleepMs);
-                Thread.sleep(sleepMs);
-                usedWeight.set(0);
-                windowStart.set(System.currentTimeMillis());
-            }
+                // If we'd exceed the budget, wait for the window to reset
+                if (usedWeight.get() + weight > MAX_WEIGHT_PER_MINUTE) {
+                    long sleepMs = MINUTE_MS - elapsed + 1000;
+                    LOG.infof("Rate limit budget exhausted (%d/%d). Sleeping %dms for window reset.",
+                            usedWeight.get(), MAX_WEIGHT_PER_MINUTE, sleepMs);
+                    Thread.sleep(sleepMs);
+                    usedWeight.set(0);
+                    windowStart.set(System.currentTimeMillis());
+                }
 
-            // Enforce minimum delay between requests
-            long timeSinceLast = System.currentTimeMillis() - lastRequestTime.get();
-            if (timeSinceLast < MIN_DELAY_BETWEEN_REQUESTS_MS) {
-                Thread.sleep(MIN_DELAY_BETWEEN_REQUESTS_MS - timeSinceLast);
-            }
+                // Enforce minimum delay between requests
+                long timeSinceLast = System.currentTimeMillis() - lastRequestTime.get();
+                if (timeSinceLast < MIN_DELAY_BETWEEN_REQUESTS_MS) {
+                    Thread.sleep(MIN_DELAY_BETWEEN_REQUESTS_MS - timeSinceLast);
+                }
 
-            usedWeight.addAndGet(weight);
-            lastRequestTime.set(System.currentTimeMillis());
+                usedWeight.addAndGet(weight);
+                lastRequestTime.set(System.currentTimeMillis());
+            }
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

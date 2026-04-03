@@ -153,30 +153,57 @@ public class MarketDataService {
     }
 
     private void upsertCandles(List<Candle> candles) {
-        for (Candle candle : candles) {
-            entityManager.createNativeQuery("""
-                INSERT INTO candles (time, symbol, interval, open, high, low, close, volume, quote_volume, trade_count)
-                VALUES (:time, :symbol, :interval, :open, :high, :low, :close, :volume, :quoteVolume, :tradeCount)
-                ON CONFLICT (time, symbol, interval) DO UPDATE SET
-                    open = EXCLUDED.open,
-                    high = EXCLUDED.high,
-                    low = EXCLUDED.low,
-                    close = EXCLUDED.close,
-                    volume = EXCLUDED.volume,
-                    quote_volume = EXCLUDED.quote_volume,
-                    trade_count = EXCLUDED.trade_count
-                """)
-                    .setParameter("time", candle.getTime())
-                    .setParameter("symbol", candle.getSymbol())
-                    .setParameter("interval", candle.getInterval())
-                    .setParameter("open", candle.getOpen())
-                    .setParameter("high", candle.getHigh())
-                    .setParameter("low", candle.getLow())
-                    .setParameter("close", candle.getClose())
-                    .setParameter("volume", candle.getVolume())
-                    .setParameter("quoteVolume", candle.getQuoteVolume())
-                    .setParameter("tradeCount", candle.getTradeCount())
-                    .executeUpdate();
+        if (candles.isEmpty()) return;
+        String sql = """
+            INSERT INTO candles (time, symbol, interval, open, high, low, close, volume, quote_volume, trade_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (time, symbol, interval) DO UPDATE SET
+                open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
+                close = EXCLUDED.close, volume = EXCLUDED.volume,
+                quote_volume = EXCLUDED.quote_volume, trade_count = EXCLUDED.trade_count
+            """;
+        try {
+            // Use raw JDBC for batch — EntityManager doesn't support batch natively
+            var conn = entityManager.unwrap(java.sql.Connection.class);
+            try (var stmt = conn.prepareStatement(sql)) {
+                for (Candle candle : candles) {
+                    stmt.setObject(1, java.sql.Timestamp.from(candle.getTime()));
+                    stmt.setString(2, candle.getSymbol());
+                    stmt.setString(3, candle.getInterval());
+                    stmt.setDouble(4, candle.getOpen());
+                    stmt.setDouble(5, candle.getHigh());
+                    stmt.setDouble(6, candle.getLow());
+                    stmt.setDouble(7, candle.getClose());
+                    stmt.setDouble(8, candle.getVolume());
+                    stmt.setDouble(9, candle.getQuoteVolume());
+                    stmt.setInt(10, candle.getTradeCount());
+                    stmt.addBatch();
+                }
+                stmt.executeBatch();
+            }
+        } catch (Exception e) {
+            LOG.warnf("Batch upsert failed, falling back to individual inserts: %s", e.getMessage());
+            for (Candle candle : candles) {
+                entityManager.createNativeQuery("""
+                    INSERT INTO candles (time, symbol, interval, open, high, low, close, volume, quote_volume, trade_count)
+                    VALUES (:time, :symbol, :interval, :open, :high, :low, :close, :volume, :quoteVolume, :tradeCount)
+                    ON CONFLICT (time, symbol, interval) DO UPDATE SET
+                        open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
+                        close = EXCLUDED.close, volume = EXCLUDED.volume,
+                        quote_volume = EXCLUDED.quote_volume, trade_count = EXCLUDED.trade_count
+                    """)
+                        .setParameter("time", candle.getTime())
+                        .setParameter("symbol", candle.getSymbol())
+                        .setParameter("interval", candle.getInterval())
+                        .setParameter("open", candle.getOpen())
+                        .setParameter("high", candle.getHigh())
+                        .setParameter("low", candle.getLow())
+                        .setParameter("close", candle.getClose())
+                        .setParameter("volume", candle.getVolume())
+                        .setParameter("quoteVolume", candle.getQuoteVolume())
+                        .setParameter("tradeCount", candle.getTradeCount())
+                        .executeUpdate();
+            }
         }
     }
 }

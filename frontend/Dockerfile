@@ -10,7 +10,8 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Serve with nginx
-FROM nginx:alpine
+# Pin nginx version for reproducible builds
+FROM nginx:1.27-alpine
 
 # Remove default config
 RUN rm /etc/nginx/conf.d/default.conf

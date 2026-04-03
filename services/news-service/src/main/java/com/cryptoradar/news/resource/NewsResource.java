@@ -34,17 +34,19 @@ public class NewsResource {
     public List<NewsArticle> getNews(
             @QueryParam("symbol") String symbol,
             @QueryParam("limit") @DefaultValue("20") int limit) {
+        int clampedLimit = Math.min(Math.max(1, limit), 500);
         if (symbol != null && !symbol.isBlank()) {
-            return newsService.getNewsBySymbol(symbol, limit);
+            return newsService.getNewsBySymbol(symbol, clampedLimit);
         }
-        return newsService.getLatestNews(limit);
+        return newsService.getLatestNews(clampedLimit);
     }
 
     @GET
     @Path("/latest")
     public List<NewsArticle> getLatestNews(
             @QueryParam("limit") @DefaultValue("20") int limit) {
-        return newsService.getLatestNews(limit);
+        int clampedLimit = Math.min(Math.max(1, limit), 500);
+        return newsService.getLatestNews(clampedLimit);
     }
 
     @GET

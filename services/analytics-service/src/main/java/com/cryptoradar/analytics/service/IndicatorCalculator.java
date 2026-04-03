@@ -241,7 +241,7 @@ public class IndicatorCalculator {
 
         int lookback = 2;
         double currentClose = closes.get(size - 1);
-        double support = Double.MIN_VALUE;
+        double support = -Double.MAX_VALUE;
         double resistance = Double.MAX_VALUE;
 
         // Find swing lows (support) and swing highs (resistance)
@@ -270,7 +270,7 @@ public class IndicatorCalculator {
         }
 
         // Fallback if no swing points found
-        if (support == Double.MIN_VALUE) {
+        if (support == -Double.MAX_VALUE) {
             support = findRecentMin(lows, Math.max(0, size - 50), size);
         }
         if (resistance == Double.MAX_VALUE) {
@@ -291,7 +291,7 @@ public class IndicatorCalculator {
     }
 
     private double findRecentMax(List<Double> values, int from, int to) {
-        double max = Double.MIN_VALUE;
+        double max = -Double.MAX_VALUE;
         for (int i = from; i < to; i++) {
             if (values.get(i) > max) {
                 max = values.get(i);

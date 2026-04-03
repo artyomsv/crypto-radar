@@ -55,6 +55,10 @@ public class BinanceClient {
     @ConfigProperty(name = "binance.api.base-url")
     String baseUrl;
 
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
     @ConfigProperty(name = "binance.api.klines-path")
     String klinesPath;
 

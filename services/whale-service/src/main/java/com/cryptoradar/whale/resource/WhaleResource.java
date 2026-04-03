@@ -19,10 +19,14 @@ import jakarta.ws.rs.core.MediaType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Path("/api/whales")
 @Produces(MediaType.APPLICATION_JSON)
 public class WhaleResource {
+
+    private static final Set<String> VALID_WINDOWS = Set.of("1h", "4h", "24h");
+    private static final Set<String> VALID_PERIODS = Set.of("1d", "1w", "2w", "1m", "3m", "6m", "1y");
 
     private final WhaleFlowService flowService;
     private final WhaleAnalyticsService analyticsService;
@@ -45,10 +49,14 @@ public class WhaleResource {
             @QueryParam("symbol") String symbol,
             @QueryParam("limit") @DefaultValue("50") int limit,
             @QueryParam("period") @DefaultValue("1d") String period) {
-        if (symbol != null && !symbol.isBlank()) {
-            return flowService.getRecentTransactions(symbol.toUpperCase(), limit, period);
+        int clampedLimit = Math.min(Math.max(1, limit), 500);
+        if (!VALID_PERIODS.contains(period)) {
+            period = "1d";
         }
-        return flowService.getAllRecentTransactions(limit, period);
+        if (symbol != null && !symbol.isBlank()) {
+            return flowService.getRecentTransactions(symbol.toUpperCase(), clampedLimit, period);
+        }
+        return flowService.getAllRecentTransactions(clampedLimit, period);
     }
 
     @GET
@@ -56,6 +64,9 @@ public class WhaleResource {
     public List<WhaleFlowSummary> getFlowSummary(
             @PathParam("symbol") String symbol,
             @QueryParam("window") @DefaultValue("1h") String window) {
+        if (!VALID_WINDOWS.contains(window)) {
+            return List.of();
+        }
         return flowService.getFlowSummary(symbol.toUpperCase(), window);
     }
 

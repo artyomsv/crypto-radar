@@ -57,10 +57,11 @@ public class MarketDataResource {
     private static final HttpClient SEARCH_HTTP_CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
-    private static final ObjectMapper SEARCH_OBJECT_MAPPER = new ObjectMapper();
-
     @Inject
     MarketDataService marketDataService;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     @Inject
     BackfillService backfillService;
@@ -432,12 +433,12 @@ public class MarketDataResource {
         List<Map<String, Object>> results = new ArrayList<>();
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.binance.com/api/v3/ticker/price"))
+                    .uri(URI.create(binanceClient.getBaseUrl() + "/api/v3/ticker/price"))
                     .timeout(Duration.ofSeconds(10))
                     .GET().build();
             HttpResponse<String> response = SEARCH_HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
-                JsonNode root = SEARCH_OBJECT_MAPPER.readTree(response.body());
+                JsonNode root = objectMapper.readTree(response.body());
                 for (JsonNode node : root) {
                     String sym = node.get("symbol").asText();
                     if (sym.endsWith("USDT") && sym.contains(q)) {

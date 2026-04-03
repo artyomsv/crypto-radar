@@ -97,7 +97,7 @@ public class WhaleAlertProvider {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                LOG.warnf("Whale Alert API returned status %d: %s", response.statusCode(), response.body());
+                LOG.warnf("Whale Alert API returned status %d", response.statusCode());
                 return List.of();
             }
 

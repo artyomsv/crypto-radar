@@ -84,8 +84,9 @@ public class NewsArticle extends PanacheEntity {
     }
 
     public static List<NewsArticle> findBySymbol(String symbol, int limit) {
-        return find("relatedSymbolsRaw LIKE ?1 ORDER BY publishedAt DESC",
-                "%" + symbol + "%"
+        String escaped = symbol.replace("%", "\\%").replace("_", "\\_");
+        return find("relatedSymbolsRaw LIKE ?1 ESCAPE '\\' ORDER BY publishedAt DESC",
+                "%" + escaped + "%"
         ).page(0, limit).list();
     }
 

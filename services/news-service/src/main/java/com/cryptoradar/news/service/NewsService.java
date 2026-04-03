@@ -89,10 +89,10 @@ public class NewsService {
 
         @SuppressWarnings("unchecked")
         List<NewsArticle> recentArticles = entityManager.createQuery(
-                        "SELECT n FROM NewsArticle n WHERE n.relatedSymbolsRaw LIKE :symbol " +
+                        "SELECT n FROM NewsArticle n WHERE n.relatedSymbolsRaw LIKE :symbol ESCAPE '\\' " +
                                 "AND n.publishedAt >= :since ORDER BY n.publishedAt DESC"
                 )
-                .setParameter("symbol", "%" + upperSymbol + "%")
+                .setParameter("symbol", "%" + upperSymbol.replace("%", "\\%").replace("_", "\\_") + "%")
                 .setParameter("since", sevenDaysAgo)
                 .getResultList();
 

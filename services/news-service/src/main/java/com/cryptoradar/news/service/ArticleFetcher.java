@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,7 +38,30 @@ public class ArticleFetcher {
     private static final Pattern HTML_TAGS = Pattern.compile("<[^>]+>");
     private static final Pattern MULTI_SPACE = Pattern.compile("\\s+");
 
+    private static final Set<String> ALLOWED_DOMAINS = Set.of(
+            "cointelegraph.com", "decrypt.co", "coindesk.com", "theblock.co",
+            "bitcoinmagazine.com", "coinpaper.com", "cryptoslate.com",
+            "bitcoinist.com", "newsbtc.com", "cryptopotato.com",
+            "ambcrypto.com", "cryptonews.com", "finbold.com",
+            "cryptopolitan.com", "bitcoin.com", "coingape.com",
+            "timestabloid.com", "cointurk.com", "cryptodaily.co.uk"
+    );
+
     public Map<String, Object> fetchArticle(String url) {
+        try {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            if (!"https".equals(scheme) && !"http".equals(scheme)) {
+                return Map.of("error", "Only HTTP/HTTPS URLs are allowed");
+            }
+            String host = uri.getHost();
+            if (host == null || ALLOWED_DOMAINS.stream().noneMatch(d -> host.endsWith(d))) {
+                return Map.of("error", "Domain not in allowlist");
+            }
+        } catch (Exception e) {
+            return Map.of("error", "Invalid URL");
+        }
+
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -58,7 +82,7 @@ public class ArticleFetcher {
 
         } catch (Exception e) {
             LOG.warnf("Failed to fetch article from %s: %s", url, e.getMessage());
-            return Map.of("error", "Failed to fetch article: " + e.getMessage());
+            return Map.of("error", "Failed to fetch article");
         }
     }
 
