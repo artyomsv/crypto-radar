@@ -10,12 +10,12 @@ interface PriceCardProps {
   analysis?: MarketAnalysis;
 }
 
-const TREND_SHORT: Record<string, string> = {
-  STRONG_BULLISH: 'Strong Bull',
-  BULLISH: 'Bullish',
-  NEUTRAL: 'Neutral',
-  BEARISH: 'Bearish',
-  STRONG_BEARISH: 'Strong Bear',
+const TREND_CONFIG: Record<string, { label: string; icon: string }> = {
+  STRONG_BULLISH: { label: 'Strong Bull', icon: '\u{1F402}' },  // 🐂
+  BULLISH:        { label: 'Bullish',     icon: '\u{1F402}' },  // 🐂
+  NEUTRAL:        { label: 'Neutral',     icon: '\u{1F9AD}' },  // 🦭
+  BEARISH:        { label: 'Bearish',     icon: '\u{1F43B}' },  // 🐻
+  STRONG_BEARISH: { label: 'Strong Bear', icon: '\u{1F43B}' },  // 🐻
 };
 
 export function PriceCard({ data, flash, analysis }: PriceCardProps) {
@@ -55,9 +55,10 @@ export function PriceCard({ data, flash, analysis }: PriceCardProps) {
 
       <div className="flex items-center justify-between text-xs text-text-secondary">
         <span>Vol {formatLargeNumber(data.volume24h)}</span>
-        {trend && (
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${getTrendBadgeColor(trend)}`}>
-            {TREND_SHORT[trend] || trend}
+        {trend && TREND_CONFIG[trend] && (
+          <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${getTrendBadgeColor(trend)}`}>
+            <span className="text-sm leading-none">{TREND_CONFIG[trend].icon}</span>
+            {TREND_CONFIG[trend].label}
           </span>
         )}
       </div>
