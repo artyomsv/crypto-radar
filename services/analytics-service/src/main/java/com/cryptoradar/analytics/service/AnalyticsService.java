@@ -33,16 +33,19 @@ public class AnalyticsService {
     private final IndicatorCalculator calculator;
     private final AgroalDataSource dataSource;
     private final NewsServiceClient newsClient;
+    private final FearGreedClient fearGreedClient;
 
     private final ConcurrentHashMap<String, CachedEntry<MarketAnalysis>> analysisCache = new ConcurrentHashMap<>();
     private volatile CachedEntry<MarketOverview> overviewCache;
 
     public AnalyticsService(IndicatorCalculator calculator,
                             AgroalDataSource dataSource,
-                            @RestClient NewsServiceClient newsClient) {
+                            @RestClient NewsServiceClient newsClient,
+                            FearGreedClient fearGreedClient) {
         this.calculator = calculator;
         this.dataSource = dataSource;
         this.newsClient = newsClient;
+        this.fearGreedClient = fearGreedClient;
     }
 
     public MarketAnalysis computeAnalysis(String symbol) {
@@ -118,10 +121,15 @@ public class AnalyticsService {
             }
         }
 
-        // Fear/Greed: map average score (-100..+100) to index (0..100)
+        // Technical Score: map average analysis score (-100..+100) to 0..100
         double avgScore = analyses.isEmpty() ? 0.0 : totalScore / analyses.size();
-        int fearGreedIndex = (int) Math.round((avgScore + 100.0) / 2.0);
-        fearGreedIndex = Math.max(0, Math.min(100, fearGreedIndex));
+        int technicalScore = (int) Math.round((avgScore + 100.0) / 2.0);
+        technicalScore = Math.max(0, Math.min(100, technicalScore));
+        String technicalLabel = labelForScore(technicalScore);
+
+        // Real Fear & Greed Index from alternative.me
+        int realFearGreed = fearGreedClient.getIndex();
+        String realFearGreedLabel = fearGreedClient.getLabel();
 
         String topGainer = analyses.stream()
                 .max(Comparator.comparingDouble(MarketAnalysis::getOverallScore))
@@ -137,7 +145,10 @@ public class AnalyticsService {
         MarketOverview overview = new MarketOverview();
         overview.setTimestamp(Instant.now());
         overview.setMarketSentiment(marketSentiment);
-        overview.setFearGreedIndex(fearGreedIndex);
+        overview.setTechnicalScore(technicalScore);
+        overview.setTechnicalScoreLabel(technicalLabel);
+        overview.setFearGreedIndex(realFearGreed >= 0 ? realFearGreed : null);
+        overview.setFearGreedLabel(realFearGreedLabel);
         overview.setBullishCount(bullish);
         overview.setBearishCount(bearish);
         overview.setNeutralCount(neutral);
@@ -347,6 +358,14 @@ public class AnalyticsService {
         double position = (ind.getEma12() - ind.getBollingerLower()) / bandWidth;
         // Invert: 0 (at lower) = +100 (bullish), 1 (at upper) = -100 (bearish)
         return (0.5 - position) * 200.0;
+    }
+
+    private String labelForScore(int score) {
+        if (score >= 75) return "Strong Bullish";
+        if (score >= 60) return "Bullish";
+        if (score >= 40) return "Neutral";
+        if (score >= 25) return "Bearish";
+        return "Strong Bearish";
     }
 
     private String determineTrendDirection(double score) {

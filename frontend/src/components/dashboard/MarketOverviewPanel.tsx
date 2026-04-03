@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Minus, BarChart3, Gauge } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, BarChart3, Gauge, Activity } from 'lucide-react';
 import type { MarketOverview } from '@/types';
 import { SYMBOL_NAMES } from '@/types';
 
@@ -6,20 +6,17 @@ interface MarketOverviewPanelProps {
   overview: MarketOverview;
 }
 
-export function MarketOverviewPanel({ overview }: MarketOverviewPanelProps) {
-  const sentimentColor = overview.fearGreedIndex >= 60
-    ? 'text-gain'
-    : overview.fearGreedIndex >= 40
-      ? 'text-yellow-400'
-      : 'text-loss';
+function scoreColor(value: number): string {
+  if (value >= 60) return 'text-gain';
+  if (value >= 40) return 'text-yellow-400';
+  return 'text-loss';
+}
 
-  const sentimentLabel = overview.marketSentiment || (
-    overview.fearGreedIndex >= 75 ? 'Extreme Greed'
-      : overview.fearGreedIndex >= 60 ? 'Greed'
-        : overview.fearGreedIndex >= 40 ? 'Neutral'
-          : overview.fearGreedIndex >= 25 ? 'Fear'
-            : 'Extreme Fear'
-  );
+export function MarketOverviewPanel({ overview }: MarketOverviewPanelProps) {
+  const fgIndex = overview.fearGreedIndex ?? 0;
+  const fgLabel = overview.fearGreedLabel || 'N/A';
+  const techScore = overview.technicalScore ?? 50;
+  const techLabel = overview.technicalScoreLabel || 'Neutral';
 
   return (
     <section className="glass-card p-5">
@@ -28,16 +25,27 @@ export function MarketOverviewPanel({ overview }: MarketOverviewPanelProps) {
         <h2 className="text-lg font-semibold text-text-primary">Market Overview</h2>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        {/* Fear & Greed */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+        {/* Real Fear & Greed Index */}
         <div className="space-y-1">
           <p className="text-xs text-text-secondary flex items-center gap-1">
             <Gauge className="h-3 w-3" /> Fear & Greed
           </p>
-          <p className={`text-2xl font-bold font-mono ${sentimentColor}`}>
-            {overview.fearGreedIndex}
+          <p className={`text-2xl font-bold font-mono ${scoreColor(fgIndex)}`}>
+            {fgIndex}
           </p>
-          <p className={`text-xs font-medium ${sentimentColor}`}>{sentimentLabel}</p>
+          <p className={`text-xs font-medium ${scoreColor(fgIndex)}`}>{fgLabel}</p>
+        </div>
+
+        {/* Our Technical Score */}
+        <div className="space-y-1">
+          <p className="text-xs text-text-secondary flex items-center gap-1">
+            <Activity className="h-3 w-3" /> Technical Score
+          </p>
+          <p className={`text-2xl font-bold font-mono ${scoreColor(techScore)}`}>
+            {techScore}
+          </p>
+          <p className={`text-xs font-medium ${scoreColor(techScore)}`}>{techLabel}</p>
         </div>
 
         {/* Bullish */}

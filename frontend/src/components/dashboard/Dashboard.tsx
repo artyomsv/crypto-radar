@@ -50,9 +50,11 @@ export function Dashboard() {
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {data.prices.map((price) => (
-            <PriceCard key={price.symbol} data={price} flash={priceFlash[price.symbol]} />
-          ))}
+          {[...data.prices]
+            .sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0))
+            .map((price) => (
+              <PriceCard key={price.symbol} data={price} flash={priceFlash[price.symbol]} />
+            ))}
         </div>
       </section>
 

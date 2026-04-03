@@ -60,7 +60,10 @@ export interface MarketAnalysis {
 export interface MarketOverview {
   timestamp: string;
   marketSentiment: string;
+  technicalScore: number;
+  technicalScoreLabel: string;
   fearGreedIndex: number;
+  fearGreedLabel: string;
   bullishCount: number;
   bearishCount: number;
   neutralCount: number;
