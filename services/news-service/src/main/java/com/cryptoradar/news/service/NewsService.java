@@ -1,6 +1,6 @@
 package com.cryptoradar.news.service;
 
-import com.cryptoradar.news.client.CryptoCompareClient;
+import com.cryptoradar.news.client.CryptoNewsClient;
 import com.cryptoradar.news.event.RedisEventPublisher;
 import com.cryptoradar.news.model.DailySentiment;
 import com.cryptoradar.news.model.NewsArticle;
@@ -23,7 +23,7 @@ public class NewsService {
     private static final Logger LOG = Logger.getLogger(NewsService.class);
 
     @Inject
-    CryptoCompareClient cryptoCompareClient;
+    CryptoNewsClient cryptoNewsClient;
 
     @Inject
     SentimentAnalyzer sentimentAnalyzer;
@@ -36,7 +36,7 @@ public class NewsService {
 
     @Transactional
     public int fetchAndStoreNews() {
-        List<NewsArticle> fetched = cryptoCompareClient.fetchLatestNews();
+        List<NewsArticle> fetched = cryptoNewsClient.fetchLatestNews();
         List<NewsArticle> newArticles = new ArrayList<>();
 
         for (NewsArticle article : fetched) {
