@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -76,6 +76,77 @@ export const api = {
   getLiquidationMap: (symbol: string) => fetchJson<any>(`/api/derivatives/liquidation-map/${symbol}`),
   searchSymbols: (q: string) => fetchJson<any[]>(`/api/market/config/search?q=${encodeURIComponent(q)}`),
   getBackfillConfig: () => fetchJson<any[]>('/api/market/config/backfill'),
+  getAlerts: () => fetchJson<PriceAlert[]>('/api/alerts'),
+  createAlert: async (symbol: string, condition: string, targetPrice: number, note?: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, condition, targetPrice, note: note || null })
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to create alert:', error);
+      return { error: 'Request failed' };
+    }
+  },
+  deleteAlert: async (id: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts/${id}`, { method: 'DELETE' });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to delete alert:', error);
+      return { error: 'Request failed' };
+    }
+  },
+  getCorrelationMatrix: (interval = '1h', days = 30) =>
+    fetchJson<CorrelationMatrix>(`/api/analytics/correlation?interval=${interval}&days=${days}`),
+  getVolatilityMetrics: () => fetchJson<VolatilityMetric[]>('/api/analytics/volatility'),
+  getOrderBookDepth: (symbol: string) => fetchJson<OrderBookDepth>(`/api/market/depth/${symbol}`),
+  getPortfolio: () => fetchJson<PortfolioPosition[]>('/api/portfolio'),
+  addPosition: async (pos: { symbol: string; entryPrice: number; quantity: number; side: string; note?: string }) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/portfolio`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pos)
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to add position:', error);
+      return { error: 'Request failed' };
+    }
+  },
+  closePosition: async (id: number, closePrice: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/portfolio/${id}/close`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ closePrice })
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to close position:', error);
+      return { error: 'Request failed' };
+    }
+  },
+  deletePosition: async (id: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/portfolio/${id}`, { method: 'DELETE' });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to delete position:', error);
+      return { error: 'Request failed' };
+    }
+  },
+  getMacroOverview: () => fetchJson<MacroOverview>('/api/analytics/macro'),
+  getExportUrl: (symbol: string, interval: string, from?: string, to?: string) => {
+    let url = `${API_BASE}/api/market/export/${symbol}?interval=${interval}`;
+    if (from) url += `&from=${from}`;
+    if (to) url += `&to=${to}`;
+    return url;
+  },
+  getWhaleExportUrl: (period: string) =>
+    `${API_BASE}/api/whales/export?period=${period}`,
+  getLiquidationExportUrl: () =>
+    `${API_BASE}/api/derivatives/export/liquidations`,
   updateBackfillDepth: async (interval: string, depthDays: number) => {
     try {
       const res = await fetch(`${API_BASE}/api/market/config/backfill/${interval}`, {

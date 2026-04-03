@@ -1,9 +1,11 @@
 package com.cryptoradar.analytics.resource;
 
+import com.cryptoradar.analytics.model.MacroOverview;
 import com.cryptoradar.analytics.model.MarketAnalysis;
 import com.cryptoradar.analytics.model.MarketOverview;
 import com.cryptoradar.analytics.model.TechnicalIndicators;
 import com.cryptoradar.analytics.service.AnalyticsService;
+import com.cryptoradar.analytics.service.MacroService;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -15,9 +17,11 @@ import jakarta.ws.rs.core.MediaType;
 public class AnalyticsResource {
 
     private final AnalyticsService analyticsService;
+    private final MacroService macroService;
 
-    public AnalyticsResource(AnalyticsService analyticsService) {
+    public AnalyticsResource(AnalyticsService analyticsService, MacroService macroService) {
         this.analyticsService = analyticsService;
+        this.macroService = macroService;
     }
 
     @GET
@@ -37,5 +41,11 @@ public class AnalyticsResource {
     @Path("/market-overview")
     public MarketOverview getMarketOverview() {
         return analyticsService.getMarketOverview();
+    }
+
+    @GET
+    @Path("/macro")
+    public MacroOverview getMacroOverview() {
+        return macroService.getMacroOverview();
     }
 }

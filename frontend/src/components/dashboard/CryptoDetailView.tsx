@@ -1,12 +1,14 @@
 import { useParams, Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Loader2, TrendingUp, TrendingDown, BarChart3, Activity, Target } from 'lucide-react';
+import { ArrowLeft, Loader2, TrendingUp, TrendingDown, BarChart3, Activity, Target, Bell } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { formatPrice, formatPercent, formatLargeNumber, getTrendBadgeColor, getScoreColor } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import type { CryptoDetail } from '@/types';
 import { NewsFeed } from './NewsFeed';
+import { AddAlertForm } from './AddAlertForm';
+import { DepthChart } from './DepthChart';
 
 const INTERVALS = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
 const INTERVAL_LABELS: Record<string, string> = {
@@ -28,6 +30,7 @@ export function CryptoDetailView() {
   const [chartCandles, setChartCandles] = useState<any[]>([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [priceFlash, setPriceFlash] = useState<'up' | 'down' | null>(null);
+  const [showAlertForm, setShowAlertForm] = useState(false);
   const prevPrice = useRef<number | null>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
@@ -284,6 +287,27 @@ export function CryptoDetailView() {
               {formatPercent(priceData.priceChangePct24h)}
             </p>
           </div>
+          <div className="relative">
+            <button
+              onClick={() => setShowAlertForm(!showAlertForm)}
+              className={`p-2 rounded-lg transition-colors ${
+                showAlertForm
+                  ? 'bg-accent text-background'
+                  : 'bg-surface-light text-text-secondary hover:text-accent hover:bg-surface-light/80 border border-surface-border'
+              }`}
+              title="Add Price Alert"
+            >
+              <Bell className="h-4 w-4" />
+            </button>
+            {showAlertForm && (
+              <AddAlertForm
+                symbol={symbol}
+                currentPrice={livePrice ?? priceData.price}
+                onClose={() => setShowAlertForm(false)}
+                onCreated={() => setShowAlertForm(false)}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -312,6 +336,9 @@ export function CryptoDetailView() {
         </div>
         <div ref={chartContainerRef} className="w-full" />
       </div>
+
+      {/* Order Book Depth */}
+      <DepthChart symbol={symbol} />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

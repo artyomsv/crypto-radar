@@ -139,3 +139,32 @@ ALTER TABLE price_snapshots SET (
 -- Auto-compress data older than 7 days
 SELECT add_compression_policy('candles', INTERVAL '7 days', if_not_exists => TRUE);
 SELECT add_compression_policy('price_snapshots', INTERVAL '7 days', if_not_exists => TRUE);
+
+-- Price alerts
+CREATE TABLE IF NOT EXISTS price_alerts (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(20) NOT NULL,
+    condition VARCHAR(10) NOT NULL,  -- 'ABOVE' or 'BELOW'
+    target_price DOUBLE PRECISION NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    is_triggered BOOLEAN DEFAULT false,
+    triggered_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    note VARCHAR(255)
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_active ON price_alerts (is_active, symbol);
+
+-- Portfolio positions
+CREATE TABLE IF NOT EXISTS portfolio_positions (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(20) NOT NULL,
+    entry_price DOUBLE PRECISION NOT NULL,
+    quantity DOUBLE PRECISION NOT NULL,
+    side VARCHAR(10) NOT NULL DEFAULT 'LONG',
+    note VARCHAR(255),
+    opened_at TIMESTAMPTZ DEFAULT NOW(),
+    is_open BOOLEAN DEFAULT true,
+    closed_at TIMESTAMPTZ,
+    close_price DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_open ON portfolio_positions (is_open, symbol);

@@ -3,6 +3,8 @@ import { Settings, Search, Plus, Trash2, Loader2, Power, PowerOff, ArrowLeft, Ch
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { formatPrice, formatLargeNumber } from '@/lib/utils';
+import { AlertsManager } from './AlertsManager';
+import { DataExport } from './DataExport';
 
 interface CandleStat {
   interval: string;
@@ -116,6 +118,12 @@ export function CryptoConfig() {
           </div>
         </div>
       </div>
+
+      {/* Price Alerts */}
+      <AlertsManager />
+
+      {/* Data Export */}
+      <DataExport />
 
       {/* Search to add new */}
       <div className="glass-card p-5 space-y-3">

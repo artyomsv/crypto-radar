@@ -42,6 +42,11 @@ public class WebSocketBroadcaster {
         broadcast(message);
     }
 
+    public void broadcastAlerts(String json) {
+        String message = "{\"type\":\"alerts\",\"data\":" + json + "}";
+        broadcast(message);
+    }
+
     private void broadcast(String message) {
         connections.forEach(connection -> {
             connection.sendText(message).subscribe().with(

@@ -3,9 +3,11 @@ package com.cryptoradar.marketdata.resource;
 import com.cryptoradar.marketdata.client.BinanceClient;
 import com.cryptoradar.marketdata.model.Candle;
 import com.cryptoradar.marketdata.model.CryptoAsset;
+import com.cryptoradar.marketdata.model.OrderBookDepth;
 import com.cryptoradar.marketdata.model.PriceSnapshot;
 import com.cryptoradar.marketdata.service.BackfillService;
 import com.cryptoradar.marketdata.service.MarketDataService;
+import com.cryptoradar.marketdata.service.OrderBookService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agroal.api.AgroalDataSource;
@@ -72,6 +74,9 @@ public class MarketDataResource {
     @Inject
     BinanceClient binanceClient;
 
+    @Inject
+    OrderBookService orderBookService;
+
     @GET
     @Path("/prices")
     public List<PriceSnapshot> getLatestPrices() {
@@ -105,6 +110,17 @@ public class MarketDataResource {
     public Candle getLatestCandle(@PathParam("symbol") String symbol) {
         List<Candle> candles = marketDataService.getCandles(symbol, "1h", 1);
         return candles.isEmpty() ? null : candles.getFirst();
+    }
+
+    /** Aggregated order book depth from Binance, OKX, Bybit, and Coinbase */
+    @GET
+    @Path("/depth/{symbol}")
+    public Response getOrderBookDepth(@PathParam("symbol") String symbol) {
+        if (!SYMBOL_PATTERN.matcher(symbol.toUpperCase()).matches()) {
+            return Response.status(400).entity(Map.of("error", "Invalid symbol format")).build();
+        }
+        OrderBookDepth depth = orderBookService.getAggregatedDepth(symbol.toUpperCase());
+        return Response.ok(depth).build();
     }
 
     /** Trigger manual backfill for a specific symbol and interval */

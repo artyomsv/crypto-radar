@@ -19,6 +19,7 @@ public class RedisEventPublisher {
 
     private static final String PRICES_CHANNEL = "crypto:prices";
     private static final String CANDLES_CHANNEL = "crypto:candles";
+    private static final String ALERTS_CHANNEL = "crypto:alerts";
 
     private final ReactivePubSubCommands<String> pubSub;
 
@@ -56,6 +57,20 @@ public class RedisEventPublisher {
                     );
         } catch (Exception e) {
             LOG.errorf(e, "Failed to serialize candle update for Redis");
+        }
+    }
+
+    public void publishAlert(Map<String, Object> alert) {
+        try {
+            String json = objectMapper.writeValueAsString(alert);
+            pubSub.publish(ALERTS_CHANNEL, json)
+                    .subscribe().with(
+                            count -> LOG.infof("Published alert to %d subscribers: %s %s %.2f",
+                                    count, alert.get("symbol"), alert.get("condition"), alert.get("targetPrice")),
+                            error -> LOG.errorf(error, "Failed to publish alert to Redis")
+                    );
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to serialize alert for Redis");
         }
     }
 }

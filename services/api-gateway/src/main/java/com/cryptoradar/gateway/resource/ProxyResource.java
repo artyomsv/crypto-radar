@@ -91,6 +91,63 @@ public class ProxyResource {
         return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/market/config/search?q=" + q));
     }
 
+    // --- Order Book Depth proxy ---
+
+    @GET
+    @Path("/market/depth/{symbol}")
+    public Response getOrderBookDepth(@PathParam("symbol") String symbol) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/market/depth/" + symbol));
+    }
+
+    // --- Alerts proxies ---
+
+    @GET
+    @Path("/alerts")
+    public Response getAlerts() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/alerts"));
+    }
+
+    @POST
+    @Path("/alerts")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createAlert(String body) {
+        return proxyPost(serviceClient.getMarketDataUrl() + "/api/alerts", body);
+    }
+
+    @DELETE
+    @Path("/alerts/{id}")
+    public Response deleteAlert(@PathParam("id") int id) {
+        return proxyDelete(serviceClient.getMarketDataUrl() + "/api/alerts/" + id);
+    }
+
+    // --- Portfolio proxies ---
+
+    @GET
+    @Path("/portfolio")
+    public Response getPortfolio() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/portfolio"));
+    }
+
+    @POST
+    @Path("/portfolio")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response addPortfolioPosition(String body) {
+        return proxyPost(serviceClient.getMarketDataUrl() + "/api/portfolio", body);
+    }
+
+    @PUT
+    @Path("/portfolio/{id}/close")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response closePortfolioPosition(@PathParam("id") int id, String body) {
+        return proxyPut(serviceClient.getMarketDataUrl() + "/api/portfolio/" + id + "/close", body);
+    }
+
+    @DELETE
+    @Path("/portfolio/{id}")
+    public Response deletePortfolioPosition(@PathParam("id") int id) {
+        return proxyDelete(serviceClient.getMarketDataUrl() + "/api/portfolio/" + id);
+    }
+
     // --- News proxies ---
 
     @GET
@@ -129,6 +186,30 @@ public class ProxyResource {
     public Response getMarketOverview() {
         String result = serviceClient.getRaw(serviceClient.getAnalyticsServiceUrl() + "/api/analytics/market-overview");
         return proxyResponse(result);
+    }
+
+    @GET
+    @Path("/analytics/correlation")
+    public Response getCorrelation(
+            @QueryParam("interval") @DefaultValue("1h") String interval,
+            @QueryParam("days") @DefaultValue("30") int days) {
+        String url = serviceClient.getAnalyticsServiceUrl()
+                + "/api/analytics/correlation?interval=" + interval + "&days=" + days;
+        return proxyResponse(serviceClient.getRaw(url));
+    }
+
+    @GET
+    @Path("/analytics/volatility")
+    public Response getVolatility() {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getAnalyticsServiceUrl() + "/api/analytics/volatility"));
+    }
+
+    @GET
+    @Path("/analytics/macro")
+    public Response getMacroOverview() {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getAnalyticsServiceUrl() + "/api/analytics/macro"));
     }
 
     // --- Whale proxies ---
@@ -202,6 +283,37 @@ public class ProxyResource {
         return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/liquidation-map/" + symbol));
     }
 
+    // --- Export proxies (CSV pass-through) ---
+
+    @GET
+    @Path("/market/export/{symbol}")
+    public Response exportCandles(
+            @PathParam("symbol") String symbol,
+            @QueryParam("interval") @DefaultValue("1h") String interval,
+            @QueryParam("from") String from,
+            @QueryParam("to") String to) {
+        String url = serviceClient.getMarketDataUrl() + "/api/market/export/" + symbol
+                + "?interval=" + interval;
+        if (from != null && !from.isEmpty()) url += "&from=" + from;
+        if (to != null && !to.isEmpty()) url += "&to=" + to;
+        return proxyCsvResponse(serviceClient.getRaw(url), symbol + "_" + interval + "_candles.csv");
+    }
+
+    @GET
+    @Path("/whales/export")
+    public Response exportWhaleTransactions(
+            @QueryParam("period") @DefaultValue("1d") String period) {
+        String url = serviceClient.getWhaleServiceUrl() + "/api/whales/export?period=" + period;
+        return proxyCsvResponse(serviceClient.getRaw(url), "whale_transactions_" + period + ".csv");
+    }
+
+    @GET
+    @Path("/derivatives/export/liquidations")
+    public Response exportLiquidations() {
+        String url = serviceClient.getDerivativesServiceUrl() + "/api/derivatives/export/liquidations";
+        return proxyCsvResponse(serviceClient.getRaw(url), "liquidations_7d.csv");
+    }
+
     private Response proxyResponse(String body) {
         if (body == null) {
             return Response.status(Response.Status.BAD_GATEWAY)
@@ -209,6 +321,18 @@ public class ProxyResource {
                     .build();
         }
         return Response.ok(body).build();
+    }
+
+    private Response proxyCsvResponse(String body, String filename) {
+        if (body == null) {
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity("Upstream service unavailable")
+                    .build();
+        }
+        return Response.ok(body)
+                .header("Content-Type", "text/csv")
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .build();
     }
 
     private Response proxyPost(String url, String body) {

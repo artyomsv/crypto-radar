@@ -239,3 +239,85 @@ export interface LiquidationEvent {
   valueUsd: number;
   time: string;
 }
+
+export interface PriceAlert {
+  id: number;
+  symbol: string;
+  condition: 'ABOVE' | 'BELOW';
+  targetPrice: number;
+  isActive: boolean;
+  isTriggered: boolean;
+  triggeredAt: string | null;
+  createdAt: string;
+  note: string | null;
+}
+
+export interface TriggeredAlert {
+  id: number;
+  symbol: string;
+  condition: 'ABOVE' | 'BELOW';
+  targetPrice: number;
+  currentPrice: number;
+  note: string | null;
+  triggeredAt: string;
+}
+
+export interface CorrelationMatrix {
+  timestamp: string;
+  interval: string;
+  days: number;
+  matrix: Record<string, Record<string, number>>;
+}
+
+export interface VolatilityMetric {
+  symbol: string;
+  atrPct: number | null;
+  bollingerWidth: number | null;
+  range24hPct: number | null;
+  volatilityRank: number;
+}
+
+export interface PortfolioPosition {
+  id: number;
+  symbol: string;
+  entryPrice: number;
+  quantity: number;
+  side: string;
+  note?: string;
+  openedAt: string;
+  isOpen: boolean;
+  closedAt?: string;
+  closePrice?: number;
+}
+
+export interface MacroOverview {
+  btcDominance: number;
+  ethDominance: number;
+  totalMarketCapUsd: number;
+  usdtMarketCap: number;
+  usdcMarketCap: number;
+  totalStablecoinCap: number;
+  defiTvlUsd: number;
+  timestamp: string;
+}
+
+export interface PriceLevelData {
+  price: number;
+  quantity: number;
+  totalUsd: number;
+  exchangeCount: number;
+}
+
+export interface OrderBookDepth {
+  symbol: string;
+  timestamp: string;
+  bids: PriceLevelData[];
+  asks: PriceLevelData[];
+  bestBid: number;
+  bestAsk: number;
+  spread: number;
+  spreadPct: number;
+  totalBidVolume: number;
+  totalAskVolume: number;
+  bidAskImbalance: number;
+}

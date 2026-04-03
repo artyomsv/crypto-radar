@@ -28,6 +28,9 @@ public class MarketDataService {
     @Inject
     RedisEventPublisher redisEventPublisher;
 
+    @Inject
+    AlertService alertService;
+
     @Transactional
     public void fetchAndStoreCandles(String symbol, String interval, int limit) {
         List<Candle> candles = binanceClient.fetchKlines(symbol, interval, limit);
@@ -72,6 +75,11 @@ public class MarketDataService {
 
         redisEventPublisher.publishPriceUpdate(snapshots);
         LOG.infof("Stored %d price snapshots", snapshots.size());
+
+        // Check price alerts for each symbol
+        for (PriceSnapshot snapshot : snapshots) {
+            alertService.checkAlerts(snapshot.getSymbol(), snapshot.getPrice());
+        }
     }
 
     /**

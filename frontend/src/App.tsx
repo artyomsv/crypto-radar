@@ -5,8 +5,20 @@ import { CryptoDetailView } from './components/dashboard/CryptoDetailView';
 import { WhaleTracker } from './components/dashboard/WhaleTracker';
 import { CryptoConfig } from './components/dashboard/CryptoConfig';
 import { DerivativesDashboard } from './components/dashboard/DerivativesDashboard';
+import { AnalyticsDashboard } from './components/dashboard/AnalyticsDashboard';
+import { Screener } from './components/dashboard/Screener';
+import { MultiChart } from './components/dashboard/MultiChart';
+import { PortfolioTracker } from './components/dashboard/PortfolioTracker';
+import { AlertToast, useAlertNotifications } from './components/dashboard/AlertToast';
+import { useWebSocket } from './hooks/useWebSocket';
 
 export default function App() {
+  const { toastAlerts, handleAlert, dismissAlert } = useAlertNotifications();
+
+  useWebSocket({
+    onAlerts: handleAlert,
+  });
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -16,9 +28,14 @@ export default function App() {
           <Route path="/crypto/:symbol" element={<CryptoDetailView />} />
           <Route path="/whales" element={<WhaleTracker />} />
           <Route path="/derivatives" element={<DerivativesDashboard />} />
+          <Route path="/analytics" element={<AnalyticsDashboard />} />
+          <Route path="/screener" element={<Screener />} />
+          <Route path="/compare" element={<MultiChart />} />
+          <Route path="/portfolio" element={<PortfolioTracker />} />
           <Route path="/config" element={<CryptoConfig />} />
         </Routes>
       </main>
+      <AlertToast alerts={toastAlerts} onDismiss={dismissAlert} />
     </div>
   );
 }
