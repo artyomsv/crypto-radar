@@ -74,6 +74,25 @@ public class MarketDataService {
         LOG.infof("Stored %d price snapshots", snapshots.size());
     }
 
+    /**
+     * Lightweight price fetch — only publishes to Redis, no DB storage.
+     * Used for 1-second real-time price streaming.
+     */
+    public void fetchAndPublishLightweightPrices() {
+        java.util.Map<String, Double> prices = binanceClient.fetchAllPricesLightweight();
+        if (prices.isEmpty()) return;
+
+        // Build lightweight PriceSnapshot list (only price field populated)
+        List<PriceSnapshot> snapshots = new java.util.ArrayList<>();
+        java.time.Instant now = java.time.Instant.now();
+        for (var entry : prices.entrySet()) {
+            snapshots.add(new PriceSnapshot(now, entry.getKey(), entry.getValue(),
+                    null, null, null, null));
+        }
+
+        redisEventPublisher.publishPriceUpdate(snapshots);
+    }
+
     @SuppressWarnings("unchecked")
     public List<Candle> getCandles(String symbol, String interval, int limit) {
         try {

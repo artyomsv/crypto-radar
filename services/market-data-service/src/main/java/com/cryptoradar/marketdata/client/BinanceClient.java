@@ -17,7 +17,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @ApplicationScoped
@@ -212,6 +214,50 @@ public class BinanceClient {
         } catch (Exception e) {
             LOG.errorf(e, "Failed to fetch all 24hr tickers");
             return Collections.emptyList();
+        } finally {
+            rateLimiter.release();
+        }
+    }
+
+    /**
+     * Lightweight price fetch — /api/v3/ticker/price (weight 4 for all symbols).
+     * Returns only symbol + price. Used for 1-second real-time updates.
+     */
+    public Map<String, Double> fetchAllPricesLightweight() {
+        rateLimiter.acquire(4); // weight = 4
+        try {
+            String url = baseUrl + "/api/v3/ticker/price";
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(5))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            String usedWeightHeader = response.headers()
+                    .firstValue("X-MBX-USED-WEIGHT-1m").orElse(null);
+            rateLimiter.recordResponse(response.statusCode(), usedWeightHeader);
+
+            if (response.statusCode() != 200) {
+                return Collections.emptyMap();
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            Map<String, Double> prices = new HashMap<>();
+
+            for (JsonNode node : root) {
+                String sym = node.get("symbol").asText();
+                if (TRACKED_SYMBOLS.contains(sym)) {
+                    prices.put(sym, node.get("price").asDouble());
+                }
+            }
+
+            return prices;
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to fetch lightweight prices");
+            return Collections.emptyMap();
         } finally {
             rateLimiter.release();
         }

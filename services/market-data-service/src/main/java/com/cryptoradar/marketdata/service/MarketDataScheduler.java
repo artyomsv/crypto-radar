@@ -66,14 +66,25 @@ public class MarketDataScheduler {
         LOG.info("=== Full backfill complete ===");
     }
 
-    // --- Recurring schedulers for each timeframe ---
+    // --- Price schedulers: dual-fetch strategy ---
 
-    @Scheduled(every = "{scheduler.price.interval}")
-    void fetchPrices() {
+    /** Lightweight price fetch every 1 second — only publishes to Redis/WebSocket (weight 4) */
+    @Scheduled(every = "1s", identity = "prices-realtime")
+    void fetchRealtimePrices() {
+        try {
+            marketDataService.fetchAndPublishLightweightPrices();
+        } catch (Exception e) {
+            LOG.errorf(e, "Realtime price fetch failed");
+        }
+    }
+
+    /** Full 24hr ticker fetch every 30 seconds — stores to DB with volume, change %, etc. (weight 40) */
+    @Scheduled(every = "30s", identity = "prices-full")
+    void fetchFullPrices() {
         try {
             marketDataService.fetchAndStorePrices();
         } catch (Exception e) {
-            LOG.errorf(e, "Scheduled price fetch failed");
+            LOG.errorf(e, "Full price fetch failed");
         }
     }
 
