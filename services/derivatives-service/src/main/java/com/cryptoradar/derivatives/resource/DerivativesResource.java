@@ -3,8 +3,10 @@ package com.cryptoradar.derivatives.resource;
 import com.cryptoradar.derivatives.model.DerivativesOverview;
 import com.cryptoradar.derivatives.model.FundingRate;
 import com.cryptoradar.derivatives.model.Liquidation;
+import com.cryptoradar.derivatives.model.LiquidationMap;
 import com.cryptoradar.derivatives.model.SymbolDerivatives;
 import com.cryptoradar.derivatives.service.DerivativesService;
+import com.cryptoradar.derivatives.service.LiquidationMapService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
@@ -30,6 +32,9 @@ public class DerivativesResource {
 
     @Inject
     DerivativesService derivativesService;
+
+    @Inject
+    LiquidationMapService liquidationMapService;
 
     @GET
     @Path("/overview")
@@ -60,6 +65,17 @@ public class DerivativesResource {
     @Path("/liquidations")
     public List<Liquidation> getRecentLiquidations(
             @QueryParam("limit") @DefaultValue("50") int limit) {
-        return derivativesService.getRecentLiquidations(limit);
+        return derivativesService.getRecentLiquidations(Math.min(limit, 500));
+    }
+
+    @GET
+    @Path("/liquidation-map/{symbol}")
+    public Response getLiquidationMap(@PathParam("symbol") String symbol) {
+        String normalized = symbol.toUpperCase();
+        if (!SYMBOL_PATTERN.matcher(normalized).matches()) {
+            return Response.status(400).entity(Map.of("error", "Invalid symbol")).build();
+        }
+        LiquidationMap map = liquidationMapService.computeLiquidationMap(normalized);
+        return Response.ok(map).build();
     }
 }

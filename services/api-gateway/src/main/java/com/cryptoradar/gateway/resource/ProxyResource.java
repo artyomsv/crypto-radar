@@ -196,6 +196,12 @@ public class ProxyResource {
         return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/liquidations?limit=" + Math.min(limit, 500)));
     }
 
+    @GET
+    @Path("/derivatives/liquidation-map/{symbol}")
+    public Response getLiquidationMap(@PathParam("symbol") String symbol) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/liquidation-map/" + symbol));
+    }
+
     private Response proxyResponse(String body) {
         if (body == null) {
             return Response.status(Response.Status.BAD_GATEWAY)

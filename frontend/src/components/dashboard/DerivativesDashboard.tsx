@@ -1,12 +1,15 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDerivativesData } from '@/hooks/useDerivativesData';
-import { BarChart3, TrendingUp, TrendingDown, Zap, Activity, Loader2, Flame } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Zap, Activity, Loader2, Flame, ChevronDown, ChevronRight } from 'lucide-react';
 import { formatLargeNumber, formatPrice, formatTimeAgo } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import type { SymbolDerivatives, LiquidationEvent } from '@/types';
+import { LiquidationMap } from './LiquidationMap';
 
 export function DerivativesDashboard() {
   const { overview, liquidations, loading, connected } = useDerivativesData();
+  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -141,7 +144,18 @@ export function DerivativesDashboard() {
                   className="transition-all duration-700 ease-in-out"
                   style={{ order: index }}
                 >
-                  <SymbolDerivativesCard data={symbol} />
+                  <div
+                    className="cursor-pointer"
+                    onClick={() => setExpandedSymbol(expandedSymbol === symbol.symbol ? null : symbol.symbol)}
+                  >
+                    <SymbolDerivativesCard data={symbol} expanded={expandedSymbol === symbol.symbol} />
+                  </div>
+                  {expandedSymbol === symbol.symbol && (
+                    <div className="glass-card p-4 mt-2 border-accent/30">
+                      <h4 className="text-xs font-semibold text-accent mb-3">Estimated Liquidation Levels</h4>
+                      <LiquidationMap symbol={symbol.symbol} />
+                    </div>
+                  )}
                 </div>
               ))}
           </div>
@@ -170,19 +184,22 @@ export function DerivativesDashboard() {
   );
 }
 
-function SymbolDerivativesCard({ data }: { data: SymbolDerivatives }) {
+function SymbolDerivativesCard({ data, expanded }: { data: SymbolDerivatives; expanded?: boolean }) {
   const name = SYMBOL_NAMES[data.symbol] || data.symbol;
   const icon = SYMBOL_ICONS[data.symbol] || '?';
   const isBullish = data.sentiment === 'Bullish' || data.sentiment === 'BULLISH';
   const isBearish = data.sentiment === 'Bearish' || data.sentiment === 'BEARISH';
 
   return (
-    <Link to={`/crypto/${data.symbol}`} className={`glass-card p-5 space-y-4 block ${
+    <div className={`glass-card p-5 space-y-4 hover:bg-surface-light/30 transition-colors ${
       isBullish ? 'border-gain/20' : isBearish ? 'border-loss/20' : ''
-    }`}>
+    } ${expanded ? 'border-accent/40' : ''}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
+          <span className="text-text-secondary">
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </span>
           <span className="text-3xl font-mono text-accent">{icon}</span>
           <div>
             <p className="text-base font-semibold text-text-primary">{name}</p>
@@ -252,7 +269,7 @@ function SymbolDerivativesCard({ data }: { data: SymbolDerivatives }) {
           {formatLargeNumber(data.liquidations24hUsd)}
         </span>
       </div>
-    </Link>
+    </div>
   );
 }
 

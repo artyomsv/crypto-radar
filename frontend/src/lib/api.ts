@@ -73,6 +73,7 @@ export const api = {
   getDerivativesOverview: () => fetchJson<DerivativesOverview>('/api/derivatives/overview'),
   getDerivativesFundingRates: () => fetchJson<FundingRate[]>('/api/derivatives/funding-rates'),
   getLiquidations: (limit = 50) => fetchJson<LiquidationEvent[]>(`/api/derivatives/liquidations?limit=${limit}`),
+  getLiquidationMap: (symbol: string) => fetchJson<any>(`/api/derivatives/liquidation-map/${symbol}`),
   searchSymbols: (q: string) => fetchJson<any[]>(`/api/market/config/search?q=${encodeURIComponent(q)}`),
   getBackfillConfig: () => fetchJson<any[]>('/api/market/config/backfill'),
   updateBackfillDepth: async (interval: string, depthDays: number) => {
