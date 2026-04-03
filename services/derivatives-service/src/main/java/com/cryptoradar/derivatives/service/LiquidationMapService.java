@@ -52,10 +52,13 @@ public class LiquidationMapService {
     // Cache: pre-computed every 15 minutes by scheduler
     private final java.util.concurrent.ConcurrentHashMap<String, LiquidationMap> cache = new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** Get cached map or compute on-demand if not cached yet */
+    /** Get cached map or compute on-demand if not cached yet or if cached is empty */
     public LiquidationMap getLiquidationMap(String symbol) {
         LiquidationMap cached = cache.get(symbol);
-        if (cached != null) return cached;
+        if (cached != null && cached.getLongLiquidationLevels() != null
+                && !cached.getLongLiquidationLevels().isEmpty()) {
+            return cached;
+        }
         return computeAndCache(symbol);
     }
 
