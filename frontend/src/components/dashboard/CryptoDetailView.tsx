@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Loader2, TrendingUp, TrendingDown, BarChart3, Activity, Target } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { formatPrice, formatPercent, formatLargeNumber, getTrendBadgeColor, getScoreColor } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import type { CryptoDetail } from '@/types';
@@ -21,14 +22,25 @@ export function CryptoDetailView() {
   const [loading, setLoading] = useState(true);
   const [selectedInterval, setSelectedInterval] = useState('1h');
   const [chartCandles, setChartCandles] = useState<any[]>([]);
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [priceFlash, setPriceFlash] = useState<'up' | 'down' | null>(null);
+  const prevPrice = useRef<number | null>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const candleSeriesRef = useRef<any>(null);
+  const volumeSeriesRef = useRef<any>(null);
 
   useEffect(() => {
     if (!symbol) return;
     setLoading(true);
+    setLivePrice(null);
+    prevPrice.current = null;
     api.getCryptoDetail(symbol).then((data) => {
       setDetail(data);
       if (data?.candles) setChartCandles(data.candles);
+      if (data?.priceData?.price) {
+        setLivePrice(data.priceData.price);
+        prevPrice.current = data.priceData.price;
+      }
       setLoading(false);
     });
   }, [symbol]);
@@ -43,6 +55,58 @@ export function CryptoDetailView() {
       }
     });
   }, [symbol, selectedInterval]);
+
+  // WebSocket for live price updates on detail page
+  const { connected } = useWebSocket({
+    onPrices: (prices: any[]) => {
+      if (!prices || !symbol) return;
+      const update = prices.find((p: any) => p.symbol === symbol);
+      if (!update || !update.price) return;
+
+      // Flash animation
+      if (prevPrice.current !== null) {
+        if (update.price > prevPrice.current) setPriceFlash('up');
+        else if (update.price < prevPrice.current) setPriceFlash('down');
+        setTimeout(() => setPriceFlash(null), 800);
+      }
+      prevPrice.current = update.price;
+      setLivePrice(update.price);
+
+      // Update the price in detail data too
+      setDetail(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          priceData: {
+            ...prev.priceData,
+            price: update.price,
+            priceChange24h: update.priceChange24h ?? prev.priceData.priceChange24h,
+            priceChangePct24h: update.priceChangePct24h ?? prev.priceData.priceChangePct24h,
+            volume24h: update.volume24h ?? prev.priceData.volume24h,
+          },
+        };
+      });
+
+      // Update the last candle on the chart in real-time
+      if (candleSeriesRef.current) {
+        const now = Math.floor(Date.now() / 1000);
+        // Round to current interval bucket
+        const intervalSeconds: Record<string, number> = {
+          '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400,
+        };
+        const bucket = intervalSeconds[selectedInterval] || 3600;
+        const candleTime = Math.floor(now / bucket) * bucket;
+
+        candleSeriesRef.current.update({
+          time: candleTime as any,
+          open: update.price,
+          high: update.price,
+          low: update.price,
+          close: update.price,
+        });
+      }
+    },
+  });
 
   // Initialize lightweight-charts for candle data
   useEffect(() => {
@@ -99,6 +163,7 @@ export function CryptoDetailView() {
           .sort((a: any, b: any) => a.time - b.time);
 
         candleSeries.setData(candleData);
+        candleSeriesRef.current = candleSeries;
 
         const volumeSeries = chart.addHistogramSeries({
           priceFormat: { type: 'volume' },
@@ -138,6 +203,8 @@ export function CryptoDetailView() {
     initChart();
 
     return () => {
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
       if (chart) {
         chart.remove();
       }
@@ -180,12 +247,24 @@ export function CryptoDetailView() {
             <p className="text-sm text-text-secondary">{symbol}</p>
           </div>
         </div>
-        <div className="ml-auto text-right">
-          <p className="text-2xl font-bold font-mono text-text-primary">{formatPrice(priceData.price)}</p>
-          <p className={`text-sm font-medium ${isPositive ? 'text-gain' : 'text-loss'}`}>
-            {isPositive ? <TrendingUp className="h-3.5 w-3.5 inline mr-1" /> : <TrendingDown className="h-3.5 w-3.5 inline mr-1" />}
-            {formatPercent(priceData.priceChangePct24h)}
-          </p>
+        <div className="ml-auto text-right flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className={`live-dot ${connected ? 'connected' : 'disconnected'}`} />
+            <span className={`text-xs ${connected ? 'text-gain' : 'text-loss'}`}>
+              {connected ? 'Live' : 'Offline'}
+            </span>
+          </div>
+          <div>
+            <p className={`text-2xl font-bold font-mono text-text-primary ${
+              priceFlash === 'up' ? 'price-flash-up' : priceFlash === 'down' ? 'price-flash-down' : ''
+            }`}>
+              {formatPrice(livePrice ?? priceData.price)}
+            </p>
+            <p className={`text-sm font-medium ${isPositive ? 'text-gain' : 'text-loss'}`}>
+              {isPositive ? <TrendingUp className="h-3.5 w-3.5 inline mr-1" /> : <TrendingDown className="h-3.5 w-3.5 inline mr-1" />}
+              {formatPercent(priceData.priceChangePct24h)}
+            </p>
+          </div>
         </div>
       </div>
 
