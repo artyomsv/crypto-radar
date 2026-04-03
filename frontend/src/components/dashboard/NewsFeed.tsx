@@ -50,9 +50,6 @@ function ArticleDialog({ article, onClose }: { article: NewsArticle; onClose: ()
       ? 'text-loss'
       : 'text-text-secondary';
 
-  const displayBody = fullContent?.body || article.body;
-  const displayImage = fullContent?.imageUrl || article.imageUrl;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-surface border border-surface-border rounded-xl max-w-3xl w-full mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -69,9 +66,15 @@ function ArticleDialog({ article, onClose }: { article: NewsArticle; onClose: ()
             </button>
           </div>
         </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 text-accent animate-spin" />
+          </div>
+        ) : (
         <div className="p-5 space-y-4">
-          {displayImage && (
-            <img src={displayImage} alt="" className="w-full rounded-lg max-h-72 object-cover" />
+          {fullContent?.imageUrl && (
+            <img src={fullContent.imageUrl} alt="" className="w-full rounded-lg max-h-72 object-cover" />
           )}
           <div className="flex items-center gap-3 text-sm text-text-secondary">
             <span className="font-medium text-text-primary">{article.source}</span>
@@ -79,10 +82,9 @@ function ArticleDialog({ article, onClose }: { article: NewsArticle; onClose: ()
             <span className={sentimentColor}>
               {article.sentimentLabel || 'Neutral'}
             </span>
-            {loading && <Loader2 className="h-3 w-3 animate-spin text-accent" />}
           </div>
           <div className="text-sm text-text-primary leading-relaxed whitespace-pre-line">
-            {displayBody}
+            {fullContent?.body || article.body}
           </div>
           {article.relatedSymbols?.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-2 border-t border-surface-border">
@@ -92,6 +94,7 @@ function ArticleDialog({ article, onClose }: { article: NewsArticle; onClose: ()
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
