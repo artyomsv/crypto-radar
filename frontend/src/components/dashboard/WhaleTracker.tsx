@@ -146,9 +146,16 @@ export function WhaleTracker() {
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {overview?.symbolAnalytics
-              ?.sort((a, b) => (b.buyVolumeUsd1h + b.sellVolumeUsd1h) - (a.buyVolumeUsd1h + a.sellVolumeUsd1h))
-              .map((analytics) => (
-                <WhaleSymbolCard key={analytics.symbol} analytics={analytics} />
+              ?.map(a => ({ ...a, sortScore: a.tradeCount1h * 10000 + a.buyVolumeUsd1h + a.sellVolumeUsd1h }))
+              .sort((a, b) => b.sortScore - a.sortScore)
+              .map((analytics, index) => (
+                <div
+                  key={analytics.symbol}
+                  className="transition-all duration-700 ease-in-out"
+                  style={{ order: index }}
+                >
+                  <WhaleSymbolCard analytics={analytics} rank={index + 1} />
+                </div>
               ))}
           </div>
         </div>
@@ -177,7 +184,7 @@ export function WhaleTracker() {
   );
 }
 
-function WhaleSymbolCard({ analytics }: { analytics: WhaleAnalytics }) {
+function WhaleSymbolCard({ analytics, rank }: { analytics: WhaleAnalytics; rank?: number }) {
   const name = SYMBOL_NAMES[analytics.symbol] || analytics.symbol;
   const icon = SYMBOL_ICONS[analytics.symbol] || '?';
   const pressure = analytics.whalePressure;
@@ -194,6 +201,13 @@ function WhaleSymbolCard({ analytics }: { analytics: WhaleAnalytics }) {
     }`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
+          {rank && rank <= 3 && (
+            <span className={`text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center ${
+              rank === 1 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40'
+                : rank === 2 ? 'bg-gray-400/20 text-gray-300 border border-gray-400/40'
+                  : 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
+            }`}>{rank}</span>
+          )}
           <span className="text-3xl font-mono text-accent">{icon}</span>
           <div>
             <div className="flex items-center gap-2">
