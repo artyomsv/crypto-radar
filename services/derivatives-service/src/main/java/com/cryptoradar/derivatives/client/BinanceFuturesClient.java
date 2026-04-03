@@ -1,6 +1,7 @@
 package com.cryptoradar.derivatives.client;
 
 import com.cryptoradar.derivatives.model.FundingRate;
+import com.cryptoradar.derivatives.model.Liquidation;
 import com.cryptoradar.derivatives.model.LongShortRatio;
 import com.cryptoradar.derivatives.model.OpenInterest;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -193,6 +194,50 @@ public class BinanceFuturesClient {
             LOG.debugf("Failed to load symbols from DB, using defaults: %s", e.getMessage());
         }
         return DEFAULT_SYMBOLS;
+    }
+
+    /**
+     * Fetch recent force liquidation orders from Binance REST API.
+     * GET /fapi/v1/allForceOrders?symbol={symbol}&limit=1000
+     * Available for last 7 days. Weight: 20 per call.
+     */
+    public List<Liquidation> fetchHistoricalLiquidations(String symbol) {
+        rateLimit();
+        try {
+            String url = baseUrl + "/fapi/v1/allForceOrders?symbol=" + symbol + "&limit=1000";
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(15))
+                    .GET()
+                    .build();
+
+            // Extra delay between historical calls to respect weight limits
+            Thread.sleep(200);
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                LOG.warnf("Binance allForceOrders API returned %d for %s", response.statusCode(), symbol);
+                return List.of();
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            List<Liquidation> results = new ArrayList<>();
+            for (JsonNode node : root) {
+                String sym = node.get("symbol").asText();
+                String side = node.get("side").asText();
+                double price = node.get("price").asDouble();
+                double qty = node.get("executedQty").asDouble();
+                long timeMs = node.get("time").asLong();
+                results.add(new Liquidation(sym, side, price, qty, price * qty, Instant.ofEpochMilli(timeMs)));
+            }
+            return results;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        } catch (Exception e) {
+            LOG.warnf("Failed to fetch historical liquidations for %s: %s", symbol, e.getMessage());
+            return List.of();
+        }
     }
 
     private List<FundingRate> parseFundingRates(String body) {

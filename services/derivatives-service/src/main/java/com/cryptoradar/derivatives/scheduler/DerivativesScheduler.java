@@ -21,6 +21,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
@@ -57,9 +58,12 @@ public class DerivativesScheduler {
     private volatile WebSocket liquidationWebSocket;
 
     void onStartup(@Observes StartupEvent event) {
-        LOG.info("Derivatives scheduler starting, WebSocket connection in 5s...");
+        LOG.info("Derivatives scheduler starting — Binance liquidation WebSocket in 5s...");
+        LOG.info("OKX + Bybit liquidation streams managed by their own providers");
         Executors.newSingleThreadScheduledExecutor()
                 .schedule(this::connectLiquidationWebSocket, 5, TimeUnit.SECONDS);
+        // Note: Binance allForceOrders REST endpoint is deprecated, no historical backfill available.
+        // Liquidation data accumulates from 3 live WebSocket streams: Binance, OKX, Bybit.
     }
 
     @Scheduled(every = "{scheduler.funding.interval}", identity = "funding-rates")
@@ -110,6 +114,25 @@ public class DerivativesScheduler {
         } catch (Exception e) {
             LOG.errorf(e, "Scheduled overview computation failed");
         }
+    }
+
+    private void backfillLiquidations() {
+        LOG.info("Backfilling historical liquidations from Binance (last 7 days)...");
+        Set<String> symbols = futuresClient.getTrackedSymbols();
+        int total = 0;
+        for (String symbol : symbols) {
+            try {
+                List<Liquidation> liqs = futuresClient.fetchHistoricalLiquidations(symbol);
+                for (Liquidation liq : liqs) {
+                    derivativesService.storeLiquidationQuietly(liq);
+                }
+                total += liqs.size();
+                LOG.infof("Backfilled %d liquidations for %s", liqs.size(), symbol);
+            } catch (Exception e) {
+                LOG.warnf("Failed to backfill liquidations for %s: %s", symbol, e.getMessage());
+            }
+        }
+        LOG.infof("Liquidation backfill complete: %d total events", total);
     }
 
     private void connectLiquidationWebSocket() {

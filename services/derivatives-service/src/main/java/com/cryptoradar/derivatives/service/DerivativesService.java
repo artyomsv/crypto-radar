@@ -201,7 +201,7 @@ public class DerivativesService {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(
                      "SELECT symbol, side, price, quantity, value_usd, time " +
-                             "FROM derivatives_liquidations ORDER BY time DESC LIMIT ?")) {
+                             "FROM liquidations ORDER BY time DESC LIMIT ?")) {
             stmt.setInt(1, clampedLimit);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -275,7 +275,7 @@ public class DerivativesService {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(
                      "SELECT side, COALESCE(SUM(value_usd), 0) as total " +
-                             "FROM derivatives_liquidations WHERE time >= ? GROUP BY side")) {
+                             "FROM liquidations WHERE time >= ? GROUP BY side")) {
             stmt.setTimestamp(1, Timestamp.from(since));
             double totalLong = 0;
             double totalShort = 0;
@@ -302,7 +302,7 @@ public class DerivativesService {
         Instant since = Instant.now().minus(24, ChronoUnit.HOURS);
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT COALESCE(SUM(value_usd), 0) FROM derivatives_liquidations " +
+                     "SELECT COALESCE(SUM(value_usd), 0) FROM liquidations " +
                              "WHERE symbol = ? AND time >= ?")) {
             stmt.setString(1, symbol);
             stmt.setTimestamp(2, Timestamp.from(since));
@@ -357,8 +357,38 @@ public class DerivativesService {
         }
     }
 
+    /**
+     * Store liquidation in DB only (for backfill, no Redis publish).
+     * Skips duplicates silently based on exact time+symbol+side+price match.
+     */
+    public void storeLiquidationQuietly(Liquidation liq) {
+        String sql = "INSERT INTO liquidations " +
+                "(time, symbol, side, price, quantity, value_usd) " +
+                "SELECT ?, ?, ?, ?, ?, ? " +
+                "WHERE NOT EXISTS (" +
+                "  SELECT 1 FROM liquidations " +
+                "  WHERE time = ? AND symbol = ? AND side = ? AND price = ?" +
+                ")";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setTimestamp(1, Timestamp.from(liq.getTime()));
+            stmt.setString(2, liq.getSymbol());
+            stmt.setString(3, liq.getSide());
+            stmt.setDouble(4, liq.getPrice());
+            stmt.setDouble(5, liq.getQuantity());
+            stmt.setDouble(6, liq.getValueUsd());
+            stmt.setTimestamp(7, Timestamp.from(liq.getTime()));
+            stmt.setString(8, liq.getSymbol());
+            stmt.setString(9, liq.getSide());
+            stmt.setDouble(10, liq.getPrice());
+            stmt.executeUpdate();
+        } catch (Exception e) {
+            LOG.debugf("Failed to store backfill liquidation for %s: %s", liq.getSymbol(), e.getMessage());
+        }
+    }
+
     private void storeLiquidation(Liquidation liq) {
-        String sql = "INSERT INTO derivatives_liquidations " +
+        String sql = "INSERT INTO liquidations " +
                 "(time, symbol, side, price, quantity, value_usd) " +
                 "VALUES (?, ?, ?, ?, ?, ?)";
         try (Connection conn = dataSource.getConnection();
