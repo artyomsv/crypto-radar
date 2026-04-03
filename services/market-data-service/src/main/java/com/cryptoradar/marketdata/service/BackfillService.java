@@ -2,12 +2,16 @@ package com.cryptoradar.marketdata.service;
 
 import com.cryptoradar.marketdata.client.BinanceClient;
 import com.cryptoradar.marketdata.model.Candle;
+import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -25,19 +29,12 @@ public class BackfillService {
     private static final int BINANCE_MAX_LIMIT = 1000;
     // Rate limiting is handled by BinanceRateLimiter
 
-    // How far back to backfill — maxed out to Binance limits
-    private static final Map<String, Duration> BACKFILL_DEPTH = Map.ofEntries(
-            Map.entry("1m", Duration.ofDays(30)),
-            Map.entry("5m", Duration.ofDays(180)),
-            Map.entry("15m", Duration.ofDays(365)),
-            Map.entry("30m", Duration.ofDays(730)),
-            Map.entry("1h", Duration.ofDays(1000)),
-            Map.entry("2h", Duration.ofDays(1500)),
-            Map.entry("4h", Duration.ofDays(1500)),
-            Map.entry("8h", Duration.ofDays(1500)),
-            Map.entry("12h", Duration.ofDays(1500)),
-            Map.entry("1d", Duration.ofDays(2500)),
-            Map.entry("1w", Duration.ofDays(3000))
+    // Fallback if DB config not available
+    private static final Map<String, Integer> DEFAULT_DEPTH_DAYS = Map.ofEntries(
+            Map.entry("1m", 30), Map.entry("5m", 180), Map.entry("15m", 365),
+            Map.entry("30m", 730), Map.entry("1h", 1000), Map.entry("2h", 1500),
+            Map.entry("4h", 1500), Map.entry("8h", 1500), Map.entry("12h", 1500),
+            Map.entry("1d", 2500), Map.entry("1w", 3000)
     );
 
     // Candle duration for gap calculation
@@ -62,6 +59,9 @@ public class BackfillService {
     EntityManager entityManager;
 
     @Inject
+    AgroalDataSource dataSource;
+
+    @Inject
     MarketDataService marketDataService;
 
     /**
@@ -70,7 +70,8 @@ public class BackfillService {
      * Also fills forward gaps (e.g., server was down).
      */
     public BackfillResult backfill(String symbol, String interval) {
-        Duration depth = BACKFILL_DEPTH.getOrDefault(interval, Duration.ofDays(30));
+        int depthDays = getDepthDays(interval);
+        Duration depth = Duration.ofDays(depthDays);
         Instant targetStart = Instant.now().minus(depth);
 
         Instant oldestStored = getOldestCandle(symbol, interval);
@@ -143,6 +144,20 @@ public class BackfillService {
         }
 
         return totalFetched;
+    }
+
+    private int getDepthDays(String interval) {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT depth_days FROM backfill_config WHERE interval = ?")) {
+            stmt.setString(1, interval);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (Exception e) {
+            LOG.debugf("Failed to read backfill config for %s, using default", interval);
+        }
+        return DEFAULT_DEPTH_DAYS.getOrDefault(interval, 30);
     }
 
     private Instant getOldestCandle(String symbol, String interval) {

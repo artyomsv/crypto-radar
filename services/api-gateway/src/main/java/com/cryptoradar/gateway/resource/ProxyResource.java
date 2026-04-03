@@ -46,6 +46,19 @@ public class ProxyResource {
     // --- Crypto Config proxies ---
 
     @GET
+    @Path("/market/config/backfill")
+    public Response getBackfillConfig() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/market/config/backfill"));
+    }
+
+    @PUT
+    @Path("/market/config/backfill/{interval}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response updateBackfillConfig(@PathParam("interval") String interval, String body) {
+        return proxyPut(serviceClient.getMarketDataUrl() + "/api/market/config/backfill/" + interval, body);
+    }
+
+    @GET
     @Path("/market/config/cryptos")
     public Response getConfigCryptos() {
         return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/market/config/cryptos"));

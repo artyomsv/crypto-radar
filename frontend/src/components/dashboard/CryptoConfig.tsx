@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Search, Plus, Trash2, Loader2, Power, PowerOff, ArrowLeft, ChevronDown, ChevronRight, Database } from 'lucide-react';
+import { Settings, Search, Plus, Trash2, Loader2, Power, PowerOff, ArrowLeft, ChevronDown, ChevronRight, Database, Clock, Save } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { formatPrice, formatLargeNumber } from '@/lib/utils';
@@ -24,6 +24,12 @@ interface CryptoAsset {
   candleStats?: CandleStat[];
 }
 
+interface BackfillConfig {
+  interval: string;
+  depthDays: number;
+  description: string;
+}
+
 export function CryptoConfig() {
   const [cryptos, setCryptos] = useState<CryptoAsset[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -32,10 +38,17 @@ export function CryptoConfig() {
   const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [backfillConfig, setBackfillConfig] = useState<BackfillConfig[]>([]);
+  const [editedDepths, setEditedDepths] = useState<Record<string, number>>({});
+  const [savingInterval, setSavingInterval] = useState<string | null>(null);
 
   const fetchCryptos = useCallback(async () => {
-    const data = await api.getConfigCryptos();
-    if (data) setCryptos(data);
+    const [cryptoData, bfConfig] = await Promise.all([
+      api.getConfigCryptos(),
+      api.getBackfillConfig(),
+    ]);
+    if (cryptoData) setCryptos(cryptoData);
+    if (bfConfig) setBackfillConfig(bfConfig);
     setLoading(false);
   }, []);
 
@@ -247,6 +260,56 @@ export function CryptoConfig() {
               )}
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Backfill Depth Configuration */}
+      <div className="glass-card p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+          <Clock className="h-4 w-4 text-accent" />
+          Historical Data Depth (days per interval)
+        </h2>
+        <p className="text-xs text-text-secondary">Configure how far back to fetch candle data from Binance. Changes apply on next backfill cycle.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          {backfillConfig.map(cfg => {
+            const edited = editedDepths[cfg.interval];
+            const currentValue = edited !== undefined ? edited : cfg.depthDays;
+            const isModified = edited !== undefined && edited !== cfg.depthDays;
+
+            return (
+              <div key={cfg.interval} className={`p-3 rounded-lg border ${isModified ? 'border-accent/50 bg-accent/5' : 'border-surface-border bg-surface-light/30'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-accent">{cfg.interval}</span>
+                  {isModified && (
+                    <button
+                      onClick={async () => {
+                        setSavingInterval(cfg.interval);
+                        await api.updateBackfillDepth(cfg.interval, currentValue);
+                        setEditedDepths(prev => { const n = {...prev}; delete n[cfg.interval]; return n; });
+                        const updated = await api.getBackfillConfig();
+                        if (updated) setBackfillConfig(updated);
+                        setSavingInterval(null);
+                      }}
+                      disabled={savingInterval === cfg.interval}
+                      className="text-[10px] flex items-center gap-0.5 text-accent hover:text-gain"
+                    >
+                      {savingInterval === cfg.interval ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Save
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={5000}
+                  value={currentValue}
+                  onChange={e => setEditedDepths(prev => ({ ...prev, [cfg.interval]: parseInt(e.target.value) || 0 }))}
+                  className="w-full px-2 py-1.5 bg-surface border border-surface-border rounded text-sm font-mono text-text-primary focus:outline-none focus:border-accent"
+                />
+                <p className="text-[10px] text-text-secondary mt-1">{cfg.description}</p>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

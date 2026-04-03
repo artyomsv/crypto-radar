@@ -59,6 +59,27 @@ CREATE TABLE IF NOT EXISTS backfill_status (
     PRIMARY KEY (symbol, interval)
 );
 
+-- Backfill depth configuration (days per interval, editable via UI)
+CREATE TABLE IF NOT EXISTS backfill_config (
+    interval VARCHAR(10) PRIMARY KEY,
+    depth_days INTEGER NOT NULL,
+    description VARCHAR(100)
+);
+
+INSERT INTO backfill_config (interval, depth_days, description) VALUES
+    ('1m',  30,   '1 minute candles'),
+    ('5m',  180,  '5 minute candles'),
+    ('15m', 365,  '15 minute candles'),
+    ('30m', 730,  '30 minute candles'),
+    ('1h',  1000, '1 hour candles'),
+    ('2h',  1500, '2 hour candles'),
+    ('4h',  1500, '4 hour candles'),
+    ('8h',  1500, '8 hour candles'),
+    ('12h', 1500, '12 hour candles'),
+    ('1d',  2500, '1 day candles'),
+    ('1w',  3000, '1 week candles')
+ON CONFLICT (interval) DO NOTHING;
+
 -- Insert top 14 crypto assets
 INSERT INTO crypto_assets (symbol, name, rank) VALUES
     ('BTCUSDT', 'Bitcoin', 1),

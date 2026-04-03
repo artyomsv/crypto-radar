@@ -105,6 +105,52 @@ public class MarketDataResource {
 
     // --- Crypto Configuration CRUD ---
 
+    /** Get backfill depth config for all intervals */
+    @GET
+    @Path("/config/backfill")
+    public List<Map<String, Object>> getBackfillConfig() {
+        List<Map<String, Object>> results = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT interval, depth_days, description FROM backfill_config ORDER BY depth_days");
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                results.add(Map.of(
+                        "interval", rs.getString("interval"),
+                        "depthDays", rs.getInt("depth_days"),
+                        "description", rs.getString("description") != null ? rs.getString("description") : ""
+                ));
+            }
+        } catch (Exception e) {
+            return results;
+        }
+        return results;
+    }
+
+    /** Update backfill depth for an interval */
+    @PUT
+    @Path("/config/backfill/{interval}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response updateBackfillConfig(@PathParam("interval") String interval, Map<String, Object> body) {
+        int depthDays = ((Number) body.get("depthDays")).intValue();
+        if (depthDays < 1 || depthDays > 5000) {
+            return Response.status(400).entity(Map.of("error", "depthDays must be 1-5000")).build();
+        }
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "UPDATE backfill_config SET depth_days = ? WHERE interval = ?")) {
+            stmt.setInt(1, depthDays);
+            stmt.setString(2, interval);
+            int updated = stmt.executeUpdate();
+            if (updated == 0) {
+                return Response.status(404).entity(Map.of("error", "Interval not found")).build();
+            }
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+        return Response.ok(Map.of("interval", interval, "depthDays", depthDays)).build();
+    }
+
     /** List all configured cryptos with storage stats */
     @GET
     @Path("/config/cryptos")

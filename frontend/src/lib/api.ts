@@ -56,4 +56,12 @@ export const api = {
     return res.json();
   },
   searchSymbols: (q: string) => fetchJson<any[]>(`/api/market/config/search?q=${encodeURIComponent(q)}`),
+  getBackfillConfig: () => fetchJson<any[]>('/api/market/config/backfill'),
+  updateBackfillDepth: async (interval: string, depthDays: number) => {
+    const res = await fetch(`/api/market/config/backfill/${interval}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depthDays })
+    });
+    return res.json();
+  },
 };
