@@ -6,6 +6,8 @@ import com.cryptoradar.marketdata.model.CryptoAsset;
 import com.cryptoradar.marketdata.model.PriceSnapshot;
 import com.cryptoradar.marketdata.service.BackfillService;
 import com.cryptoradar.marketdata.service.MarketDataService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agroal.api.AgroalDataSource;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -20,17 +22,42 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 @Path("/api/market")
 @Produces(MediaType.APPLICATION_JSON)
 public class MarketDataResource {
+
+    private static final Logger LOG = Logger.getLogger(MarketDataResource.class);
+
+    private static final Pattern SYMBOL_PATTERN = Pattern.compile("[A-Z0-9]+USDT");
+    private static final Set<String> VALID_INTERVALS = Set.of(
+            "1m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "1w"
+    );
+    private static final int MAX_CANDLE_LIMIT = 5000;
+
+    private static final HttpClient SEARCH_HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+    private static final ObjectMapper SEARCH_OBJECT_MAPPER = new ObjectMapper();
 
     @Inject
     MarketDataService marketDataService;
@@ -52,11 +79,18 @@ public class MarketDataResource {
 
     @GET
     @Path("/candles/{symbol}")
-    public List<Candle> getCandles(
+    public Response getCandles(
             @PathParam("symbol") String symbol,
             @QueryParam("interval") @DefaultValue("1h") String interval,
             @QueryParam("limit") @DefaultValue("100") int limit) {
-        return marketDataService.getCandles(symbol, interval, limit);
+        if (!SYMBOL_PATTERN.matcher(symbol.toUpperCase()).matches()) {
+            return Response.status(400).entity(Map.of("error", "Invalid symbol format")).build();
+        }
+        if (!VALID_INTERVALS.contains(interval)) {
+            return Response.status(400).entity(Map.of("error", "Invalid interval")).build();
+        }
+        int clampedLimit = Math.min(limit, MAX_CANDLE_LIMIT);
+        return Response.ok(marketDataService.getCandles(symbol, interval, clampedLimit)).build();
     }
 
     @GET
@@ -75,22 +109,28 @@ public class MarketDataResource {
     /** Trigger manual backfill for a specific symbol and interval */
     @POST
     @Path("/backfill/{symbol}/{interval}")
-    public BackfillService.BackfillResult triggerBackfill(
+    public Response triggerBackfill(
             @PathParam("symbol") String symbol,
             @PathParam("interval") String interval) {
-        return backfillService.backfill(symbol.toUpperCase(), interval);
+        if (!VALID_INTERVALS.contains(interval)) {
+            return Response.status(400).entity(Map.of("error", "Invalid interval")).build();
+        }
+        return Response.ok(backfillService.backfill(symbol.toUpperCase(), interval)).build();
     }
 
     /** Trigger backfill for all symbols on a specific interval */
     @POST
     @Path("/backfill/all/{interval}")
-    public List<BackfillService.BackfillResult> triggerBackfillAll(
+    public Response triggerBackfillAll(
             @PathParam("interval") String interval) {
+        if (!VALID_INTERVALS.contains(interval)) {
+            return Response.status(400).entity(Map.of("error", "Invalid interval")).build();
+        }
         List<BackfillService.BackfillResult> results = new ArrayList<>();
         for (String symbol : binanceClient.getTrackedSymbols()) {
             results.add(backfillService.backfill(symbol, interval));
         }
-        return results;
+        return Response.ok(results).build();
     }
 
     /** Get available intervals */
@@ -122,6 +162,7 @@ public class MarketDataResource {
                 ));
             }
         } catch (Exception e) {
+            LOG.warnf("Failed to load backfill config: %s", e.getMessage());
             return results;
         }
         return results;
@@ -132,7 +173,14 @@ public class MarketDataResource {
     @Path("/config/backfill/{interval}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response updateBackfillConfig(@PathParam("interval") String interval, Map<String, Object> body) {
-        int depthDays = ((Number) body.get("depthDays")).intValue();
+        if (!VALID_INTERVALS.contains(interval)) {
+            return Response.status(400).entity(Map.of("error", "Invalid interval")).build();
+        }
+        Object depthDaysObj = body.get("depthDays");
+        if (depthDaysObj == null) {
+            return Response.status(400).entity(Map.of("error", "depthDays is required")).build();
+        }
+        int depthDays = ((Number) depthDaysObj).intValue();
         if (depthDays < 1 || depthDays > 5000) {
             return Response.status(400).entity(Map.of("error", "depthDays must be 1-5000")).build();
         }
@@ -146,7 +194,8 @@ public class MarketDataResource {
                 return Response.status(404).entity(Map.of("error", "Interval not found")).build();
             }
         } catch (Exception e) {
-            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+            LOG.errorf(e, "Failed to update backfill config for interval %s", interval);
+            return Response.status(500).entity(Map.of("error", "Internal server error")).build();
         }
         return Response.ok(Map.of("interval", interval, "depthDays", depthDays)).build();
     }
@@ -157,89 +206,93 @@ public class MarketDataResource {
     public List<Map<String, Object>> getConfiguredCryptos() {
         List<Map<String, Object>> results = new ArrayList<>();
         try (Connection conn = dataSource.getConnection()) {
-            // Get assets
+            // Batch: candle stats per symbol+interval
+            Map<String, List<Map<String, Object>>> candleStatsMap = new HashMap<>();
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "SELECT symbol, interval, COUNT(*) as cnt, MIN(time) as oldest, MAX(time) as newest " +
+                            "FROM candles GROUP BY symbol, interval ORDER BY cnt DESC");
+                 ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String sym = rs.getString("symbol");
+                    Timestamp oldest = rs.getTimestamp("oldest");
+                    Timestamp newest = rs.getTimestamp("newest");
+                    candleStatsMap.computeIfAbsent(sym, k -> new ArrayList<>()).add(Map.of(
+                            "interval", rs.getString("interval"),
+                            "count", rs.getLong("cnt"),
+                            "oldest", oldest != null ? oldest.toInstant().toString() : "",
+                            "newest", newest != null ? newest.toInstant().toString() : ""
+                    ));
+                }
+            }
+
+            // Batch: total candles, price snapshots, whale transactions per symbol
+            Map<String, Long> totalCandlesMap = loadCountsBySymbol(conn,
+                    "SELECT symbol, COUNT(*) as total FROM candles GROUP BY symbol");
+            Map<String, Long> priceSnapshotsMap = loadCountsBySymbol(conn,
+                    "SELECT symbol, COUNT(*) as total FROM price_snapshots GROUP BY symbol");
+            Map<String, Long> whaleTradesMap = loadCountsBySymbol(conn,
+                    "SELECT symbol, COUNT(*) as total FROM whale_transactions GROUP BY symbol");
+
+            // Batch: oldest/newest candle per symbol
+            Map<String, String> oldestCandleMap = loadTimestampsBySymbol(conn,
+                    "SELECT symbol, MIN(time) as ts FROM candles GROUP BY symbol");
+            Map<String, String> newestCandleMap = loadTimestampsBySymbol(conn,
+                    "SELECT symbol, MAX(time) as ts FROM candles GROUP BY symbol");
+
+            // Get assets and assemble results
             try (PreparedStatement stmt = conn.prepareStatement(
                     "SELECT symbol, name, rank, is_active FROM crypto_assets ORDER BY rank");
                  ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     String symbol = rs.getString("symbol");
-                    var entry = new java.util.HashMap<String, Object>();
+                    HashMap<String, Object> entry = new HashMap<>();
                     entry.put("symbol", symbol);
                     entry.put("name", rs.getString("name"));
                     entry.put("rank", rs.getInt("rank"));
                     entry.put("isActive", rs.getBoolean("is_active"));
-
-                    // Candle stats per interval
-                    entry.put("candleStats", getCandleStats(conn, symbol));
-                    entry.put("totalCandles", getTotalCandles(conn, symbol));
-
-                    // Price snapshot count
-                    entry.put("priceSnapshots", getCount(conn,
-                            "SELECT COUNT(*) FROM price_snapshots WHERE symbol = ?", symbol));
-
-                    // Whale trade count
-                    entry.put("whaleTrades", getCount(conn,
-                            "SELECT COUNT(*) FROM whale_transactions WHERE symbol = ?", symbol));
-
-                    // Oldest/newest candle
-                    entry.put("oldestCandle", getTimestamp(conn,
-                            "SELECT MIN(time) FROM candles WHERE symbol = ?", symbol));
-                    entry.put("newestCandle", getTimestamp(conn,
-                            "SELECT MAX(time) FROM candles WHERE symbol = ?", symbol));
-
+                    entry.put("candleStats", candleStatsMap.getOrDefault(symbol, List.of()));
+                    entry.put("totalCandles", totalCandlesMap.getOrDefault(symbol, 0L));
+                    entry.put("priceSnapshots", priceSnapshotsMap.getOrDefault(symbol, 0L));
+                    entry.put("whaleTrades", whaleTradesMap.getOrDefault(symbol, 0L));
+                    entry.put("oldestCandle", oldestCandleMap.get(symbol));
+                    entry.put("newestCandle", newestCandleMap.get(symbol));
                     results.add(entry);
                 }
             }
         } catch (Exception e) {
+            LOG.warnf("Failed to load configured cryptos: %s", e.getMessage());
             return results;
         }
         return results;
     }
 
-    private List<Map<String, Object>> getCandleStats(Connection conn, String symbol) {
-        List<Map<String, Object>> stats = new ArrayList<>();
-        try (PreparedStatement stmt = conn.prepareStatement(
-                "SELECT interval, COUNT(*) as cnt, MIN(time) as oldest, MAX(time) as newest " +
-                        "FROM candles WHERE symbol = ? GROUP BY interval ORDER BY cnt DESC")) {
-            stmt.setString(1, symbol);
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    stats.add(Map.of(
-                            "interval", rs.getString("interval"),
-                            "count", rs.getLong("cnt"),
-                            "oldest", rs.getTimestamp("oldest").toInstant().toString(),
-                            "newest", rs.getTimestamp("newest").toInstant().toString()
-                    ));
+    private Map<String, Long> loadCountsBySymbol(Connection conn, String sql) {
+        Map<String, Long> map = new HashMap<>();
+        try (PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                map.put(rs.getString("symbol"), rs.getLong("total"));
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to load counts [%s]: %s", sql, e.getMessage());
+        }
+        return map;
+    }
+
+    private Map<String, String> loadTimestampsBySymbol(Connection conn, String sql) {
+        Map<String, String> map = new HashMap<>();
+        try (PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                Timestamp ts = rs.getTimestamp("ts");
+                if (ts != null) {
+                    map.put(rs.getString("symbol"), ts.toInstant().toString());
                 }
             }
-        } catch (Exception ignored) {}
-        return stats;
-    }
-
-    private long getTotalCandles(Connection conn, String symbol) {
-        return getCount(conn, "SELECT COUNT(*) FROM candles WHERE symbol = ?", symbol);
-    }
-
-    private long getCount(Connection conn, String sql, String symbol) {
-        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, symbol);
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) return rs.getLong(1);
-            }
-        } catch (Exception ignored) {}
-        return 0;
-    }
-
-    private String getTimestamp(Connection conn, String sql, String symbol) {
-        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, symbol);
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next() && rs.getTimestamp(1) != null) {
-                    return rs.getTimestamp(1).toInstant().toString();
-                }
-            }
-        } catch (Exception ignored) {}
-        return null;
+        } catch (Exception e) {
+            LOG.warnf("Failed to load timestamps [%s]: %s", sql, e.getMessage());
+        }
+        return map;
     }
 
     /** Add a new crypto to track */
@@ -247,20 +300,29 @@ public class MarketDataResource {
     @Path("/config/cryptos")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response addCrypto(Map<String, Object> body) {
-        String symbol = ((String) body.get("symbol")).toUpperCase();
+        Object symbolObj = body.get("symbol");
+        if (symbolObj == null) {
+            return Response.status(400).entity(Map.of("error", "symbol is required")).build();
+        }
+        String symbol = ((String) symbolObj).toUpperCase();
         String name = (String) body.get("name");
 
         if (!symbol.endsWith("USDT")) {
             symbol = symbol + "USDT";
         }
 
+        if (!SYMBOL_PATTERN.matcher(symbol).matches()) {
+            return Response.status(400).entity(Map.of("error", "Invalid symbol format")).build();
+        }
+
         // Validate symbol exists on Binance
         try {
-            var prices = binanceClient.fetchAllPricesLightweight();
+            Map<String, Double> prices = binanceClient.fetchAllPricesLightweight();
             if (!prices.containsKey(symbol)) {
                 return Response.status(400).entity(Map.of("error", symbol + " not found on Binance")).build();
             }
         } catch (Exception e) {
+            LOG.errorf(e, "Failed to validate symbol %s on Binance", symbol);
             return Response.status(500).entity(Map.of("error", "Failed to validate symbol")).build();
         }
 
@@ -270,7 +332,9 @@ public class MarketDataResource {
              PreparedStatement stmt = conn.prepareStatement("SELECT COALESCE(MAX(rank), 0) + 1 FROM crypto_assets");
              ResultSet rs = stmt.executeQuery()) {
             if (rs.next()) nextRank = rs.getInt(1);
-        } catch (Exception e) { /* use default */ }
+        } catch (Exception e) {
+            LOG.warnf("Failed to determine next rank, using default: %s", e.getMessage());
+        }
 
         // Insert
         try (Connection conn = dataSource.getConnection();
@@ -282,7 +346,8 @@ public class MarketDataResource {
             stmt.setInt(3, nextRank);
             stmt.executeUpdate();
         } catch (Exception e) {
-            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+            LOG.errorf(e, "Failed to add crypto %s", symbol);
+            return Response.status(500).entity(Map.of("error", "Internal server error")).build();
         }
 
         binanceClient.refreshSymbolCache();
@@ -303,7 +368,11 @@ public class MarketDataResource {
     @Path("/config/cryptos/{symbol}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response toggleCrypto(@PathParam("symbol") String symbol, Map<String, Object> body) {
-        boolean isActive = (boolean) body.get("isActive");
+        Object isActiveObj = body.get("isActive");
+        if (isActiveObj == null) {
+            return Response.status(400).entity(Map.of("error", "isActive is required")).build();
+        }
+        boolean isActive = (boolean) isActiveObj;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(
                      "UPDATE crypto_assets SET is_active = ? WHERE symbol = ?")) {
@@ -314,7 +383,8 @@ public class MarketDataResource {
                 return Response.status(404).entity(Map.of("error", "Symbol not found")).build();
             }
         } catch (Exception e) {
-            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+            LOG.errorf(e, "Failed to toggle crypto %s", symbol);
+            return Response.status(500).entity(Map.of("error", "Internal server error")).build();
         }
         binanceClient.refreshSymbolCache();
         return Response.ok(Map.of("symbol", symbol, "isActive", isActive)).build();
@@ -330,11 +400,15 @@ public class MarketDataResource {
             if (deleteData) {
                 try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM candles WHERE symbol = ?")) {
                     stmt.setString(1, sym);
-                    int deleted = stmt.executeUpdate();
-                    try (PreparedStatement stmt2 = conn.prepareStatement("DELETE FROM price_snapshots WHERE symbol = ?")) {
-                        stmt2.setString(1, sym);
-                        stmt2.executeUpdate();
-                    }
+                    stmt.executeUpdate();
+                }
+                try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM price_snapshots WHERE symbol = ?")) {
+                    stmt.setString(1, sym);
+                    stmt.executeUpdate();
+                }
+                try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM backfill_status WHERE symbol = ?")) {
+                    stmt.setString(1, sym);
+                    stmt.executeUpdate();
                 }
             }
             try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM crypto_assets WHERE symbol = ?")) {
@@ -342,7 +416,8 @@ public class MarketDataResource {
                 stmt.executeUpdate();
             }
         } catch (Exception e) {
-            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+            LOG.errorf(e, "Failed to remove crypto %s", sym);
+            return Response.status(500).entity(Map.of("error", "Internal server error")).build();
         }
         binanceClient.refreshSymbolCache();
         return Response.ok(Map.of("symbol", sym, "deleted", true, "dataDeleted", deleteData)).build();
@@ -353,19 +428,17 @@ public class MarketDataResource {
     @Path("/config/search")
     public List<Map<String, Object>> searchSymbols(@QueryParam("q") String query) {
         if (query == null || query.length() < 2) return List.of();
-        String q = query.toUpperCase();
+        String q = URLEncoder.encode(query.toUpperCase(), StandardCharsets.UTF_8);
         List<Map<String, Object>> results = new ArrayList<>();
         try {
-            // Fetch ALL Binance prices (not just tracked)
-            var httpClient = java.net.http.HttpClient.newHttpClient();
-            var request = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create("https://api.binance.com/api/v3/ticker/price"))
-                    .timeout(java.time.Duration.ofSeconds(10))
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.binance.com/api/v3/ticker/price"))
+                    .timeout(Duration.ofSeconds(10))
                     .GET().build();
-            var response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = SEARCH_HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
-                var root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.body());
-                for (var node : root) {
+                JsonNode root = SEARCH_OBJECT_MAPPER.readTree(response.body());
+                for (JsonNode node : root) {
                     String sym = node.get("symbol").asText();
                     if (sym.endsWith("USDT") && sym.contains(q)) {
                         results.add(Map.of(
@@ -377,6 +450,7 @@ public class MarketDataResource {
                 }
             }
         } catch (Exception e) {
+            LOG.warnf("Failed to search Binance symbols for query '%s': %s", query, e.getMessage());
             return results;
         }
         return results;

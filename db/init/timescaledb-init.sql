@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS backfill_status (
 -- Backfill depth configuration (days per interval, editable via UI)
 CREATE TABLE IF NOT EXISTS backfill_config (
     interval VARCHAR(10) PRIMARY KEY,
-    depth_days INTEGER NOT NULL,
+    depth_days INTEGER NOT NULL CHECK (depth_days >= 1 AND depth_days <= 5000),
     description VARCHAR(100)
 );
 

@@ -4,11 +4,14 @@ import com.cryptoradar.whale.model.WhaleTransaction;
 import com.cryptoradar.whale.provider.exchange.AbstractExchangeStreamProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jboss.logging.Logger;
 
 import java.time.Instant;
 
 @ApplicationScoped
 public class BybitTradeStreamProvider extends AbstractExchangeStreamProvider {
+
+    private static final Logger LOG = Logger.getLogger(BybitTradeStreamProvider.class);
 
     @Override
     public String getExchangeName() {
@@ -57,6 +60,7 @@ public class BybitTradeStreamProvider extends AbstractExchangeStreamProvider {
             }
             return null;
         } catch (Exception e) {
+            LOG.debugf("[Bybit] Failed to parse trade message: %s", e.getMessage());
             return null;
         }
     }

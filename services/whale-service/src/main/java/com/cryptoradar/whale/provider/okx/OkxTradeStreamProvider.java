@@ -4,12 +4,15 @@ import com.cryptoradar.whale.model.WhaleTransaction;
 import com.cryptoradar.whale.provider.exchange.AbstractExchangeStreamProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jboss.logging.Logger;
 
 import java.time.Instant;
 import java.util.Map;
 
 @ApplicationScoped
 public class OkxTradeStreamProvider extends AbstractExchangeStreamProvider {
+
+    private static final Logger LOG = Logger.getLogger(OkxTradeStreamProvider.class);
 
     @Override
     protected String getPingMessage() { return "ping"; }
@@ -66,6 +69,7 @@ public class OkxTradeStreamProvider extends AbstractExchangeStreamProvider {
             }
             return null;
         } catch (Exception e) {
+            LOG.debugf("[OKX] Failed to parse trade message: %s", e.getMessage());
             return null;
         }
     }

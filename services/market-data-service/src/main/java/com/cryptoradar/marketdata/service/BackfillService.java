@@ -233,14 +233,6 @@ public class BackfillService {
         }
     }
 
-    private void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
     public record BackfillResult(String symbol, String interval, int fetchedCount,
                                   Instant oldestCandle, Instant newestCandle, long totalStored) {}
 }

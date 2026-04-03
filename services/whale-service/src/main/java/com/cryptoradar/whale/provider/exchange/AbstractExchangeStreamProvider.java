@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,6 +37,7 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
 
     private final AtomicBoolean connected = new AtomicBoolean(false);
     protected volatile WebSocket webSocket;
+    private volatile ScheduledExecutorService heartbeatExecutor;
 
     /** Full WebSocket URL to connect to */
     protected abstract String getWsUrl();
@@ -66,6 +68,7 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
 
     @Override
     public void disconnect() {
+        shutdownHeartbeatExecutor();
         if (webSocket != null) {
             try {
                 webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "shutdown");
@@ -73,6 +76,14 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
             }
         }
         connected.set(false);
+    }
+
+    private void shutdownHeartbeatExecutor() {
+        ScheduledExecutorService executor = heartbeatExecutor;
+        if (executor != null) {
+            executor.shutdownNow();
+            heartbeatExecutor = null;
+        }
     }
 
     /** Override to provide a ping message (e.g. Bybit needs {"op":"ping"}) */
@@ -94,10 +105,13 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
                     connected.set(true);
                     LOG.infof("[%s] WebSocket connected", getExchangeName());
 
-                    // Start heartbeat if configured
+                    // Start heartbeat if configured — shut down previous executor first
                     String pingMsg = getPingMessage();
                     if (pingMsg != null) {
-                        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(() -> {
+                        shutdownHeartbeatExecutor();
+                        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+                        heartbeatExecutor = executor;
+                        executor.scheduleAtFixedRate(() -> {
                             if (connected.get() && webSocket != null) {
                                 webSocket.sendText(pingMsg, true);
                             }
@@ -121,8 +135,12 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
 
     private void scheduleReconnect() {
         connected.set(false);
-        Executors.newSingleThreadScheduledExecutor().schedule(
-                this::connect, RECONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
+        shutdownHeartbeatExecutor();
+        ScheduledExecutorService reconnectExecutor = Executors.newSingleThreadScheduledExecutor();
+        reconnectExecutor.schedule(() -> {
+            reconnectExecutor.shutdown();
+            connect();
+        }, RECONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
     }
 
     protected void processTransaction(WhaleTransaction tx) {

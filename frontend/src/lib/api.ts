@@ -36,32 +36,52 @@ export const api = {
     fetchJson<WhaleFlowSummary>(`/api/whales/flow/${symbol}?window=${window}`),
   getConfigCryptos: () => fetchJson<any[]>('/api/market/config/cryptos'),
   addCrypto: async (symbol: string, name: string) => {
-    const res = await fetch('/api/market/config/cryptos', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, name })
-    });
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE}/api/market/config/cryptos`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, name })
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to add crypto:', error);
+      return { error: 'Request failed' };
+    }
   },
   toggleCrypto: async (symbol: string, isActive: boolean) => {
-    const res = await fetch(`/api/market/config/cryptos/${symbol}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive })
-    });
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE}/api/market/config/cryptos/${symbol}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive })
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to toggle crypto:', error);
+      return { error: 'Request failed' };
+    }
   },
   removeCrypto: async (symbol: string, deleteData = false) => {
-    const res = await fetch(`/api/market/config/cryptos/${symbol}?deleteData=${deleteData}`, {
-      method: 'DELETE'
-    });
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE}/api/market/config/cryptos/${symbol}?deleteData=${deleteData}`, {
+        method: 'DELETE'
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to remove crypto:', error);
+      return { error: 'Request failed' };
+    }
   },
   searchSymbols: (q: string) => fetchJson<any[]>(`/api/market/config/search?q=${encodeURIComponent(q)}`),
   getBackfillConfig: () => fetchJson<any[]>('/api/market/config/backfill'),
   updateBackfillDepth: async (interval: string, depthDays: number) => {
-    const res = await fetch(`/api/market/config/backfill/${interval}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ depthDays })
-    });
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE}/api/market/config/backfill/${interval}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ depthDays })
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Failed to update backfill depth:', error);
+      return { error: 'Request failed' };
+    }
   },
 };

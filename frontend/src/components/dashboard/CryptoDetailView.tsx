@@ -97,7 +97,9 @@ export function CryptoDetailView() {
         const now = Math.floor(Date.now() / 1000);
         // Round to current interval bucket
         const intervalSeconds: Record<string, number> = {
-          '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400,
+          '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
+          '1h': 3600, '2h': 7200, '4h': 14400, '8h': 28800,
+          '12h': 43200, '1d': 86400, '1w': 604800,
         };
         const bucket = intervalSeconds[selectedInterval] || 3600;
         const candleTime = Math.floor(now / bucket) * bucket;
