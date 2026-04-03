@@ -26,9 +26,9 @@ public class WhaleAlertProvider {
 
     private static final Logger LOG = Logger.getLogger(WhaleAlertProvider.class);
 
-    private static final int MAX_REQUESTS_PER_MINUTE = 10;
+    private static final int MAX_REQUESTS_PER_MINUTE = 8; // Stay under free tier limit of 10
     private static final long RATE_WINDOW_MS = 60_000;
-    private static final int LOOKBACK_SECONDS = 60;
+    private static final int LOOKBACK_SECONDS = 300; // 5 min window — efficient for 10 req/min budget
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
 
     private static final Map<String, String> SYMBOL_MAP = Map.ofEntries(
@@ -41,7 +41,10 @@ public class WhaleAlertProvider {
             Map.entry("bnb", "BNBUSDT"),
             Map.entry("dot", "DOTUSDT"),
             Map.entry("link", "LINKUSDT"),
-            Map.entry("avax", "AVAXUSDT")
+            Map.entry("avax", "AVAXUSDT"),
+            // Stablecoins — map to BTCUSDT for general whale activity tracking
+            Map.entry("usdt", "BTCUSDT"),
+            Map.entry("usdc", "ETHUSDT")
     );
 
     @ConfigProperty(name = "whale.alert.api.key")
@@ -77,7 +80,8 @@ public class WhaleAlertProvider {
 
         try {
             long start = Instant.now().minusSeconds(LOOKBACK_SECONDS).getEpochSecond();
-            String url = String.format("%s/transactions?api_key=%s&min_value=50000&start=%d",
+            // Free tier minimum value is $500K
+            String url = String.format("%s/transactions?api_key=%s&min_value=500000&start=%d",
                     baseUrl, apiKey.orElse(""), start);
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -136,6 +140,8 @@ public class WhaleAlertProvider {
         String symbol = tx.has("symbol") ? tx.get("symbol").asText().toLowerCase() : "";
         String mappedSymbol = SYMBOL_MAP.get(symbol);
         if (mappedSymbol == null) {
+            LOG.debugf("Whale Alert: unmapped symbol '%s' (blockchain: %s, amount_usd: %.0f)",
+                    symbol, tx.path("blockchain").asText(""), tx.path("amount_usd").asDouble());
             return null;
         }
 

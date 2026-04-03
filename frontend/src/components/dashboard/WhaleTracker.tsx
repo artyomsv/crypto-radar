@@ -137,7 +137,7 @@ export function WhaleTracker() {
       )}
 
       {/* Two-Column Layout: Flow Cards + Live Feed */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-6">
         {/* Symbol Whale Pressure Cards */}
         <div>
           <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">

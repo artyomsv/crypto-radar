@@ -59,15 +59,25 @@ public class WhaleScheduler {
         }
     }
 
-    /** Fetch whale transactions from Whale Alert every 10 seconds (within free tier rate limit) */
-    @Scheduled(every = "10s", identity = "whale-alert-fetch")
+    /**
+     * Fetch whale transactions from Whale Alert every 30 seconds.
+     * Free tier: 10 req/min, $500K min, so 2 req/min is efficient.
+     * Uses 5-minute lookback window with dedup to catch all transactions.
+     */
+    @Scheduled(every = "30s", identity = "whale-alert-fetch")
     void fetchWhaleAlertTransactions() {
         if (!whaleAlertProvider.isEnabled()) return;
 
         try {
             List<WhaleTransaction> transactions = whaleAlertProvider.fetchRecentTransactions();
+            int stored = 0;
             for (WhaleTransaction tx : transactions) {
-                whaleFlowService.processWhaleTransaction(tx);
+                if (whaleFlowService.processWhaleTransactionIfNew(tx)) {
+                    stored++;
+                }
+            }
+            if (stored > 0) {
+                LOG.infof("Whale Alert: fetched %d, stored %d new transactions", transactions.size(), stored);
             }
         } catch (Exception e) {
             LOG.errorf(e, "Whale Alert fetch failed");

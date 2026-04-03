@@ -71,8 +71,30 @@ public class WhaleFlowService {
     public void processWhaleTransaction(WhaleTransaction tx) {
         storeTransaction(tx);
         redisPublisher.publishWhaleTransaction(tx);
-        LOG.infof("Whale detected: %s %s %.4f @ $%.2f = $%.0f",
-                tx.getSide(), tx.getSymbol(), tx.getQuantity(), tx.getPrice(), tx.getValueUsd());
+        LOG.infof("Whale detected: %s %s %.4f @ $%.2f = $%.0f [%s]",
+                tx.getSide(), tx.getSymbol(), tx.getQuantity(), tx.getPrice(), tx.getValueUsd(), tx.getSource());
+    }
+
+    /**
+     * Store only if not a duplicate (for Whale Alert overlapping windows).
+     * Returns true if the transaction was new and stored.
+     */
+    public boolean processWhaleTransactionIfNew(WhaleTransaction tx) {
+        if (tx.getTxHash() != null && !tx.getTxHash().isBlank()) {
+            // Dedup by tx_hash for blockchain transactions
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(
+                         "SELECT COUNT(*) FROM whale_transactions WHERE tx_hash = ?")) {
+                stmt.setString(1, tx.getTxHash());
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) return false;
+                }
+            } catch (Exception e) {
+                LOG.debugf("Dedup check failed for tx_hash=%s: %s", tx.getTxHash(), e.getMessage());
+            }
+        }
+        processWhaleTransaction(tx);
+        return true;
     }
 
     public List<WhaleTransaction> getRecentTransactions(String symbol, int limit, String period) {

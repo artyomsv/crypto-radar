@@ -25,7 +25,8 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
-# Environment
+# Environment — NEVER commit .env (contains API keys)
+.env
 .env.local
 .env.production
 
