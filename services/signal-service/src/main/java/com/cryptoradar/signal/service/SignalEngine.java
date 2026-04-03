@@ -418,26 +418,50 @@ public class SignalEngine {
 
         if (price == null || price <= 0) return;
 
+        // Use ATR for meaningful stop/target distances
+        // Stop = 1.5 × ATR below entry (for BUY) or above (for SELL)
+        // Target = minimum 2:1 R:R, or resistance/support if further
+        double atrValue = (atr != null && atr > 0) ? atr : price * 0.02; // fallback 2% of price
+
         String signalLabel = signal.getSignal();
         if (BUY.equals(signalLabel) || STRONG_BUY.equals(signalLabel)) {
-            signal.setSuggestedEntry(price);
-            if (support != null && atr != null && support > 0 && atr > 0) {
-                signal.setSuggestedStopLoss(Math.round((support - atr) * 100.0) / 100.0);
-            }
-            if (resistance != null && resistance > 0) {
-                signal.setSuggestedTakeProfit(Math.round(resistance * 100.0) / 100.0);
-            }
+            signal.setSuggestedEntry(round2(price));
+
+            // Stop: 1.5 ATR below entry, or below support — whichever is lower
+            double stopFromAtr = price - (atrValue * 1.5);
+            double stopFromSupport = (support != null && support > 0) ? support - (atrValue * 0.5) : stopFromAtr;
+            double stopLoss = Math.min(stopFromAtr, stopFromSupport);
+            signal.setSuggestedStopLoss(round2(stopLoss));
+
+            // Target: minimum 2:1 R:R, or resistance if further
+            double risk = price - stopLoss;
+            double minTarget = price + (risk * 2.0); // 2:1 R:R minimum
+            double resistanceTarget = (resistance != null && resistance > price) ? resistance : minTarget;
+            double takeProfit = Math.max(minTarget, resistanceTarget);
+            signal.setSuggestedTakeProfit(round2(takeProfit));
+
         } else if (SELL.equals(signalLabel) || STRONG_SELL.equals(signalLabel)) {
-            signal.setSuggestedEntry(price);
-            if (resistance != null && atr != null && resistance > 0 && atr > 0) {
-                signal.setSuggestedStopLoss(Math.round((resistance + atr) * 100.0) / 100.0);
-            }
-            if (support != null && support > 0) {
-                signal.setSuggestedTakeProfit(Math.round(support * 100.0) / 100.0);
-            }
+            signal.setSuggestedEntry(round2(price));
+
+            // Stop: 1.5 ATR above entry, or above resistance
+            double stopFromAtr = price + (atrValue * 1.5);
+            double stopFromResistance = (resistance != null && resistance > 0) ? resistance + (atrValue * 0.5) : stopFromAtr;
+            double stopLoss = Math.max(stopFromAtr, stopFromResistance);
+            signal.setSuggestedStopLoss(round2(stopLoss));
+
+            // Target: minimum 2:1 R:R, or support if further
+            double risk = stopLoss - price;
+            double minTarget = price - (risk * 2.0);
+            double supportTarget = (support != null && support > 0 && support < price) ? support : minTarget;
+            double takeProfit = Math.min(minTarget, supportTarget);
+            signal.setSuggestedTakeProfit(round2(takeProfit));
         }
 
         computeRiskReward(signal);
+    }
+
+    private double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     private void computeRiskReward(TradingSignal signal) {
@@ -454,7 +478,7 @@ public class SignalEngine {
         double reward = Math.abs(target - entry);
 
         if (risk > 0) {
-            signal.setRiskRewardRatio(Math.round((reward / risk) * 100.0) / 100.0);
+            signal.setRiskRewardRatio(Math.round((reward / risk) * 10.0) / 10.0);
         }
     }
 
