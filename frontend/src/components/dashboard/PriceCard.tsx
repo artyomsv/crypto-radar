@@ -20,15 +20,16 @@ const TREND_LABELS: Record<string, string> = {
 };
 
 function TrendIcon({ trend }: { trend: string }) {
+  const cls = "w-7 h-7";
   switch (trend) {
     case 'STRONG_BULLISH':
     case 'BULLISH':
-      return <BullIcon className="w-3.5 h-3.5" />;
+      return <BullIcon className={`${cls} text-gain`} />;
     case 'BEARISH':
     case 'STRONG_BEARISH':
-      return <BearIcon className="w-3.5 h-3.5" />;
+      return <BearIcon className={`${cls} text-loss`} />;
     default:
-      return <SealIcon className="w-3.5 h-3.5" />;
+      return <SealIcon className={`${cls} text-muted`} />;
   }
 }
 
@@ -70,10 +71,7 @@ export function PriceCard({ data, flash, analysis }: PriceCardProps) {
       <div className="flex items-center justify-between text-xs text-text-secondary">
         <span>Vol {formatLargeNumber(data.volume24h)}</span>
         {trend && (
-          <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${getTrendBadgeColor(trend)}`}>
-            <TrendIcon trend={trend} />
-            {TREND_LABELS[trend] || trend}
-          </span>
+          <TrendIcon trend={trend} />
         )}
       </div>
 
