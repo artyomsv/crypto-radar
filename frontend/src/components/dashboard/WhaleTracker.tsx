@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useWhaleData } from '@/hooks/useWhaleData';
 import { Loader2, Activity, TrendingUp, TrendingDown, Waves, Zap, Flame } from 'lucide-react';
 import { formatLargeNumber, formatPrice, formatTimeAgo } from '@/lib/utils';
@@ -18,6 +19,11 @@ const PERIODS = [
 export function WhaleTracker() {
   const [period, setPeriod] = useState('1d');
   const { overview, recentTrades, loading, connected } = useWhaleData(period);
+
+  const exchangeTrades = recentTrades.filter(t => t.source !== 'whale-alert');
+  const whaleTrades = recentTrades.filter(t => t.source === 'whale-alert');
+  const exchangeDist = calcDistribution(exchangeTrades);
+  const whaleDist = calcDistribution(whaleTrades);
 
   if (loading) {
     return (
@@ -167,6 +173,10 @@ export function WhaleTracker() {
             Live Whale Trades
           </h3>
           <div className="glass-card p-3 overflow-y-auto space-y-2 flex-1 min-h-0">
+            <div className="space-y-2 mb-3">
+              <DistributionBar label="Exchanges" data={exchangeDist} />
+              <DistributionBar label="On-Chain" data={whaleDist} />
+            </div>
             {recentTrades.length === 0 ? (
               <p className="text-text-secondary text-sm text-center py-8">
                 Waiting for whale trades...<br />
@@ -184,6 +194,31 @@ export function WhaleTracker() {
   );
 }
 
+function calcDistribution(trades: WhaleTransaction[]) {
+  const buyVol = trades.filter(t => t.side === 'BUY').reduce((sum, t) => sum + t.valueUsd, 0);
+  const sellVol = trades.filter(t => t.side === 'SELL').reduce((sum, t) => sum + t.valueUsd, 0);
+  const total = buyVol + sellVol;
+  return { buyVol, sellVol, buyPct: total > 0 ? (buyVol / total) * 100 : 50, total };
+}
+
+function DistributionBar({ label, data }: { label: string; data: { buyVol: number; sellVol: number; buyPct: number; total: number } }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-[10px]">
+        <span className="text-text-secondary">{label}</span>
+        <div className="flex gap-3">
+          <span className="text-gain">{formatLargeNumber(data.buyVol)} buy</span>
+          <span className="text-loss">{formatLargeNumber(data.sellVol)} sell</span>
+        </div>
+      </div>
+      <div className="h-1.5 bg-surface-light rounded-full overflow-hidden flex">
+        <div className="h-full bg-gain/70 rounded-l-full transition-all duration-500" style={{ width: `${data.buyPct}%` }} />
+        <div className="h-full bg-loss/70 rounded-r-full transition-all duration-500" style={{ width: `${100 - data.buyPct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function WhaleSymbolCard({ analytics, rank }: { analytics: WhaleAnalytics; rank?: number }) {
   const name = SYMBOL_NAMES[analytics.symbol] || analytics.symbol;
   const icon = SYMBOL_ICONS[analytics.symbol] || '?';
@@ -194,7 +229,7 @@ function WhaleSymbolCard({ analytics, rank }: { analytics: WhaleAnalytics; rank?
   const isHot = analytics.tradeCount1h >= 5 || totalVol1h >= 500000;
 
   return (
-    <div className={`glass-card p-5 space-y-4 ${
+    <Link to={`/crypto/${analytics.symbol}`} className={`glass-card p-5 space-y-4 block ${
       isHot
         ? isBullish ? 'border-gain/50 glow-green' : isBearish ? 'border-loss/50 glow-red' : 'border-accent/40 glow-cyan'
         : isBullish ? 'border-gain/20' : isBearish ? 'border-loss/20' : ''
@@ -265,7 +300,7 @@ function WhaleSymbolCard({ analytics, rank }: { analytics: WhaleAnalytics; rank?
       <div className="text-xs text-text-secondary">
         24h: {formatLargeNumber(analytics.buyVolumeUsd24h + analytics.sellVolumeUsd24h)} ({analytics.tradeCount24h} trades)
       </div>
-    </div>
+    </Link>
   );
 }
 
