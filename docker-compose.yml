@@ -12,7 +12,7 @@ services:
       - tsdata:/var/lib/postgresql/data
       - ./db/init/timescaledb-init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER} -d ${TIMESCALE_DB}"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -37,7 +37,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./db/init/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 3s
       retries: 5

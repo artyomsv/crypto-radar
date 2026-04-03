@@ -35,6 +35,9 @@ public class BinanceClient {
     @Inject
     ObjectMapper objectMapper;
 
+    @Inject
+    BinanceRateLimiter rateLimiter;
+
     @ConfigProperty(name = "binance.api.base-url")
     String baseUrl;
 
@@ -65,6 +68,7 @@ public class BinanceClient {
      */
     public List<Candle> fetchKlines(String symbol, String interval, int limit,
                                      Long startTime, Long endTime) {
+        rateLimiter.acquire(2); // klines weight = 2
         try {
             StringBuilder url = new StringBuilder(
                     String.format("%s%s?symbol=%s&interval=%s&limit=%d",
@@ -84,6 +88,16 @@ public class BinanceClient {
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
+            String usedWeightHeader = response.headers()
+                    .firstValue("X-MBX-USED-WEIGHT-1m").orElse(null);
+            rateLimiter.recordResponse(response.statusCode(), usedWeightHeader);
+
+            if (response.statusCode() == 429 || response.statusCode() == 418) {
+                LOG.warnf("Binance rate limit for %s [%s]: HTTP %d. Will retry after backoff.",
+                        symbol, interval, response.statusCode());
+                return Collections.emptyList();
+            }
+
             if (response.statusCode() != 200) {
                 LOG.errorf("Binance klines API returned %d for %s: %s",
                         response.statusCode(), symbol, response.body());
@@ -95,6 +109,8 @@ public class BinanceClient {
         } catch (Exception e) {
             LOG.errorf(e, "Failed to fetch klines for %s [%s]", symbol, interval);
             return Collections.emptyList();
+        } finally {
+            rateLimiter.release();
         }
     }
 
@@ -155,6 +171,7 @@ public class BinanceClient {
      * Fetch all 24hr tickers and filter to tracked symbols.
      */
     public List<PriceSnapshot> fetchAll24hrTickers() {
+        rateLimiter.acquire(40); // all-tickers weight = 40
         try {
             String url = String.format("%s%s", baseUrl, tickerPath);
 
@@ -165,6 +182,10 @@ public class BinanceClient {
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            String usedWeightHeader = response.headers()
+                    .firstValue("X-MBX-USED-WEIGHT-1m").orElse(null);
+            rateLimiter.recordResponse(response.statusCode(), usedWeightHeader);
 
             if (response.statusCode() != 200) {
                 LOG.errorf("Binance all-tickers API returned %d: %s",
@@ -191,6 +212,8 @@ public class BinanceClient {
         } catch (Exception e) {
             LOG.errorf(e, "Failed to fetch all 24hr tickers");
             return Collections.emptyList();
+        } finally {
+            rateLimiter.release();
         }
     }
 

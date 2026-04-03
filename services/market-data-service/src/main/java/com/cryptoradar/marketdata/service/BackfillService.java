@@ -23,7 +23,7 @@ public class BackfillService {
 
     private static final Logger LOG = Logger.getLogger(BackfillService.class);
     private static final int BINANCE_MAX_LIMIT = 1000;
-    private static final long RATE_LIMIT_DELAY_MS = 200;
+    // Rate limiting is handled by BinanceRateLimiter
 
     // How far back to backfill for each interval on first run
     private static final Map<String, Duration> BACKFILL_DEPTH = Map.of(
@@ -126,9 +126,6 @@ public class BackfillService {
             if (batch.size() < BINANCE_MAX_LIMIT) {
                 break; // No more data available
             }
-
-            // Rate limiting
-            sleep(RATE_LIMIT_DELAY_MS);
         }
 
         if (totalFetched > 0) {
