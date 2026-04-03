@@ -1,11 +1,24 @@
+import { useMemo } from 'react';
 import { useDashboardData } from '@/hooks/useCryptoData';
 import { PriceCard } from './PriceCard';
 import { MarketOverviewPanel } from './MarketOverviewPanel';
 import { NewsFeed } from './NewsFeed';
 import { Loader2 } from 'lucide-react';
+import type { MarketAnalysis } from '@/types';
 
 export function Dashboard() {
   const { data, loading, error, connected, priceFlash } = useDashboardData();
+
+  // Must call all hooks before any early returns (React rules of hooks)
+  const analysisMap = useMemo(() => {
+    const map: Record<string, MarketAnalysis> = {};
+    if (data?.marketOverview?.analyses) {
+      for (const a of data.marketOverview.analyses) {
+        map[a.symbol] = a;
+      }
+    }
+    return map;
+  }, [data?.marketOverview]);
 
   if (loading) {
     return (
@@ -53,7 +66,12 @@ export function Dashboard() {
           {[...data.prices]
             .sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0))
             .map((price) => (
-              <PriceCard key={price.symbol} data={price} flash={priceFlash[price.symbol]} />
+              <PriceCard
+                key={price.symbol}
+                data={price}
+                flash={priceFlash[price.symbol]}
+                analysis={analysisMap[price.symbol]}
+              />
             ))}
         </div>
       </section>

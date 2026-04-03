@@ -1,18 +1,28 @@
 import { Link } from 'react-router-dom';
 import { TrendingUp, TrendingDown } from 'lucide-react';
-import type { PriceData } from '@/types';
+import type { PriceData, MarketAnalysis } from '@/types';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
-import { formatPrice, formatPercent, formatLargeNumber } from '@/lib/utils';
+import { formatPrice, formatPercent, formatLargeNumber, getTrendBadgeColor } from '@/lib/utils';
 
 interface PriceCardProps {
   data: PriceData;
   flash?: 'up' | 'down' | null;
+  analysis?: MarketAnalysis;
 }
 
-export function PriceCard({ data, flash }: PriceCardProps) {
+const TREND_SHORT: Record<string, string> = {
+  STRONG_BULLISH: 'Strong Bull',
+  BULLISH: 'Bullish',
+  NEUTRAL: 'Neutral',
+  BEARISH: 'Bearish',
+  STRONG_BEARISH: 'Strong Bear',
+};
+
+export function PriceCard({ data, flash, analysis }: PriceCardProps) {
   const isPositive = data.priceChangePct24h >= 0;
   const name = SYMBOL_NAMES[data.symbol] || data.symbol;
   const icon = SYMBOL_ICONS[data.symbol] || '?';
+  const trend = analysis?.trendDirection;
 
   return (
     <Link
@@ -45,7 +55,11 @@ export function PriceCard({ data, flash }: PriceCardProps) {
 
       <div className="flex items-center justify-between text-xs text-text-secondary">
         <span>Vol {formatLargeNumber(data.volume24h)}</span>
-        {data.marketCap > 0 && <span>MCap {formatLargeNumber(data.marketCap)}</span>}
+        {trend && (
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${getTrendBadgeColor(trend)}`}>
+            {TREND_SHORT[trend] || trend}
+          </span>
+        )}
       </div>
 
       {/* Mini sparkline */}

@@ -41,10 +41,14 @@ public class NewsService {
 
         for (NewsArticle article : fetched) {
             try {
-                // Deduplicate by externalId
+                // Deduplicate by externalId or URL
                 NewsArticle existing = NewsArticle.findByExternalId(article.externalId);
                 if (existing != null) {
                     continue;
+                }
+                if (article.url != null) {
+                    long urlCount = NewsArticle.count("url", article.url);
+                    if (urlCount > 0) continue;
                 }
 
                 // Run sentiment analysis
