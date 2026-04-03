@@ -418,10 +418,10 @@ public class SignalEngine {
 
         if (price == null || price <= 0) return;
 
-        // Use ATR for meaningful stop/target distances
-        // Stop = 1.5 × ATR below entry (for BUY) or above (for SELL)
-        // Target = minimum 2:1 R:R, or resistance/support if further
-        double atrValue = (atr != null && atr > 0) ? atr : price * 0.02; // fallback 2% of price
+        // Swing trade targets: tight stop (1.5 ATR), ambitious target (5:1 R:R minimum)
+        // Designed for multi-day holds, not scalps
+        double atrValue = (atr != null && atr > 0) ? atr : price * 0.02;
+        double MIN_RR = 5.0; // minimum 5:1 reward-to-risk
 
         String signalLabel = signal.getSignal();
         if (BUY.equals(signalLabel) || STRONG_BUY.equals(signalLabel)) {
@@ -433,9 +433,9 @@ public class SignalEngine {
             double stopLoss = Math.min(stopFromAtr, stopFromSupport);
             signal.setSuggestedStopLoss(round2(stopLoss));
 
-            // Target: minimum 2:1 R:R, or resistance if further
+            // Target: minimum 5:1 R:R for swing trades
             double risk = price - stopLoss;
-            double minTarget = price + (risk * 2.0); // 2:1 R:R minimum
+            double minTarget = price + (risk * MIN_RR);
             double resistanceTarget = (resistance != null && resistance > price) ? resistance : minTarget;
             double takeProfit = Math.max(minTarget, resistanceTarget);
             signal.setSuggestedTakeProfit(round2(takeProfit));
@@ -449,9 +449,9 @@ public class SignalEngine {
             double stopLoss = Math.max(stopFromAtr, stopFromResistance);
             signal.setSuggestedStopLoss(round2(stopLoss));
 
-            // Target: minimum 2:1 R:R, or support if further
+            // Target: minimum 5:1 R:R for swing trades
             double risk = stopLoss - price;
-            double minTarget = price - (risk * 2.0);
+            double minTarget = price - (risk * MIN_RR);
             double supportTarget = (support != null && support > 0 && support < price) ? support : minTarget;
             double takeProfit = Math.min(minTarget, supportTarget);
             signal.setSuggestedTakeProfit(round2(takeProfit));
