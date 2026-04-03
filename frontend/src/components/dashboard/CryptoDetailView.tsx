@@ -17,10 +17,11 @@ const INTERVAL_LABELS: Record<string, string> = {
   '1h': '1H', '2h': '2H', '4h': '4H', '8h': '8H', '12h': '12H',
   '1d': '1D', '1w': '1W',
 };
+// Load maximum available candles to allow full scrollback
 const INTERVAL_LIMITS: Record<string, number> = {
-  '1m': 300, '5m': 200, '15m': 200, '30m': 200,
-  '1h': 200, '2h': 200, '4h': 200, '8h': 200, '12h': 200,
-  '1d': 365, '1w': 200,
+  '1m': 1500, '5m': 2000, '15m': 2000, '30m': 2000,
+  '1h': 4000, '2h': 3000, '4h': 3000, '8h': 2000, '12h': 2000,
+  '1d': 3000, '1w': 500,
 };
 
 export function CryptoDetailView() {
