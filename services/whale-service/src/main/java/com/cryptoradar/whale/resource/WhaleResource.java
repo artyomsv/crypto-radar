@@ -5,7 +5,7 @@ import com.cryptoradar.whale.model.WhaleFlowSummary;
 import com.cryptoradar.whale.model.WhaleMarketOverview;
 import com.cryptoradar.whale.model.WhaleTransaction;
 import com.cryptoradar.whale.provider.alert.WhaleAlertProvider;
-import com.cryptoradar.whale.provider.binance.BinanceTradeStreamProvider;
+import com.cryptoradar.whale.provider.exchange.TradeStreamManager;
 import com.cryptoradar.whale.service.WhaleAnalyticsService;
 import com.cryptoradar.whale.service.WhaleFlowService;
 import jakarta.ws.rs.DefaultValue;
@@ -26,16 +26,16 @@ public class WhaleResource {
 
     private final WhaleFlowService flowService;
     private final WhaleAnalyticsService analyticsService;
-    private final BinanceTradeStreamProvider binanceProvider;
+    private final TradeStreamManager tradeStreamManager;
     private final WhaleAlertProvider whaleAlertProvider;
 
     public WhaleResource(WhaleFlowService flowService,
                          WhaleAnalyticsService analyticsService,
-                         BinanceTradeStreamProvider binanceProvider,
+                         TradeStreamManager tradeStreamManager,
                          WhaleAlertProvider whaleAlertProvider) {
         this.flowService = flowService;
         this.analyticsService = analyticsService;
-        this.binanceProvider = binanceProvider;
+        this.tradeStreamManager = tradeStreamManager;
         this.whaleAlertProvider = whaleAlertProvider;
     }
 
@@ -90,22 +90,14 @@ public class WhaleResource {
     @GET
     @Path("/providers")
     public List<Map<String, Object>> getProviders() {
-        return List.of(
-                Map.of(
-                        "name", "Binance Trade Stream",
-                        "type", "websocket",
-                        "status", binanceProvider.isConnected() ? "active" : "disconnected",
-                        "description", "Real-time aggTrade stream for 10 symbols",
-                        "symbols", analyticsService.getTopSymbols(),
-                        "updatedAt", Instant.now().toString()
-                ),
-                Map.of(
-                        "name", "Whale Alert",
-                        "type", "rest",
-                        "status", whaleAlertProvider.isEnabled() ? "active" : "no-api-key",
-                        "description", "Cross-chain whale transactions (BTC, ETH, XRP, SOL, etc.)",
-                        "updatedAt", Instant.now().toString()
-                )
-        );
+        List<Map<String, Object>> providers = new java.util.ArrayList<>(tradeStreamManager.getProviderStatus());
+        providers.add(Map.of(
+                "name", "Whale Alert",
+                "type", "rest",
+                "status", whaleAlertProvider.isEnabled() ? "active" : "no-api-key",
+                "description", "Cross-chain whale transactions (BTC, ETH, XRP, SOL, etc.)",
+                "updatedAt", Instant.now().toString()
+        ));
+        return providers;
     }
 }
