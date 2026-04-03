@@ -81,38 +81,38 @@ export function CorrelationMatrixPanel() {
           <h2 className="text-lg font-semibold text-text-primary">Correlation Matrix</h2>
           <span className="text-xs text-text-secondary">Pearson r, daily returns</span>
         </div>
-        <div className="flex gap-1">
-          {PERIOD_OPTIONS.map(opt => (
-            <button
-              key={opt.days}
-              onClick={() => setSelectedDays(opt.days)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                selectedDays === opt.days
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-light text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          {hoveredCell && (
+            <span className="text-xs text-text-secondary whitespace-nowrap">
+              <span className="text-text-primary font-medium">{SYMBOL_NAMES[hoveredCell.row] || shortSymbol(hoveredCell.row)}</span>
+              {' \u2194 '}
+              <span className="text-text-primary font-medium">{SYMBOL_NAMES[hoveredCell.col] || shortSymbol(hoveredCell.col)}</span>
+              {': '}
+              <span className={`font-mono font-bold ${
+                hoveredCell.value >= 0.5 ? 'text-gain' :
+                hoveredCell.value <= -0.5 ? 'text-loss' : 'text-text-primary'
+              }`}>
+                {hoveredCell.value.toFixed(4)}
+              </span>
+            </span>
+          )}
+          <div className="flex gap-1">
+            {PERIOD_OPTIONS.map(opt => (
+              <button
+                key={opt.days}
+                onClick={() => setSelectedDays(opt.days)}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  selectedDays === opt.days
+                    ? 'bg-accent text-white'
+                    : 'bg-surface-light text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-
-      {/* Hover tooltip */}
-      {hoveredCell && (
-        <div className="mb-2 text-sm text-text-secondary">
-          <span className="text-text-primary font-medium">{SYMBOL_NAMES[hoveredCell.row] || shortSymbol(hoveredCell.row)}</span>
-          {' vs '}
-          <span className="text-text-primary font-medium">{SYMBOL_NAMES[hoveredCell.col] || shortSymbol(hoveredCell.col)}</span>
-          {': '}
-          <span className={`font-mono font-bold ${
-            hoveredCell.value >= 0.5 ? 'text-gain' :
-            hoveredCell.value <= -0.5 ? 'text-loss' : 'text-text-primary'
-          }`}>
-            {hoveredCell.value.toFixed(4)}
-          </span>
-        </div>
-      )}
 
       {/* Matrix grid */}
       <div className="overflow-x-auto">

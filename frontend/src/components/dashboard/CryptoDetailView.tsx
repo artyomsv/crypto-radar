@@ -1,14 +1,15 @@
 import { useParams, Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Loader2, TrendingUp, TrendingDown, BarChart3, Activity, Target, Bell } from 'lucide-react';
+import { ArrowLeft, Loader2, TrendingUp, TrendingDown, BarChart3, Activity, Target, Bell, Waves } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { formatPrice, formatPercent, formatLargeNumber, getTrendBadgeColor, getScoreColor } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
-import type { CryptoDetail } from '@/types';
+import type { CryptoDetail, WhaleAnalytics } from '@/types';
 import { NewsFeed } from './NewsFeed';
 import { AddAlertForm } from './AddAlertForm';
 import { DepthChart } from './DepthChart';
+import { LiquidationMap } from './LiquidationMap';
 
 const INTERVALS = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
 const INTERVAL_LABELS: Record<string, string> = {
@@ -28,9 +29,11 @@ export function CryptoDetailView() {
   const [loading, setLoading] = useState(true);
   const [selectedInterval, setSelectedInterval] = useState('1h');
   const [chartCandles, setChartCandles] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [priceFlash, setPriceFlash] = useState<'up' | 'down' | null>(null);
   const [showAlertForm, setShowAlertForm] = useState(false);
+  const [whaleData, setWhaleData] = useState<WhaleAnalytics | null>(null);
   const prevPrice = useRef<number | null>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
@@ -51,16 +54,25 @@ export function CryptoDetailView() {
       }
       setLoading(false);
     });
+    api.getWhaleAnalytics().then((data) => {
+      if (data?.symbolAnalytics) {
+        const match = data.symbolAnalytics.find((a: WhaleAnalytics) => a.symbol === symbol);
+        if (match) setWhaleData(match);
+      }
+    });
   }, [symbol]);
 
   // Single source of truth for candle data
   useEffect(() => {
     if (!symbol) return;
+    setChartLoading(true);
+    setChartCandles([]); // Clear stale data when switching intervals
     const limit = INTERVAL_LIMITS[selectedInterval] || 200;
     api.getCandles(symbol, selectedInterval, limit).then((data) => {
       if (data && data.length > 0) {
         setChartCandles(data);
       }
+      setChartLoading(false);
     });
   }, [symbol, selectedInterval]);
 
@@ -131,12 +143,28 @@ export function CryptoDetailView() {
     }
 
     let cancelled = false;
+    let resizeHandler: (() => void) | null = null;
+
     const initChart = async () => {
       try {
         const { createChart, CrosshairMode } = await import('lightweight-charts');
-        if (cancelled) return; // Effect was cleaned up during async import
+        if (cancelled) return;
         const container = chartContainerRef.current;
         if (!container) return;
+
+        // Validate candle data before creating chart
+        const candleData = chartCandles
+          .map((c) => ({
+            time: Math.floor(new Date(c.time).getTime() / 1000) as any,
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+          }))
+          .filter((c) => c.time > 0 && isFinite(c.open) && isFinite(c.close))
+          .sort((a: any, b: any) => a.time - b.time);
+
+        if (cancelled || candleData.length === 0) return;
 
         const chart = createChart(container, {
           width: container.clientWidth,
@@ -162,6 +190,8 @@ export function CryptoDetailView() {
           },
         });
 
+        if (cancelled) { chart.remove(); return; }
+
         const candleSeries = chart.addCandlestickSeries({
           upColor: '#10b981',
           downColor: '#ef4444',
@@ -171,19 +201,7 @@ export function CryptoDetailView() {
           wickDownColor: '#ef4444',
         });
 
-        const candleData = chartCandles
-          .map((c) => ({
-            time: Math.floor(new Date(c.time).getTime() / 1000) as any,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-          }))
-          .sort((a: any, b: any) => a.time - b.time);
-
         candleSeries.setData(candleData);
-        candleSeriesRef.current = candleSeries;
-        chartRef.current = chart;
 
         const volumeSeries = chart.addHistogramSeries({
           priceFormat: { type: 'volume' },
@@ -197,24 +215,28 @@ export function CryptoDetailView() {
         const volumeData = chartCandles
           .map((c) => ({
             time: Math.floor(new Date(c.time).getTime() / 1000) as any,
-            value: c.volume,
+            value: Number(c.volume),
             color: c.close >= c.open ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
           }))
+          .filter((c) => c.time > 0 && isFinite(c.value))
           .sort((a: any, b: any) => a.time - b.time);
 
         volumeSeries.setData(volumeData);
+
+        // Store refs before fitContent so live updates can work immediately
+        candleSeriesRef.current = candleSeries;
+        volumeSeriesRef.current = volumeSeries;
+        chartRef.current = chart;
+
+        // Fit content after all data is loaded
         chart.timeScale().fitContent();
 
-        const handleResize = () => {
+        resizeHandler = () => {
           if (container) {
             chart.applyOptions({ width: container.clientWidth });
           }
         };
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-          window.removeEventListener('resize', handleResize);
-        };
+        window.addEventListener('resize', resizeHandler);
       } catch (e) {
         console.error('Chart init error:', e);
       }
@@ -224,6 +246,7 @@ export function CryptoDetailView() {
 
     return () => {
       cancelled = true;
+      if (resizeHandler) window.removeEventListener('resize', resizeHandler);
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       if (chartRef.current) {
@@ -334,7 +357,12 @@ export function CryptoDetailView() {
             ))}
           </div>
         </div>
-        <div ref={chartContainerRef} className="w-full" />
+        {chartLoading && (
+          <div className="flex items-center justify-center h-[400px]">
+            <Loader2 className="h-6 w-6 text-accent animate-spin" />
+          </div>
+        )}
+        <div ref={chartContainerRef} className={`w-full ${chartLoading ? 'hidden' : ''}`} />
       </div>
 
       {/* Order Book Depth */}
@@ -459,6 +487,45 @@ export function CryptoDetailView() {
             </div>
           </div>
         )}
+
+        {/* Whale Activity */}
+        {whaleData && (
+          <div className="glass-card p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Waves className="h-4 w-4 text-accent" />
+              <h3 className="text-sm font-semibold text-text-primary">Whale Activity</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-text-secondary text-xs">Whale Pressure</p>
+                <p className={`text-lg font-bold font-mono ${whaleData.whalePressure > 10 ? 'text-gain' : whaleData.whalePressure < -10 ? 'text-loss' : 'text-muted'}`}>
+                  {whaleData.whalePressure > 0 ? '+' : ''}{whaleData.whalePressure.toFixed(0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-text-secondary text-xs">Label</p>
+                <p className="text-sm font-medium text-text-primary mt-1">{whaleData.pressureLabel}</p>
+              </div>
+              <div>
+                <p className="text-text-secondary text-xs">Buy Vol (1h)</p>
+                <p className="text-gain font-mono font-medium">{formatLargeNumber(whaleData.buyVolumeUsd1h)}</p>
+              </div>
+              <div>
+                <p className="text-text-secondary text-xs">Sell Vol (1h)</p>
+                <p className="text-loss font-mono font-medium">{formatLargeNumber(whaleData.sellVolumeUsd1h)}</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Estimated Liquidation Levels */}
+      <div className="glass-card p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 className="h-4 w-4 text-accent" />
+          <h3 className="text-sm font-semibold text-text-primary">Estimated Liquidation Levels</h3>
+        </div>
+        <LiquidationMap symbol={symbol} />
       </div>
 
       {/* Related News */}

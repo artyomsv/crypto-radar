@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
 import { useWebSocket } from './useWebSocket';
 import type { DerivativesOverview, LiquidationEvent } from '@/types';
@@ -7,6 +7,7 @@ export function useDerivativesData() {
   const [overview, setOverview] = useState<DerivativesOverview | null>(null);
   const [liquidations, setLiquidations] = useState<LiquidationEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasFetched = useRef(false);
 
   const fetchData = useCallback(async () => {
     const [overviewData, liqData] = await Promise.all([
@@ -16,6 +17,7 @@ export function useDerivativesData() {
     if (overviewData) setOverview(overviewData);
     if (liqData) setLiquidations(liqData);
     setLoading(false);
+    hasFetched.current = true;
   }, []);
 
   useEffect(() => {
@@ -34,6 +36,13 @@ export function useDerivativesData() {
       }
     },
   });
+
+  // Re-fetch when WebSocket (re)connects to ensure fresh data
+  useEffect(() => {
+    if (connected && hasFetched.current) {
+      fetchData();
+    }
+  }, [connected, fetchData]);
 
   return { overview, liquidations, loading, connected, refresh: fetchData };
 }
