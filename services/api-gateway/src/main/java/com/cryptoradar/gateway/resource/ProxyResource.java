@@ -170,6 +170,32 @@ public class ProxyResource {
         return proxyResponse(result);
     }
 
+    // --- Derivatives proxies ---
+
+    @GET
+    @Path("/derivatives/overview")
+    public Response getDerivativesOverview() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/overview"));
+    }
+
+    @GET
+    @Path("/derivatives/{symbol}")
+    public Response getSymbolDerivatives(@PathParam("symbol") String symbol) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/" + symbol));
+    }
+
+    @GET
+    @Path("/derivatives/funding-rates")
+    public Response getFundingRates() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/funding-rates"));
+    }
+
+    @GET
+    @Path("/derivatives/liquidations")
+    public Response getLiquidations(@QueryParam("limit") @DefaultValue("50") int limit) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/liquidations?limit=" + Math.min(limit, 500)));
+    }
+
     private Response proxyResponse(String body) {
         if (body == null) {
             return Response.status(Response.Status.BAD_GATEWAY)

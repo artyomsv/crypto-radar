@@ -30,6 +30,9 @@ public class ServiceClient {
     @ConfigProperty(name = "whale-service.url")
     String whaleServiceUrl;
 
+    @ConfigProperty(name = "derivatives-service.url", defaultValue = "http://localhost:8085")
+    String derivativesServiceUrl;
+
     private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -175,6 +178,10 @@ public class ServiceClient {
 
     public String getWhaleServiceUrl() {
         return whaleServiceUrl;
+    }
+
+    public String getDerivativesServiceUrl() {
+        return derivativesServiceUrl;
     }
 
     public JsonNode getWhaleTransactions(String symbol, int limit) {

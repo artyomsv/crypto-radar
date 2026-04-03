@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -70,6 +70,9 @@ export const api = {
       return { error: 'Request failed' };
     }
   },
+  getDerivativesOverview: () => fetchJson<DerivativesOverview>('/api/derivatives/overview'),
+  getDerivativesFundingRates: () => fetchJson<FundingRate[]>('/api/derivatives/funding-rates'),
+  getLiquidations: (limit = 50) => fetchJson<LiquidationEvent[]>(`/api/derivatives/liquidations?limit=${limit}`),
   searchSymbols: (q: string) => fetchJson<any[]>(`/api/market/config/search?q=${encodeURIComponent(q)}`),
   getBackfillConfig: () => fetchJson<any[]>('/api/market/config/backfill'),
   updateBackfillDepth: async (interval: string, depthDays: number) => {

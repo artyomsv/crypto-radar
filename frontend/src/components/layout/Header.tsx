@@ -40,6 +40,7 @@ export function Header() {
           <nav className="flex items-center gap-5">
             {navLink('/', 'Dashboard', BarChart3)}
             {navLink('/whales', 'Whales', Waves)}
+            {navLink('/derivatives', 'Leverage', BarChart3)}
             {navLink('/config', 'Settings', Settings)}
             <div className="flex items-center gap-2 text-sm text-text-secondary">
               <Radio className="h-4 w-4 text-gain animate-pulse" />

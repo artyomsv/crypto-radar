@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface WebSocketMessage {
-  type: 'prices' | 'news' | 'analytics' | 'whales' | 'connected' | 'ack';
+  type: 'prices' | 'news' | 'analytics' | 'whales' | 'derivatives' | 'connected' | 'ack';
   data?: any;
   message?: string;
 }
@@ -11,6 +11,7 @@ interface UseWebSocketOptions {
   onNews?: (data: any) => void;
   onAnalytics?: (data: any) => void;
   onWhales?: (data: any) => void;
+  onDerivatives?: (data: any) => void;
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
@@ -48,6 +49,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             break;
           case 'whales':
             optionsRef.current.onWhales?.(msg.data);
+            break;
+          case 'derivatives':
+            optionsRef.current.onDerivatives?.(msg.data);
             break;
           case 'connected':
             console.log('[WS]', msg.message);

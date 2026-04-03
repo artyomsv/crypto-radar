@@ -196,3 +196,46 @@ export interface WhaleMarketOverview {
   totalTradeCount24h: number;
   symbolAnalytics: WhaleAnalytics[];
 }
+
+export interface FundingRate {
+  symbol: string;
+  fundingRate: number;
+  fundingTime: string;
+  nextFundingTime: string;
+  markPrice: number;
+  indexPrice: number;
+}
+
+export interface SymbolDerivatives {
+  symbol: string;
+  fundingRate: number;
+  fundingRateAnnualized: number;
+  openInterestUsd: number;
+  longShortRatio: number;
+  longPct: number;
+  shortPct: number;
+  liquidations24hUsd: number;
+  sentiment: string;
+}
+
+export interface DerivativesOverview {
+  timestamp: string;
+  totalOpenInterestUsd: number;
+  avgFundingRate: number;
+  fundingRateLabel: string;
+  totalLiquidations24h: number;
+  longLiquidations24h: number;
+  shortLiquidations24h: number;
+  marketLongPct: number;
+  marketShortPct: number;
+  symbolData: SymbolDerivatives[];
+}
+
+export interface LiquidationEvent {
+  symbol: string;
+  side: string;
+  price: number;
+  quantity: number;
+  valueUsd: number;
+  time: string;
+}

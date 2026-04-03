@@ -37,6 +37,11 @@ public class WebSocketBroadcaster {
         broadcast(message);
     }
 
+    public void broadcastDerivatives(String json) {
+        String message = "{\"type\":\"derivatives\",\"data\":" + json + "}";
+        broadcast(message);
+    }
+
     private void broadcast(String message) {
         connections.forEach(connection -> {
             connection.sendText(message).subscribe().with(
