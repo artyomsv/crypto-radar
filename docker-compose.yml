@@ -1,0 +1,191 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${TIMESCALE_USER}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD}
+      POSTGRES_DB: ${TIMESCALE_DB}
+    volumes:
+      - tsdata:/var/lib/postgresql/data
+      - ./db/init/timescaledb-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+  market-data-service:
+    build: ./services/market-data-service
+    restart: unless-stopped
+    ports:
+      - "${MARKET_DATA_PORT:-8081}:8081"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://timescaledb:5432/${TIMESCALE_DB}
+      QUARKUS_DATASOURCE_USERNAME: ${TIMESCALE_USER}
+      QUARKUS_DATASOURCE_PASSWORD: ${TIMESCALE_PASSWORD}
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+  news-service:
+    build: ./services/news-service
+    restart: unless-stopped
+    ports:
+      - "${NEWS_SERVICE_PORT:-8082}:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+  analytics-service:
+    build: ./services/analytics-service
+    restart: unless-stopped
+    ports:
+      - "${ANALYTICS_SERVICE_PORT:-8083}:8083"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      market-data-service:
+        condition: service_started
+    environment:
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://timescaledb:5432/${TIMESCALE_DB}
+      QUARKUS_DATASOURCE_USERNAME: ${TIMESCALE_USER}
+      QUARKUS_DATASOURCE_PASSWORD: ${TIMESCALE_PASSWORD}
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      MARKET_DATA_URL: http://market-data-service:8081
+      NEWS_SERVICE_URL: http://news-service:8082
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+  api-gateway:
+    build: ./services/api-gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      market-data-service:
+        condition: service_started
+      news-service:
+        condition: service_started
+      analytics-service:
+        condition: service_started
+    environment:
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      MARKET_DATA_URL: http://market-data-service:8081
+      NEWS_SERVICE_URL: http://news-service:8082
+      ANALYTICS_SERVICE_URL: http://analytics-service:8083
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      api-gateway:
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
+volumes:
+  tsdata:
+  pgdata:
+
+networks:
+  cryptoradar-net:

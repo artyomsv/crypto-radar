@@ -1,0 +1,9 @@
+.git
+node_modules
+target
+dist
+.idea
+.vscode
+*.md
+.env.local
+logs

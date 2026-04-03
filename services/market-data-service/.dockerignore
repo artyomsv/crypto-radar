@@ -1,0 +1,9 @@
+.git
+target
+.idea
+.vscode
+*.iml
+.env
+.pytest_cache
+.ruff_cache
+tests/
