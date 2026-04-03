@@ -283,6 +283,20 @@ public class ProxyResource {
         return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/liquidation-map/" + symbol));
     }
 
+    // --- Signal proxies ---
+
+    @GET
+    @Path("/signals/overview")
+    public Response getSignalOverview() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getSignalServiceUrl() + "/api/signals/overview"));
+    }
+
+    @GET
+    @Path("/signals/{symbol}")
+    public Response getSignalForSymbol(@PathParam("symbol") String symbol) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getSignalServiceUrl() + "/api/signals/" + symbol));
+    }
+
     // --- Export proxies (CSV pass-through) ---
 
     @GET

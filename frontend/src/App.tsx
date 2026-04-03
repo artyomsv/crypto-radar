@@ -6,6 +6,7 @@ import { WhaleTracker } from './components/dashboard/WhaleTracker';
 import { CryptoConfig } from './components/dashboard/CryptoConfig';
 import { DerivativesDashboard } from './components/dashboard/DerivativesDashboard';
 import { AnalyticsDashboard } from './components/dashboard/AnalyticsDashboard';
+import { SignalDashboard } from './components/dashboard/SignalDashboard';
 import { Screener } from './components/dashboard/Screener';
 import { MultiChart } from './components/dashboard/MultiChart';
 import { PortfolioTracker } from './components/dashboard/PortfolioTracker';
@@ -24,6 +25,7 @@ export default function App() {
       <Header />
       <main className="container mx-auto px-4 py-6 max-w-[1600px]">
         <Routes>
+          <Route path="/signals" element={<SignalDashboard />} />
           <Route path="/" element={<Dashboard />} />
           <Route path="/crypto/:symbol" element={<CryptoDetailView />} />
           <Route path="/whales" element={<WhaleTracker />} />

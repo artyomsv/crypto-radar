@@ -301,6 +301,40 @@ export interface MacroOverview {
   timestamp: string;
 }
 
+export interface DimensionScore {
+  name: string;
+  score: number;
+  weight: number;
+  reasons: string[];
+}
+
+export interface TradingSignal {
+  symbol: string;
+  timestamp: string;
+  signal: string;
+  overallScore: number;
+  confidence: number;
+  dimensions: DimensionScore[];
+  suggestedEntry: number | null;
+  suggestedStopLoss: number | null;
+  suggestedTakeProfit: number | null;
+  riskRewardRatio: number | null;
+  alertLevel: string;
+  previousSignal: string;
+}
+
+export interface SignalOverview {
+  timestamp: string;
+  strongBuyCount: number;
+  buyCount: number;
+  neutralCount: number;
+  sellCount: number;
+  strongSellCount: number;
+  marketBias: string;
+  topOpportunity: TradingSignal | null;
+  signals: TradingSignal[];
+}
+
 export interface PriceLevelData {
   price: number;
   quantity: number;

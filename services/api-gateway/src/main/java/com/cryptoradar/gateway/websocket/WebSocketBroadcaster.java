@@ -42,6 +42,11 @@ public class WebSocketBroadcaster {
         broadcast(message);
     }
 
+    public void broadcastSignals(String json) {
+        String message = "{\"type\":\"signals\",\"data\":" + json + "}";
+        broadcast(message);
+    }
+
     public void broadcastAlerts(String json) {
         String message = "{\"type\":\"alerts\",\"data\":" + json + "}";
         broadcast(message);

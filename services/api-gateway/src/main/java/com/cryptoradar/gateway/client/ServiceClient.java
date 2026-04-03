@@ -33,6 +33,9 @@ public class ServiceClient {
     @ConfigProperty(name = "derivatives-service.url", defaultValue = "http://localhost:8085")
     String derivativesServiceUrl;
 
+    @ConfigProperty(name = "signal-service.url", defaultValue = "http://localhost:8086")
+    String signalServiceUrl;
+
     private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -182,6 +185,10 @@ public class ServiceClient {
 
     public String getDerivativesServiceUrl() {
         return derivativesServiceUrl;
+    }
+
+    public String getSignalServiceUrl() {
+        return signalServiceUrl;
     }
 
     public JsonNode getWhaleTransactions(String symbol, int limit) {

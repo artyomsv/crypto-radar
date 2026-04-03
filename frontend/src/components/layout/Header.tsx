@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Activity, Radio, Waves, BarChart3, Settings, Grid3X3, Columns, Wallet, Filter } from 'lucide-react';
+import { Activity, Radio, Waves, BarChart3, Settings, Grid3X3, Columns, Wallet, Filter, Zap } from 'lucide-react';
 
 export function Header() {
   const location = useLocation();
@@ -38,6 +38,7 @@ export function Header() {
             </div>
           </Link>
           <nav className="flex items-center gap-4">
+            {navLink('/signals', 'Signals', Zap)}
             {navLink('/', 'Dashboard', BarChart3)}
             {navLink('/screener', 'Screener', Filter)}
             {navLink('/whales', 'Whales', Waves)}

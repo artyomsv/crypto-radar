@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -136,6 +136,8 @@ export const api = {
       return { error: 'Request failed' };
     }
   },
+  getSignalOverview: () => fetchJson<SignalOverview>('/api/signals/overview'),
+  getSignalForSymbol: (symbol: string) => fetchJson<TradingSignal>(`/api/signals/${symbol}`),
   getMacroOverview: () => fetchJson<MacroOverview>('/api/analytics/macro'),
   getExportUrl: (symbol: string, interval: string, from?: string, to?: string) => {
     let url = `${API_BASE}/api/market/export/${symbol}?interval=${interval}`;

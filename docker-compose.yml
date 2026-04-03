@@ -189,6 +189,36 @@ services:
     networks:
       - cryptoradar-net
 
+  signal-service:
+    build: ./services/signal-service
+    restart: unless-stopped
+    ports:
+      - "${SIGNAL_SERVICE_PORT:-8086}:8086"
+    depends_on:
+      redis:
+        condition: service_healthy
+      market-data-service:
+        condition: service_started
+      analytics-service:
+        condition: service_started
+      whale-service:
+        condition: service_started
+      derivatives-service:
+        condition: service_started
+    environment:
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      MARKET_DATA_URL: http://market-data-service:8081
+      ANALYTICS_SERVICE_URL: http://analytics-service:8083
+      WHALE_SERVICE_URL: http://whale-service:8084
+      DERIVATIVES_SERVICE_URL: http://derivatives-service:8085
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
   api-gateway:
     build: ./services/api-gateway
     restart: unless-stopped
@@ -207,6 +237,8 @@ services:
         condition: service_started
       derivatives-service:
         condition: service_started
+      signal-service:
+        condition: service_started
     environment:
       QUARKUS_REDIS_HOSTS: redis://redis:6379
       MARKET_DATA_URL: http://market-data-service:8081
@@ -214,6 +246,7 @@ services:
       ANALYTICS_SERVICE_URL: http://analytics-service:8083
       WHALE_SERVICE_URL: http://whale-service:8084
       DERIVATIVES_SERVICE_URL: http://derivatives-service:8085
+      SIGNAL_SERVICE_URL: http://signal-service:8086
     logging:
       driver: json-file
       options:
