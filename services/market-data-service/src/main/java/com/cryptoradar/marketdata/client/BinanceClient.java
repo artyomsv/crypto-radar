@@ -55,13 +55,30 @@ public class BinanceClient {
      * Each kline array: [openTime, open, high, low, close, volume, closeTime, quoteVolume, tradeCount, ...]
      */
     public List<Candle> fetchKlines(String symbol, String interval, int limit) {
+        return fetchKlines(symbol, interval, limit, null, null);
+    }
+
+    /**
+     * Fetch klines with optional time range for backfilling.
+     * @param startTime start time in epoch ms (inclusive), null for latest
+     * @param endTime end time in epoch ms (inclusive), null for latest
+     */
+    public List<Candle> fetchKlines(String symbol, String interval, int limit,
+                                     Long startTime, Long endTime) {
         try {
-            String url = String.format("%s%s?symbol=%s&interval=%s&limit=%d",
-                    baseUrl, klinesPath, symbol, interval, limit);
+            StringBuilder url = new StringBuilder(
+                    String.format("%s%s?symbol=%s&interval=%s&limit=%d",
+                            baseUrl, klinesPath, symbol, interval, limit));
+            if (startTime != null) {
+                url.append("&startTime=").append(startTime);
+            }
+            if (endTime != null) {
+                url.append("&endTime=").append(endTime);
+            }
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(15))
+                    .uri(URI.create(url.toString()))
+                    .timeout(Duration.ofSeconds(30))
                     .GET()
                     .build();
 
@@ -73,9 +90,18 @@ public class BinanceClient {
                 return Collections.emptyList();
             }
 
-            JsonNode root = objectMapper.readTree(response.body());
-            List<Candle> candles = new ArrayList<>();
+            return parseKlines(response.body(), symbol, interval);
 
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to fetch klines for %s [%s]", symbol, interval);
+            return Collections.emptyList();
+        }
+    }
+
+    private List<Candle> parseKlines(String body, String symbol, String interval) {
+        List<Candle> candles = new ArrayList<>();
+        try {
+            JsonNode root = objectMapper.readTree(body);
             for (JsonNode kline : root) {
                 Instant openTime = Instant.ofEpochMilli(kline.get(0).asLong());
                 Double open = kline.get(1).asDouble();
@@ -89,14 +115,10 @@ public class BinanceClient {
                 candles.add(new Candle(openTime, symbol, interval, open, high, low, close,
                         volume, quoteVolume, tradeCount));
             }
-
-            LOG.infof("Fetched %d klines for %s [%s]", candles.size(), symbol, interval);
-            return candles;
-
         } catch (Exception e) {
-            LOG.errorf(e, "Failed to fetch klines for %s", symbol);
-            return Collections.emptyList();
+            LOG.errorf(e, "Failed to parse klines response for %s [%s]", symbol, interval);
         }
+        return candles;
     }
 
     /**

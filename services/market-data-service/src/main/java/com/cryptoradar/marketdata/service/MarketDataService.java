@@ -125,6 +125,14 @@ public class MarketDataService {
         }
     }
 
+    /**
+     * Public upsert for backfill service — batch insert with ON CONFLICT.
+     */
+    @Transactional
+    public void upsertCandlesBatch(List<Candle> candles) {
+        upsertCandles(candles);
+    }
+
     private void upsertCandles(List<Candle> candles) {
         for (Candle candle : candles) {
             entityManager.createNativeQuery("""

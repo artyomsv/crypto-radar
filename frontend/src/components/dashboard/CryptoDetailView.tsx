@@ -7,10 +7,20 @@ import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import type { CryptoDetail } from '@/types';
 import { NewsFeed } from './NewsFeed';
 
+const INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+const INTERVAL_LABELS: Record<string, string> = {
+  '1m': '1M', '5m': '5M', '15m': '15M', '1h': '1H', '4h': '4H', '1d': '1D',
+};
+const INTERVAL_LIMITS: Record<string, number> = {
+  '1m': 300, '5m': 200, '15m': 200, '1h': 200, '4h': 200, '1d': 365,
+};
+
 export function CryptoDetailView() {
   const { symbol } = useParams<{ symbol: string }>();
   const [detail, setDetail] = useState<CryptoDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedInterval, setSelectedInterval] = useState('1h');
+  const [chartCandles, setChartCandles] = useState<any[]>([]);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -18,13 +28,25 @@ export function CryptoDetailView() {
     setLoading(true);
     api.getCryptoDetail(symbol).then((data) => {
       setDetail(data);
+      if (data?.candles) setChartCandles(data.candles);
       setLoading(false);
     });
   }, [symbol]);
 
+  // Fetch candles when interval changes
+  useEffect(() => {
+    if (!symbol) return;
+    const limit = INTERVAL_LIMITS[selectedInterval] || 200;
+    api.getCandles(symbol, selectedInterval, limit).then((data) => {
+      if (data && data.length > 0) {
+        setChartCandles(data);
+      }
+    });
+  }, [symbol, selectedInterval]);
+
   // Initialize lightweight-charts for candle data
   useEffect(() => {
-    if (!detail?.candles || !chartContainerRef.current) return;
+    if (!chartCandles || chartCandles.length === 0 || !chartContainerRef.current) return;
 
     let chart: any;
     const initChart = async () => {
@@ -66,7 +88,7 @@ export function CryptoDetailView() {
           wickDownColor: '#ef4444',
         });
 
-        const candleData = detail.candles
+        const candleData = chartCandles
           .map((c) => ({
             time: Math.floor(new Date(c.time).getTime() / 1000) as any,
             open: c.open,
@@ -87,7 +109,7 @@ export function CryptoDetailView() {
           scaleMargins: { top: 0.8, bottom: 0 },
         });
 
-        const volumeData = detail.candles
+        const volumeData = chartCandles
           .map((c) => ({
             time: Math.floor(new Date(c.time).getTime() / 1000) as any,
             value: c.volume,
@@ -120,7 +142,7 @@ export function CryptoDetailView() {
         chart.remove();
       }
     };
-  }, [detail?.candles]);
+  }, [chartCandles]);
 
   if (loading) {
     return (
@@ -169,9 +191,26 @@ export function CryptoDetailView() {
 
       {/* Chart */}
       <div className="glass-card p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <BarChart3 className="h-4 w-4 text-accent" />
-          <h2 className="text-sm font-semibold text-text-primary">Price Chart (1h candles)</h2>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-accent" />
+            <h2 className="text-sm font-semibold text-text-primary">Price Chart</h2>
+          </div>
+          <div className="flex gap-1">
+            {INTERVALS.map((iv) => (
+              <button
+                key={iv}
+                onClick={() => setSelectedInterval(iv)}
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-all ${
+                  selectedInterval === iv
+                    ? 'bg-accent text-background'
+                    : 'bg-surface-light text-text-secondary hover:text-text-primary hover:bg-surface-light/80'
+                }`}
+              >
+                {INTERVAL_LABELS[iv]}
+              </button>
+            ))}
+          </div>
         </div>
         <div ref={chartContainerRef} className="w-full" />
       </div>
