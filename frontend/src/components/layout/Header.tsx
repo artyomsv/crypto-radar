@@ -1,7 +1,26 @@
-import { Link } from 'react-router-dom';
-import { Activity, Radio, Waves } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Activity, Radio, Waves, BarChart3 } from 'lucide-react';
 
 export function Header() {
+  const location = useLocation();
+
+  const navLink = (to: string, label: string, Icon: any) => {
+    const isActive = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+    return (
+      <Link
+        to={to}
+        className={`flex items-center gap-1.5 text-sm transition-colors ${
+          isActive
+            ? 'text-accent font-medium'
+            : 'text-text-secondary hover:text-accent'
+        }`}
+      >
+        <Icon className="h-4 w-4" />
+        <span>{label}</span>
+      </Link>
+    );
+  };
+
   return (
     <header className="sticky top-0 z-50 border-b border-surface-border bg-background/80 backdrop-blur-md">
       <div className="container mx-auto px-4 max-w-[1600px]">
@@ -18,16 +37,14 @@ export function Header() {
               </h1>
             </div>
           </Link>
-          <div className="flex items-center gap-4">
-            <Link to="/whales" className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-accent transition-colors">
-              <Waves className="h-4 w-4" />
-              <span>Whales</span>
-            </Link>
+          <nav className="flex items-center gap-5">
+            {navLink('/', 'Dashboard', BarChart3)}
+            {navLink('/whales', 'Whales', Waves)}
             <div className="flex items-center gap-2 text-sm text-text-secondary">
               <Radio className="h-4 w-4 text-gain animate-pulse" />
               <span>Live</span>
             </div>
-          </div>
+          </nav>
         </div>
       </div>
     </header>

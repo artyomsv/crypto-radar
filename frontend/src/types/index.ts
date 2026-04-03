@@ -141,6 +141,7 @@ export interface WhaleTransaction {
   fromLabel?: string;
   toLabel?: string;
   blockchain?: string;
+  txHash?: string;
 }
 
 export interface WhaleFlowSummary {

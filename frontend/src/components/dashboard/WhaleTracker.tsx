@@ -115,9 +115,9 @@ export function WhaleTracker() {
             <Activity className="h-4 w-4 text-accent" />
             Whale Pressure by Symbol
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {overview?.symbolAnalytics
-              ?.sort((a, b) => Math.abs(b.whalePressure) - Math.abs(a.whalePressure))
+              ?.sort((a, b) => (b.buyVolumeUsd1h + b.sellVolumeUsd1h) - (a.buyVolumeUsd1h + a.sellVolumeUsd1h))
               .map((analytics) => (
                 <WhaleSymbolCard key={analytics.symbol} analytics={analytics} />
               ))}
@@ -154,59 +154,101 @@ function WhaleSymbolCard({ analytics }: { analytics: WhaleAnalytics }) {
   const pressure = analytics.whalePressure;
   const isBullish = pressure > 10;
   const isBearish = pressure < -10;
+  const totalVol1h = analytics.buyVolumeUsd1h + analytics.sellVolumeUsd1h;
 
   return (
-    <div className={`glass-card p-3 space-y-2 ${
+    <div className={`glass-card p-4 space-y-3 ${
       isBullish ? 'border-gain/30' : isBearish ? 'border-loss/30' : ''
     }`}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className="text-base font-mono text-accent">{icon}</span>
-          <span className="text-xs font-medium text-text-primary">{name}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-2xl font-mono text-accent">{icon}</span>
+          <div>
+            <p className="text-sm font-semibold text-text-primary">{name}</p>
+            <p className="text-xs text-text-secondary">{analytics.symbol.replace('USDT', '')}</p>
+          </div>
         </div>
-        <span className={`text-xs font-bold font-mono ${
-          isBullish ? 'text-gain' : isBearish ? 'text-loss' : 'text-muted'
-        }`}>
-          {pressure > 0 ? '+' : ''}{pressure.toFixed(0)}
-        </span>
+        <div className="text-right">
+          <p className={`text-xl font-bold font-mono ${
+            isBullish ? 'text-gain' : isBearish ? 'text-loss' : 'text-muted'
+          }`}>
+            {pressure > 0 ? '+' : ''}{pressure.toFixed(0)}
+          </p>
+          <p className={`text-[10px] font-medium ${
+            isBullish ? 'text-gain' : isBearish ? 'text-loss' : 'text-muted'
+          }`}>{analytics.pressureLabel}</p>
+        </div>
       </div>
 
       {/* Pressure bar */}
-      <div className="h-1.5 bg-surface-light rounded-full overflow-hidden flex">
+      <div className="h-2 bg-surface-light rounded-full overflow-hidden flex">
         <div
-          className="h-full bg-loss/60 rounded-l-full"
+          className="h-full bg-loss/60 rounded-l-full transition-all duration-500"
           style={{ width: `${Math.max(0, 50 - pressure / 2)}%` }}
         />
         <div
-          className="h-full bg-gain/60 rounded-r-full"
+          className="h-full bg-gain/60 rounded-r-full transition-all duration-500"
           style={{ width: `${Math.max(0, 50 + pressure / 2)}%` }}
         />
       </div>
 
-      <div className="flex justify-between text-[10px] text-text-secondary">
-        <span className="text-gain">{formatLargeNumber(analytics.buyVolumeUsd1h)} buy</span>
-        <span className="text-loss">{formatLargeNumber(analytics.sellVolumeUsd1h)} sell</span>
+      {/* 1h stats */}
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <p className="text-text-secondary text-[10px]">Buy (1h)</p>
+          <p className="text-gain font-mono font-medium">{formatLargeNumber(analytics.buyVolumeUsd1h)}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-text-secondary text-[10px]">Sell (1h)</p>
+          <p className="text-loss font-mono font-medium">{formatLargeNumber(analytics.sellVolumeUsd1h)}</p>
+        </div>
       </div>
 
-      <div className="flex justify-between text-[10px]">
+      {/* Net flow + trades */}
+      <div className="flex justify-between items-center text-xs border-t border-surface-border pt-2">
         <span className="text-text-secondary">{analytics.tradeCount1h} trades/1h</span>
-        <span className={`font-medium ${
-          isBullish ? 'text-gain' : isBearish ? 'text-loss' : 'text-muted'
-        }`}>{analytics.pressureLabel}</span>
+        <span className={`font-mono font-medium ${analytics.netFlowUsd1h >= 0 ? 'text-gain' : 'text-loss'}`}>
+          Net: {analytics.netFlowUsd1h >= 0 ? '+' : ''}{formatLargeNumber(analytics.netFlowUsd1h)}
+        </span>
+      </div>
+
+      {/* 24h volume */}
+      <div className="text-[10px] text-text-secondary">
+        24h: {formatLargeNumber(analytics.buyVolumeUsd24h + analytics.sellVolumeUsd24h)} ({analytics.tradeCount24h} trades)
       </div>
     </div>
   );
 }
 
+function getTradeExplorerUrl(tx: WhaleTransaction): string | null {
+  if (tx.source === 'whale-alert' && tx.txHash && tx.blockchain) {
+    const explorers: Record<string, string> = {
+      bitcoin: 'https://blockchain.com/btc/tx/',
+      ethereum: 'https://etherscan.io/tx/',
+      solana: 'https://solscan.io/tx/',
+      ripple: 'https://xrpscan.com/tx/',
+      cardano: 'https://cardanoscan.io/transaction/',
+    };
+    const base = explorers[tx.blockchain];
+    if (base) return base + tx.txHash;
+  }
+  if (tx.source === 'binance') {
+    return `https://www.binance.com/en/trade/${tx.symbol.replace('USDT', '_USDT')}`;
+  }
+  return null;
+}
+
 function WhaleTradeLine({ tx }: { tx: WhaleTransaction }) {
   const isBuy = tx.side === 'BUY';
   const icon = SYMBOL_ICONS[tx.symbol] || '?';
+  const explorerUrl = getTradeExplorerUrl(tx);
+  const sourceLabel = tx.source === 'whale-alert' ? 'WA' : 'BN';
 
   return (
     <div className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs ${
       isBuy ? 'bg-gain/5 border-l-2 border-gain/40' : 'bg-loss/5 border-l-2 border-loss/40'
     }`}>
-      <span className={`font-bold ${isBuy ? 'text-gain' : 'text-loss'}`}>
+      <span className={`font-bold w-7 ${isBuy ? 'text-gain' : 'text-loss'}`}>
         {isBuy ? 'BUY' : 'SELL'}
       </span>
       <span className="font-mono text-accent">{icon}</span>
@@ -215,7 +257,20 @@ function WhaleTradeLine({ tx }: { tx: WhaleTransaction }) {
       <span className={`ml-auto font-bold font-mono ${isBuy ? 'text-gain' : 'text-loss'}`}>
         {formatLargeNumber(tx.valueUsd)}
       </span>
-      <span className="text-text-secondary text-[10px]">{formatTimeAgo(tx.time)}</span>
+      {explorerUrl ? (
+        <a
+          href={explorerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[10px] text-accent hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {sourceLabel}
+        </a>
+      ) : (
+        <span className="text-[10px] text-text-secondary">{sourceLabel}</span>
+      )}
+      <span className="text-text-secondary text-[10px] w-12 text-right">{formatTimeAgo(tx.time)}</span>
     </div>
   );
 }

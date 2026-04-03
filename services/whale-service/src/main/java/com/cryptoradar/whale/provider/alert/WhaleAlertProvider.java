@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -44,7 +45,7 @@ public class WhaleAlertProvider {
     );
 
     @ConfigProperty(name = "whale.alert.api.key")
-    String apiKey;
+    Optional<String> apiKey;
 
     @ConfigProperty(name = "whale.alert.api.url")
     String baseUrl;
@@ -60,7 +61,7 @@ public class WhaleAlertProvider {
     private final AtomicLong windowStart = new AtomicLong(System.currentTimeMillis());
 
     public boolean isEnabled() {
-        return apiKey != null && !apiKey.isBlank();
+        return apiKey.isPresent() && !apiKey.get().isBlank();
     }
 
     public List<WhaleTransaction> fetchRecentTransactions() {
@@ -77,7 +78,7 @@ public class WhaleAlertProvider {
         try {
             long start = Instant.now().minusSeconds(LOOKBACK_SECONDS).getEpochSecond();
             String url = String.format("%s/transactions?api_key=%s&min_value=50000&start=%d",
-                    baseUrl, apiKey, start);
+                    baseUrl, apiKey.orElse(""), start);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
