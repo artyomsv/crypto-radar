@@ -155,15 +155,20 @@ export function DerivativesDashboard() {
         {/* Right Column: Liquidation Map + Feed */}
         <div className="flex flex-col gap-4">
           {/* Liquidation Map for selected symbol */}
-          {expandedSymbol && (
-            <div className="glass-card p-4">
-              <h3 className="text-sm font-semibold text-accent mb-3 flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" />
-                Liquidation Levels — {SYMBOL_NAMES[expandedSymbol] || expandedSymbol}
-              </h3>
+          <div className="glass-card p-4">
+            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-accent" />
+              Estimated Liquidation Levels
+              {expandedSymbol && <span className="text-accent">— {SYMBOL_NAMES[expandedSymbol] || expandedSymbol}</span>}
+            </h3>
+            {expandedSymbol ? (
               <LiquidationMap symbol={expandedSymbol} />
-            </div>
-          )}
+            ) : (
+              <p className="text-text-secondary text-xs text-center py-6">
+                Select a symbol from the left to view liquidation levels
+              </p>
+            )}
+          </div>
 
           {/* Live Liquidation Feed */}
           <div className="flex flex-col flex-1 min-h-0">
