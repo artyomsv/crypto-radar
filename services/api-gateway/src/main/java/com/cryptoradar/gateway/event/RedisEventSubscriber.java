@@ -1,80 +1,107 @@
 package com.cryptoradar.gateway.event;
 
-import io.quarkus.redis.datasource.ReactiveRedisDataSource;
-import io.quarkus.redis.datasource.pubsub.ReactivePubSubCommands;
+import com.cryptoradar.gateway.websocket.WebSocketBroadcaster;
 import io.quarkus.runtime.StartupEvent;
+import io.vertx.mutiny.core.Vertx;
+import io.vertx.mutiny.redis.client.Redis;
+import io.vertx.mutiny.redis.client.RedisAPI;
+import io.vertx.mutiny.redis.client.RedisConnection;
+import io.vertx.redis.client.RedisOptions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Subscribes to Redis pub/sub using Vert.x Redis client directly.
+ * Forwards messages to WebSocket broadcaster for real-time client updates.
+ */
 @ApplicationScoped
 public class RedisEventSubscriber {
 
     private static final Logger LOG = Logger.getLogger(RedisEventSubscriber.class);
 
-    private static final String CHANNEL_PRICES = "crypto:prices";
-    private static final String CHANNEL_NEWS = "crypto:news";
-    private static final String CHANNEL_ANALYTICS = "crypto:analytics";
+    @Inject
+    Vertx vertx;
 
     @Inject
-    ReactiveRedisDataSource redisDataSource;
+    WebSocketBroadcaster broadcaster;
 
-    @Inject
-    SseManager sseManager;
+    @ConfigProperty(name = "quarkus.redis.hosts", defaultValue = "redis://localhost:6379")
+    String redisHosts;
 
     void onStart(@Observes StartupEvent event) {
-        // Delay subscription slightly to ensure Redis is fully ready
-        Executors.newSingleThreadScheduledExecutor().schedule(this::subscribeToChannels, 3, TimeUnit.SECONDS);
+        Executors.newSingleThreadScheduledExecutor().schedule(this::connect, 3, TimeUnit.SECONDS);
     }
 
-    private void subscribeToChannels() {
-        LOG.info("Subscribing to Redis pub/sub channels...");
+    private void connect() {
+        LOG.info("Connecting to Redis for pub/sub...");
 
-        try {
-            ReactivePubSubCommands<String> pubsub = redisDataSource.pubsub(String.class);
+        RedisOptions options = new RedisOptions().setConnectionString(redisHosts);
 
-            pubsub.subscribe(CHANNEL_PRICES)
-                    .subscribe().with(
-                            message -> {
-                                LOG.debugf("Received price update from Redis");
-                                sseManager.broadcastPrices(message);
-                            },
-                            failure -> {
-                                LOG.errorf("Redis prices subscription failed: %s", failure.getMessage());
-                                retrySubscription();
-                            }
-                    );
-
-            pubsub.subscribe(CHANNEL_NEWS)
-                    .subscribe().with(
-                            message -> {
-                                LOG.debugf("Received news update from Redis");
-                                sseManager.broadcastNews(message);
-                            },
-                            failure -> LOG.errorf("Redis news subscription failed: %s", failure.getMessage())
-                    );
-
-            pubsub.subscribe(CHANNEL_ANALYTICS)
-                    .subscribe().with(
-                            message -> {
-                                LOG.debugf("Received analytics update from Redis");
-                                sseManager.broadcastAnalytics(message);
-                            },
-                            failure -> LOG.errorf("Redis analytics subscription failed: %s", failure.getMessage())
-                    );
-
-            LOG.info("Subscribed to Redis channels: " + CHANNEL_PRICES + ", " + CHANNEL_NEWS + ", " + CHANNEL_ANALYTICS);
-        } catch (Exception e) {
-            LOG.errorf("Failed to subscribe to Redis channels: %s. Will retry in 10s.", e.getMessage());
-            retrySubscription();
-        }
+        Redis.createClient(vertx, options)
+                .connect()
+                .subscribe().with(
+                        conn -> {
+                            LOG.info("Redis pub/sub connection established");
+                            setupSubscription(conn);
+                        },
+                        error -> {
+                            LOG.errorf("Failed to connect to Redis: %s. Retrying in 10s...", error.getMessage());
+                            Executors.newSingleThreadScheduledExecutor()
+                                    .schedule(this::connect, 10, TimeUnit.SECONDS);
+                        }
+                );
     }
 
-    private void retrySubscription() {
-        Executors.newSingleThreadScheduledExecutor().schedule(this::subscribeToChannels, 10, TimeUnit.SECONDS);
+    private void setupSubscription(RedisConnection conn) {
+        // Handle incoming messages
+        conn.handler(message -> {
+            if (message == null || message.size() < 3) return;
+
+            String type = message.get(0).toString();
+            if (!"message".equals(type)) return;
+
+            String channel = message.get(1).toString();
+            String payload = message.get(2).toString();
+
+            switch (channel) {
+                case "crypto:prices" -> {
+                    LOG.debugf("Redis → WS broadcast: prices (%d chars)", payload.length());
+                    broadcaster.broadcastPrices(payload);
+                }
+                case "crypto:news" -> {
+                    LOG.debugf("Redis → WS broadcast: news (%d chars)", payload.length());
+                    broadcaster.broadcastNews(payload);
+                }
+                case "crypto:analytics" -> {
+                    LOG.debugf("Redis → WS broadcast: analytics (%d chars)", payload.length());
+                    broadcaster.broadcastAnalytics(payload);
+                }
+            }
+        });
+
+        // Handle connection exceptions
+        conn.exceptionHandler(err -> {
+            LOG.warnf("Redis pub/sub connection error: %s. Reconnecting in 5s...", err.getMessage());
+            Executors.newSingleThreadScheduledExecutor()
+                    .schedule(this::connect, 5, TimeUnit.SECONDS);
+        });
+
+        // Subscribe to all channels
+        RedisAPI api = RedisAPI.api(conn);
+        api.subscribe(List.of("crypto:prices", "crypto:news", "crypto:analytics"))
+                .subscribe().with(
+                        response -> LOG.info("Subscribed to Redis channels: crypto:prices, crypto:news, crypto:analytics"),
+                        error -> {
+                            LOG.errorf("Failed to subscribe to Redis channels: %s", error.getMessage());
+                            conn.close();
+                        }
+                );
     }
 }

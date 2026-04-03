@@ -56,3 +56,44 @@
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
+
+/* WebSocket live price flash animations */
+@keyframes flash-green {
+  0% { background-color: rgba(16, 185, 129, 0.3); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flash-red {
+  0% { background-color: rgba(239, 68, 68, 0.3); }
+  100% { background-color: transparent; }
+}
+
+.price-flash-up {
+  animation: flash-green 0.8s ease-out;
+}
+
+.price-flash-down {
+  animation: flash-red 0.8s ease-out;
+}
+
+/* Live connection dot */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.live-dot.connected {
+  background-color: #10b981;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+.live-dot.disconnected {
+  background-color: #ef4444;
+}

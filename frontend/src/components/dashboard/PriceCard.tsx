@@ -6,9 +6,10 @@ import { formatPrice, formatPercent, formatLargeNumber } from '@/lib/utils';
 
 interface PriceCardProps {
   data: PriceData;
+  flash?: 'up' | 'down' | null;
 }
 
-export function PriceCard({ data }: PriceCardProps) {
+export function PriceCard({ data, flash }: PriceCardProps) {
   const isPositive = data.priceChangePct24h >= 0;
   const name = SYMBOL_NAMES[data.symbol] || data.symbol;
   const icon = SYMBOL_ICONS[data.symbol] || '?';
@@ -18,7 +19,7 @@ export function PriceCard({ data }: PriceCardProps) {
       to={`/crypto/${data.symbol}`}
       className={`glass-card p-4 hover:bg-surface-light/80 transition-all duration-200 cursor-pointer group ${
         isPositive ? 'hover:glow-green' : 'hover:glow-red'
-      }`}
+      } ${flash === 'up' ? 'price-flash-up' : flash === 'down' ? 'price-flash-down' : ''}`}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">

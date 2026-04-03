@@ -55,6 +55,12 @@
             <artifactId>quarkus-redis-client</artifactId>
         </dependency>
 
+        <!-- WebSocket -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-websockets-next</artifactId>
+        </dependency>
+
         <!-- Health checks -->
         <dependency>
             <groupId>io.quarkus</groupId>

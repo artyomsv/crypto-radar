@@ -5,7 +5,7 @@ import { NewsFeed } from './NewsFeed';
 import { Loader2 } from 'lucide-react';
 
 export function Dashboard() {
-  const { data, loading, error } = useDashboardData();
+  const { data, loading, error, connected, priceFlash } = useDashboardData();
 
   if (loading) {
     return (
@@ -40,10 +40,18 @@ export function Dashboard() {
 
       {/* Price Cards Grid */}
       <section>
-        <h2 className="text-lg font-semibold text-text-primary mb-4">Top Cryptocurrencies</h2>
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-text-primary">Top Cryptocurrencies</h2>
+          <div className="flex items-center gap-1.5">
+            <span className={`live-dot ${connected ? 'connected' : 'disconnected'}`} />
+            <span className={`text-xs ${connected ? 'text-gain' : 'text-loss'}`}>
+              {connected ? 'Live' : 'Reconnecting...'}
+            </span>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {data.prices.map((price) => (
-            <PriceCard key={price.symbol} data={price} />
+            <PriceCard key={price.symbol} data={price} flash={priceFlash[price.symbol]} />
           ))}
         </div>
       </section>
