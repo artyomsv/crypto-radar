@@ -22,6 +22,10 @@ export const api = {
   getAnalysis: (symbol: string) => fetchJson<any>(`/api/analytics/${symbol}`),
   getLatestNews: (limit = 20) => fetchJson<any[]>(`/api/news/latest?limit=${limit}`),
   getSentiment: (symbol: string) => fetchJson<any>(`/api/news/sentiment/${symbol}`),
+  fetchArticle: (url: string) =>
+    fetchJson<{ title: string; body: string; imageUrl: string; images: string[]; paragraphCount: number }>(
+      `/api/news/fetch?url=${encodeURIComponent(url)}`
+    ),
   getWhaleTransactions: (symbol?: string, limit = 100, period = '1d') => {
     const params = new URLSearchParams({ limit: String(limit), period });
     if (symbol) params.set('symbol', symbol);

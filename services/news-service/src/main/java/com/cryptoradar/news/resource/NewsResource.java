@@ -3,6 +3,7 @@ package com.cryptoradar.news.resource;
 import com.cryptoradar.news.model.DailySentiment;
 import com.cryptoradar.news.model.NewsArticle;
 import com.cryptoradar.news.provider.NewsAggregator;
+import com.cryptoradar.news.service.ArticleFetcher;
 import com.cryptoradar.news.service.NewsService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
@@ -25,6 +26,9 @@ public class NewsResource {
 
     @Inject
     NewsAggregator newsAggregator;
+
+    @Inject
+    ArticleFetcher articleFetcher;
 
     @GET
     public List<NewsArticle> getNews(
@@ -53,6 +57,15 @@ public class NewsResource {
     @Path("/providers")
     public List<String> getProviders() {
         return newsAggregator.getProviderNames();
+    }
+
+    @GET
+    @Path("/fetch")
+    public Map<String, Object> fetchArticle(@QueryParam("url") String url) {
+        if (url == null || url.isBlank()) {
+            return Map.of("error", "url parameter is required");
+        }
+        return articleFetcher.fetchArticle(url);
     }
 
     @GET

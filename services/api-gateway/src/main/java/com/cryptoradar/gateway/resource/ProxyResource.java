@@ -49,6 +49,14 @@ public class ProxyResource {
     }
 
     @GET
+    @Path("/news/fetch")
+    public Response fetchArticle(@QueryParam("url") String url) {
+        String result = serviceClient.getRaw(
+                serviceClient.getNewsServiceUrl() + "/api/news/fetch?url=" + java.net.URLEncoder.encode(url, java.nio.charset.StandardCharsets.UTF_8));
+        return proxyResponse(result);
+    }
+
+    @GET
     @Path("/news/sentiment/{symbol}")
     public Response getSentiment(@PathParam("symbol") String symbol) {
         String result = serviceClient.getRaw(serviceClient.getNewsServiceUrl() + "/api/news/sentiment/" + symbol);
