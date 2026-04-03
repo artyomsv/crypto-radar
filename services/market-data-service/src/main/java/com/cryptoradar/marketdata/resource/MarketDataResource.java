@@ -87,7 +87,7 @@ public class MarketDataResource {
     @Path("/intervals")
     public Map<String, Object> getIntervals() {
         return Map.of(
-                "intervals", List.of("1m", "5m", "15m", "1h", "4h", "1d"),
+                "intervals", List.of("1m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "1w"),
                 "default", "1h"
         );
     }

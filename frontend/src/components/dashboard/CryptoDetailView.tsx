@@ -8,12 +8,16 @@ import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import type { CryptoDetail } from '@/types';
 import { NewsFeed } from './NewsFeed';
 
-const INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+const INTERVALS = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
 const INTERVAL_LABELS: Record<string, string> = {
-  '1m': '1M', '5m': '5M', '15m': '15M', '1h': '1H', '4h': '4H', '1d': '1D',
+  '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m',
+  '1h': '1H', '2h': '2H', '4h': '4H', '8h': '8H', '12h': '12H',
+  '1d': '1D', '1w': '1W',
 };
 const INTERVAL_LIMITS: Record<string, number> = {
-  '1m': 300, '5m': 200, '15m': 200, '1h': 200, '4h': 200, '1d': 365,
+  '1m': 300, '5m': 200, '15m': 200, '30m': 200,
+  '1h': 200, '2h': 200, '4h': 200, '8h': 200, '12h': 200,
+  '1d': 365, '1w': 200,
 };
 
 export function CryptoDetailView() {

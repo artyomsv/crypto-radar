@@ -26,23 +26,33 @@ public class BackfillService {
     // Rate limiting is handled by BinanceRateLimiter
 
     // How far back to backfill for each interval on first run
-    private static final Map<String, Duration> BACKFILL_DEPTH = Map.of(
-            "1m", Duration.ofDays(7),
-            "5m", Duration.ofDays(30),
-            "15m", Duration.ofDays(60),
-            "1h", Duration.ofDays(180),
-            "4h", Duration.ofDays(365),
-            "1d", Duration.ofDays(1000)
+    private static final Map<String, Duration> BACKFILL_DEPTH = Map.ofEntries(
+            Map.entry("1m", Duration.ofDays(7)),
+            Map.entry("5m", Duration.ofDays(30)),
+            Map.entry("15m", Duration.ofDays(60)),
+            Map.entry("30m", Duration.ofDays(90)),
+            Map.entry("1h", Duration.ofDays(180)),
+            Map.entry("2h", Duration.ofDays(365)),
+            Map.entry("4h", Duration.ofDays(365)),
+            Map.entry("8h", Duration.ofDays(500)),
+            Map.entry("12h", Duration.ofDays(730)),
+            Map.entry("1d", Duration.ofDays(1000)),
+            Map.entry("1w", Duration.ofDays(1500))
     );
 
     // Candle duration for gap calculation
-    private static final Map<String, Duration> INTERVAL_DURATION = Map.of(
-            "1m", Duration.ofMinutes(1),
-            "5m", Duration.ofMinutes(5),
-            "15m", Duration.ofMinutes(15),
-            "1h", Duration.ofHours(1),
-            "4h", Duration.ofHours(4),
-            "1d", Duration.ofDays(1)
+    private static final Map<String, Duration> INTERVAL_DURATION = Map.ofEntries(
+            Map.entry("1m", Duration.ofMinutes(1)),
+            Map.entry("5m", Duration.ofMinutes(5)),
+            Map.entry("15m", Duration.ofMinutes(15)),
+            Map.entry("30m", Duration.ofMinutes(30)),
+            Map.entry("1h", Duration.ofHours(1)),
+            Map.entry("2h", Duration.ofHours(2)),
+            Map.entry("4h", Duration.ofHours(4)),
+            Map.entry("8h", Duration.ofHours(8)),
+            Map.entry("12h", Duration.ofHours(12)),
+            Map.entry("1d", Duration.ofDays(1)),
+            Map.entry("1w", Duration.ofDays(7))
     );
 
     @Inject

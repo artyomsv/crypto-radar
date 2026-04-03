@@ -18,8 +18,10 @@ public class MarketDataScheduler {
 
     private static final Logger LOG = Logger.getLogger(MarketDataScheduler.class);
 
-    // All intervals we collect
-    private static final List<String> ALL_INTERVALS = List.of("1m", "5m", "15m", "1h", "4h", "1d");
+    // All intervals we collect (Binance supported intervals)
+    private static final List<String> ALL_INTERVALS = List.of(
+            "1m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "1w"
+    );
 
     @Inject
     MarketDataService marketDataService;
@@ -118,10 +120,40 @@ public class MarketDataScheduler {
         fetchLatestCandles("4h", 3);
     }
 
+    /** 30m candles: fetch every 10 minutes */
+    @Scheduled(every = "10m", identity = "candles-30m")
+    void fetch30mCandles() {
+        fetchLatestCandles("30m", 3);
+    }
+
+    /** 2h candles: fetch every 30 minutes */
+    @Scheduled(every = "30m", identity = "candles-2h")
+    void fetch2hCandles() {
+        fetchLatestCandles("2h", 3);
+    }
+
+    /** 8h candles: fetch every hour */
+    @Scheduled(every = "1h", identity = "candles-8h")
+    void fetch8hCandles() {
+        fetchLatestCandles("8h", 3);
+    }
+
+    /** 12h candles: fetch every hour */
+    @Scheduled(every = "1h", identity = "candles-12h")
+    void fetch12hCandles() {
+        fetchLatestCandles("12h", 3);
+    }
+
     /** 1d candles: fetch every hour */
     @Scheduled(every = "1h", identity = "candles-1d")
     void fetch1dCandles() {
         fetchLatestCandles("1d", 3);
+    }
+
+    /** 1w candles: fetch every 4 hours */
+    @Scheduled(every = "4h", identity = "candles-1w")
+    void fetch1wCandles() {
+        fetchLatestCandles("1w", 3);
     }
 
     private void fetchLatestCandles(String interval, int limit) {
