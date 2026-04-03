@@ -30,6 +30,7 @@ export function CryptoDetailView() {
   const [priceFlash, setPriceFlash] = useState<'up' | 'down' | null>(null);
   const prevPrice = useRef<number | null>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<any>(null);
   const candleSeriesRef = useRef<any>(null);
   const volumeSeriesRef = useRef<any>(null);
 
@@ -38,9 +39,9 @@ export function CryptoDetailView() {
     setLoading(true);
     setLivePrice(null);
     prevPrice.current = null;
+    // Don't set chartCandles here — let the interval effect handle it
     api.getCryptoDetail(symbol).then((data) => {
       setDetail(data);
-      if (data?.candles) setChartCandles(data.candles);
       if (data?.priceData?.price) {
         setLivePrice(data.priceData.price);
         prevPrice.current = data.priceData.price;
@@ -49,7 +50,7 @@ export function CryptoDetailView() {
     });
   }, [symbol]);
 
-  // Fetch candles when interval changes
+  // Single source of truth for candle data
   useEffect(() => {
     if (!symbol) return;
     const limit = INTERVAL_LIMITS[selectedInterval] || 200;
@@ -116,14 +117,23 @@ export function CryptoDetailView() {
   useEffect(() => {
     if (!chartCandles || chartCandles.length === 0 || !chartContainerRef.current) return;
 
-    let chart: any;
+    // Destroy previous chart SYNCHRONOUSLY before creating new one
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    }
+
+    let cancelled = false;
     const initChart = async () => {
       try {
         const { createChart, CrosshairMode } = await import('lightweight-charts');
+        if (cancelled) return; // Effect was cleaned up during async import
         const container = chartContainerRef.current;
         if (!container) return;
 
-        chart = createChart(container, {
+        const chart = createChart(container, {
           width: container.clientWidth,
           height: 400,
           layout: {
@@ -168,6 +178,7 @@ export function CryptoDetailView() {
 
         candleSeries.setData(candleData);
         candleSeriesRef.current = candleSeries;
+        chartRef.current = chart;
 
         const volumeSeries = chart.addHistogramSeries({
           priceFormat: { type: 'volume' },
@@ -207,10 +218,12 @@ export function CryptoDetailView() {
     initChart();
 
     return () => {
+      cancelled = true;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
-      if (chart) {
-        chart.remove();
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
       }
     };
   }, [chartCandles]);
