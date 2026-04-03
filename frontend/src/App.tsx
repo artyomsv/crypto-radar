@@ -3,6 +3,7 @@ import { Header } from './components/layout/Header';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { CryptoDetailView } from './components/dashboard/CryptoDetailView';
 import { WhaleTracker } from './components/dashboard/WhaleTracker';
+import { CryptoConfig } from './components/dashboard/CryptoConfig';
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/crypto/:symbol" element={<CryptoDetailView />} />
           <Route path="/whales" element={<WhaleTracker />} />
+          <Route path="/config" element={<CryptoConfig />} />
         </Routes>
       </main>
     </div>

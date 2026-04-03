@@ -34,4 +34,26 @@ export const api = {
   getWhaleAnalytics: () => fetchJson<WhaleMarketOverview>('/api/whales/analytics'),
   getWhaleFlow: (symbol: string, window = '1h') =>
     fetchJson<WhaleFlowSummary>(`/api/whales/flow/${symbol}?window=${window}`),
+  getConfigCryptos: () => fetchJson<any[]>('/api/market/config/cryptos'),
+  addCrypto: async (symbol: string, name: string) => {
+    const res = await fetch('/api/market/config/cryptos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, name })
+    });
+    return res.json();
+  },
+  toggleCrypto: async (symbol: string, isActive: boolean) => {
+    const res = await fetch(`/api/market/config/cryptos/${symbol}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive })
+    });
+    return res.json();
+  },
+  removeCrypto: async (symbol: string, deleteData = false) => {
+    const res = await fetch(`/api/market/config/cryptos/${symbol}?deleteData=${deleteData}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+  searchSymbols: (q: string) => fetchJson<any[]>(`/api/market/config/search?q=${encodeURIComponent(q)}`),
 };

@@ -2,8 +2,12 @@ package com.cryptoradar.gateway.resource;
 
 import com.cryptoradar.gateway.client.ServiceClient;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -37,6 +41,41 @@ public class ProxyResource {
                 + "?interval=" + interval + "&limit=" + limit;
         String result = serviceClient.getRaw(url);
         return proxyResponse(result);
+    }
+
+    // --- Crypto Config proxies ---
+
+    @GET
+    @Path("/market/config/cryptos")
+    public Response getConfigCryptos() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/market/config/cryptos"));
+    }
+
+    @POST
+    @Path("/market/config/cryptos")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response addCrypto(String body) {
+        return proxyPost(serviceClient.getMarketDataUrl() + "/api/market/config/cryptos", body);
+    }
+
+    @PUT
+    @Path("/market/config/cryptos/{symbol}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response toggleCrypto(@PathParam("symbol") String symbol, String body) {
+        return proxyPut(serviceClient.getMarketDataUrl() + "/api/market/config/cryptos/" + symbol, body);
+    }
+
+    @DELETE
+    @Path("/market/config/cryptos/{symbol}")
+    public Response removeCrypto(@PathParam("symbol") String symbol,
+                                  @QueryParam("deleteData") @DefaultValue("false") boolean deleteData) {
+        return proxyDelete(serviceClient.getMarketDataUrl() + "/api/market/config/cryptos/" + symbol + "?deleteData=" + deleteData);
+    }
+
+    @GET
+    @Path("/market/config/search")
+    public Response searchSymbols(@QueryParam("q") String q) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getMarketDataUrl() + "/api/market/config/search?q=" + q));
     }
 
     // --- News proxies ---
@@ -125,5 +164,20 @@ public class ProxyResource {
                     .build();
         }
         return Response.ok(body).build();
+    }
+
+    private Response proxyPost(String url, String body) {
+        String result = serviceClient.postRaw(url, body);
+        return proxyResponse(result);
+    }
+
+    private Response proxyPut(String url, String body) {
+        String result = serviceClient.putRaw(url, body);
+        return proxyResponse(result);
+    }
+
+    private Response proxyDelete(String url) {
+        String result = serviceClient.deleteRaw(url);
+        return proxyResponse(result);
     }
 }

@@ -125,6 +125,42 @@ public class ServiceClient {
         }
     }
 
+    public String postRaw(String url, String body) {
+        return sendWithBody(url, "POST", body);
+    }
+
+    public String putRaw(String url, String body) {
+        return sendWithBody(url, "PUT", body);
+    }
+
+    public String deleteRaw(String url) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url)).timeout(Duration.ofSeconds(10))
+                    .DELETE().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() < 300 ? response.body() : null;
+        } catch (Exception e) {
+            LOG.errorf("DELETE %s failed: %s", url, e.getMessage());
+            return null;
+        }
+    }
+
+    private String sendWithBody(String url, String method, String body) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url)).timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json")
+                    .method(method, HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() < 300 ? response.body() : response.body();
+        } catch (Exception e) {
+            LOG.errorf("%s %s failed: %s", method, url, e.getMessage());
+            return null;
+        }
+    }
+
     public String getMarketDataUrl() {
         return marketDataUrl;
     }

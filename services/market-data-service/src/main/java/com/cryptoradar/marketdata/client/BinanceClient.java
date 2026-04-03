@@ -20,18 +20,26 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
+
+import io.agroal.api.AgroalDataSource;
 
 @ApplicationScoped
 public class BinanceClient {
 
     private static final Logger LOG = Logger.getLogger(BinanceClient.class);
 
-    private static final Set<String> TRACKED_SYMBOLS = Set.of(
+    // Fallback if DB is not ready
+    private static final Set<String> DEFAULT_SYMBOLS = Set.of(
             "BTCUSDT", "ETHUSDT", "XRPUSDT", "BNBUSDT", "SOLUSDT",
             "TRXUSDT", "DOGEUSDT", "BCHUSDT", "ADAUSDT", "LINKUSDT",
             "XMRUSDT", "XLMUSDT", "LTCUSDT", "ZECUSDT"
     );
+
+    private volatile Set<String> cachedSymbols;
+    private volatile long lastSymbolRefresh = 0;
+    private static final long SYMBOL_CACHE_TTL_MS = 60_000;
 
     private final HttpClient httpClient;
 
@@ -40,6 +48,9 @@ public class BinanceClient {
 
     @Inject
     BinanceRateLimiter rateLimiter;
+
+    @Inject
+    AgroalDataSource dataSource;
 
     @ConfigProperty(name = "binance.api.base-url")
     String baseUrl;
@@ -201,7 +212,7 @@ public class BinanceClient {
 
             for (JsonNode node : root) {
                 String tickerSymbol = node.get("symbol").asText();
-                if (TRACKED_SYMBOLS.contains(tickerSymbol)) {
+                if (getTrackedSymbols().contains(tickerSymbol)) {
                     PriceSnapshot snapshot = parseTicker(node);
                     if (snapshot != null) {
                         snapshots.add(snapshot);
@@ -250,7 +261,7 @@ public class BinanceClient {
 
             for (JsonNode node : root) {
                 String sym = node.get("symbol").asText();
-                if (TRACKED_SYMBOLS.contains(sym)) {
+                if (getTrackedSymbols().contains(sym)) {
                     prices.put(sym, node.get("price").asDouble());
                 }
             }
@@ -265,7 +276,32 @@ public class BinanceClient {
     }
 
     public Set<String> getTrackedSymbols() {
-        return TRACKED_SYMBOLS;
+        long now = System.currentTimeMillis();
+        if (cachedSymbols != null && now - lastSymbolRefresh < SYMBOL_CACHE_TTL_MS) {
+            return cachedSymbols;
+        }
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.prepareStatement("SELECT symbol FROM crypto_assets WHERE is_active = true");
+             var rs = stmt.executeQuery()) {
+            Set<String> symbols = new HashSet<>();
+            while (rs.next()) {
+                symbols.add(rs.getString("symbol"));
+            }
+            if (!symbols.isEmpty()) {
+                cachedSymbols = symbols;
+                lastSymbolRefresh = now;
+                return symbols;
+            }
+        } catch (Exception e) {
+            LOG.debugf("Failed to load symbols from DB, using defaults: %s", e.getMessage());
+        }
+        return DEFAULT_SYMBOLS;
+    }
+
+    /** Force refresh the cached symbol list (called after config changes) */
+    public void refreshSymbolCache() {
+        lastSymbolRefresh = 0;
+        cachedSymbols = null;
     }
 
     private PriceSnapshot parseTicker(JsonNode node) {

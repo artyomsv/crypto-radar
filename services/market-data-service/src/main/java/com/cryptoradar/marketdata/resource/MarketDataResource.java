@@ -6,16 +6,24 @@ import com.cryptoradar.marketdata.model.CryptoAsset;
 import com.cryptoradar.marketdata.model.PriceSnapshot;
 import com.cryptoradar.marketdata.service.BackfillService;
 import com.cryptoradar.marketdata.service.MarketDataService;
+import io.agroal.api.AgroalDataSource;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +37,9 @@ public class MarketDataResource {
 
     @Inject
     BackfillService backfillService;
+
+    @Inject
+    AgroalDataSource dataSource;
 
     @Inject
     BinanceClient binanceClient;
@@ -90,5 +101,170 @@ public class MarketDataResource {
                 "intervals", List.of("1m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "1w"),
                 "default", "1h"
         );
+    }
+
+    // --- Crypto Configuration CRUD ---
+
+    /** List all configured cryptos (active + inactive) */
+    @GET
+    @Path("/config/cryptos")
+    public List<Map<String, Object>> getConfiguredCryptos() {
+        List<Map<String, Object>> results = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT symbol, name, rank, is_active FROM crypto_assets ORDER BY rank");
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                results.add(Map.of(
+                        "symbol", rs.getString("symbol"),
+                        "name", rs.getString("name"),
+                        "rank", rs.getInt("rank"),
+                        "isActive", rs.getBoolean("is_active")
+                ));
+            }
+        } catch (Exception e) {
+            return results;
+        }
+        return results;
+    }
+
+    /** Add a new crypto to track */
+    @POST
+    @Path("/config/cryptos")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response addCrypto(Map<String, Object> body) {
+        String symbol = ((String) body.get("symbol")).toUpperCase();
+        String name = (String) body.get("name");
+
+        if (!symbol.endsWith("USDT")) {
+            symbol = symbol + "USDT";
+        }
+
+        // Validate symbol exists on Binance
+        try {
+            var prices = binanceClient.fetchAllPricesLightweight();
+            if (!prices.containsKey(symbol)) {
+                return Response.status(400).entity(Map.of("error", symbol + " not found on Binance")).build();
+            }
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", "Failed to validate symbol")).build();
+        }
+
+        // Get next rank
+        int nextRank = 1;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement("SELECT COALESCE(MAX(rank), 0) + 1 FROM crypto_assets");
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) nextRank = rs.getInt(1);
+        } catch (Exception e) { /* use default */ }
+
+        // Insert
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "INSERT INTO crypto_assets (symbol, name, rank, is_active) VALUES (?, ?, ?, true) " +
+                             "ON CONFLICT (symbol) DO UPDATE SET name = EXCLUDED.name, is_active = true")) {
+            stmt.setString(1, symbol);
+            stmt.setString(2, name != null ? name : symbol.replace("USDT", ""));
+            stmt.setInt(3, nextRank);
+            stmt.executeUpdate();
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+
+        binanceClient.refreshSymbolCache();
+
+        // Trigger backfill for new symbol
+        String finalSymbol = symbol;
+        Thread.ofVirtual().start(() -> {
+            for (String interval : List.of("1h", "1d", "4h", "15m")) {
+                backfillService.backfill(finalSymbol, interval);
+            }
+        });
+
+        return Response.ok(Map.of("symbol", symbol, "status", "added", "backfillStarted", true)).build();
+    }
+
+    /** Toggle crypto active/inactive */
+    @PUT
+    @Path("/config/cryptos/{symbol}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response toggleCrypto(@PathParam("symbol") String symbol, Map<String, Object> body) {
+        boolean isActive = (boolean) body.get("isActive");
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "UPDATE crypto_assets SET is_active = ? WHERE symbol = ?")) {
+            stmt.setBoolean(1, isActive);
+            stmt.setString(2, symbol.toUpperCase());
+            int updated = stmt.executeUpdate();
+            if (updated == 0) {
+                return Response.status(404).entity(Map.of("error", "Symbol not found")).build();
+            }
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+        binanceClient.refreshSymbolCache();
+        return Response.ok(Map.of("symbol", symbol, "isActive", isActive)).build();
+    }
+
+    /** Remove a crypto completely (deactivates, optionally deletes data) */
+    @DELETE
+    @Path("/config/cryptos/{symbol}")
+    public Response removeCrypto(@PathParam("symbol") String symbol,
+                                  @QueryParam("deleteData") @DefaultValue("false") boolean deleteData) {
+        String sym = symbol.toUpperCase();
+        try (Connection conn = dataSource.getConnection()) {
+            if (deleteData) {
+                try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM candles WHERE symbol = ?")) {
+                    stmt.setString(1, sym);
+                    int deleted = stmt.executeUpdate();
+                    try (PreparedStatement stmt2 = conn.prepareStatement("DELETE FROM price_snapshots WHERE symbol = ?")) {
+                        stmt2.setString(1, sym);
+                        stmt2.executeUpdate();
+                    }
+                }
+            }
+            try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM crypto_assets WHERE symbol = ?")) {
+                stmt.setString(1, sym);
+                stmt.executeUpdate();
+            }
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+        binanceClient.refreshSymbolCache();
+        return Response.ok(Map.of("symbol", sym, "deleted", true, "dataDeleted", deleteData)).build();
+    }
+
+    /** Search ALL Binance USDT pairs (not just tracked) */
+    @GET
+    @Path("/config/search")
+    public List<Map<String, Object>> searchSymbols(@QueryParam("q") String query) {
+        if (query == null || query.length() < 2) return List.of();
+        String q = query.toUpperCase();
+        List<Map<String, Object>> results = new ArrayList<>();
+        try {
+            // Fetch ALL Binance prices (not just tracked)
+            var httpClient = java.net.http.HttpClient.newHttpClient();
+            var request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create("https://api.binance.com/api/v3/ticker/price"))
+                    .timeout(java.time.Duration.ofSeconds(10))
+                    .GET().build();
+            var response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                var root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.body());
+                for (var node : root) {
+                    String sym = node.get("symbol").asText();
+                    if (sym.endsWith("USDT") && sym.contains(q)) {
+                        results.add(Map.of(
+                                "symbol", sym,
+                                "price", node.get("price").asDouble()
+                        ));
+                        if (results.size() >= 20) break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            return results;
+        }
+        return results;
     }
 }

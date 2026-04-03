@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Activity, Radio, Waves, BarChart3 } from 'lucide-react';
+import { Activity, Radio, Waves, BarChart3, Settings } from 'lucide-react';
 
 export function Header() {
   const location = useLocation();
@@ -40,6 +40,7 @@ export function Header() {
           <nav className="flex items-center gap-5">
             {navLink('/', 'Dashboard', BarChart3)}
             {navLink('/whales', 'Whales', Waves)}
+            {navLink('/config', 'Settings', Settings)}
             <div className="flex items-center gap-2 text-sm text-text-secondary">
               <Radio className="h-4 w-4 text-gain animate-pulse" />
               <span>Live</span>
