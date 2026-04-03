@@ -99,19 +99,21 @@ export function LiquidationMap({ symbol }: LiquidationMapProps) {
         </div>
       </div>
 
-      {/* Visual liquidation bars */}
+      {/* Visual liquidation bars — sorted by price */}
       <div className="space-y-1">
-        {/* Short liquidation levels (above current price) — reversed so closest to price is at bottom */}
-        {data.shortLiquidationLevels.slice().reverse().map((level) => (
-          <LiqBar
-            key={`short-${level.leverage}`}
-            price={level.price}
-            value={level.cumulativeShortLiqUsd}
-            maxValue={maxValue}
-            leverage={level.leverage}
-            type="short"
-            currentPrice={data.currentPrice}
-          />
+        {/* Short liquidation levels (above current price) — highest price at top, closest to current at bottom */}
+        {[...data.shortLiquidationLevels]
+          .sort((a, b) => b.price - a.price)
+          .map((level) => (
+            <LiqBar
+              key={`short-${level.leverage}`}
+              price={level.price}
+              value={level.cumulativeShortLiqUsd}
+              maxValue={maxValue}
+              leverage={level.leverage}
+              type="short"
+              currentPrice={data.currentPrice}
+            />
         ))}
 
         {/* Current price marker */}
@@ -121,12 +123,14 @@ export function LiquidationMap({ symbol }: LiquidationMapProps) {
           <span className="font-mono text-accent font-bold text-xs">{formatPrice(data.currentPrice)}</span>
         </div>
 
-        {/* Long liquidation levels (below current price) */}
-        {data.longLiquidationLevels.map((level) => (
-          <LiqBar
-            key={`long-${level.leverage}`}
-            price={level.price}
-            value={level.cumulativeLongLiqUsd}
+        {/* Long liquidation levels (below current price) — closest to current at top, lowest price at bottom */}
+        {[...data.longLiquidationLevels]
+          .sort((a, b) => b.price - a.price)
+          .map((level) => (
+            <LiqBar
+              key={`long-${level.leverage}`}
+              price={level.price}
+              value={level.cumulativeLongLiqUsd}
             maxValue={maxValue}
             leverage={level.leverage}
             type="long"
