@@ -211,6 +211,7 @@ services:
       ANALYTICS_SERVICE_URL: http://analytics-service:8083
       WHALE_SERVICE_URL: http://whale-service:8084
       DERIVATIVES_SERVICE_URL: http://derivatives-service:8085
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     logging:
       driver: json-file
       options:

@@ -51,7 +51,7 @@ public class CoinbaseTradeStreamProvider extends AbstractExchangeStreamProvider 
             double price = root.path("price").asDouble();
             double size = root.path("size").asDouble();
             double value = price * size;
-            if (value < getThreshold()) return null;
+            if (value < getThresholdForSymbol(symbol)) return null;
 
             String side = "buy".equals(root.path("side").asText()) ? "BUY" : "SELL";
             Instant time = Instant.parse(root.path("time").asText());

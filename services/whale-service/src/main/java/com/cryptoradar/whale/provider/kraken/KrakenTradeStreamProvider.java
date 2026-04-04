@@ -55,7 +55,7 @@ public class KrakenTradeStreamProvider extends AbstractExchangeStreamProvider {
                 double price = trade.path("price").asDouble();
                 double qty = trade.path("qty").asDouble();
                 double value = price * qty;
-                if (value < getThreshold()) continue;
+                if (value < getThresholdForSymbol(symbol)) continue;
 
                 String side = "buy".equals(trade.path("side").asText()) ? "BUY" : "SELL";
                 Instant time = Instant.parse(trade.path("timestamp").asText());

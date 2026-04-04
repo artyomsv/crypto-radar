@@ -18,6 +18,8 @@ public class TradingSignal {
     private Double riskRewardRatio;
     private String alertLevel;
     private String previousSignal;
+    private String aiAnalysis;
+    private Instant aiAnalysisTimestamp;
 
     public TradingSignal() {}
 
@@ -56,4 +58,10 @@ public class TradingSignal {
 
     public String getPreviousSignal() { return previousSignal; }
     public void setPreviousSignal(String previousSignal) { this.previousSignal = previousSignal; }
+
+    public String getAiAnalysis() { return aiAnalysis; }
+    public void setAiAnalysis(String aiAnalysis) { this.aiAnalysis = aiAnalysis; }
+
+    public Instant getAiAnalysisTimestamp() { return aiAnalysisTimestamp; }
+    public void setAiAnalysisTimestamp(Instant aiAnalysisTimestamp) { this.aiAnalysisTimestamp = aiAnalysisTimestamp; }
 }

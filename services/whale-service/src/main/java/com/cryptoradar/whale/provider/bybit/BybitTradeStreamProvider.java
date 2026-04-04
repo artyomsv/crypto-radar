@@ -49,7 +49,7 @@ public class BybitTradeStreamProvider extends AbstractExchangeStreamProvider {
                 double price = Double.parseDouble(trade.path("p").asText());
                 double qty = Double.parseDouble(trade.path("v").asText());
                 double value = price * qty;
-                if (value < getThreshold()) continue;
+                if (value < getThresholdForSymbol(symbol)) continue;
 
                 String side = "Buy".equals(trade.path("S").asText()) ? "BUY" : "SELL";
                 long tsMs = trade.path("T").asLong();

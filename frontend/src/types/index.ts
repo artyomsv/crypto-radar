@@ -197,6 +197,19 @@ export interface WhaleMarketOverview {
   symbolAnalytics: WhaleAnalytics[];
 }
 
+export interface WhaleDistributionSide {
+  buyVolume: number;
+  sellVolume: number;
+  buyCount: number;
+  sellCount: number;
+}
+
+export interface WhaleDistribution {
+  window: string;
+  exchange: WhaleDistributionSide;
+  onchain: WhaleDistributionSide;
+}
+
 export interface FundingRate {
   symbol: string;
   fundingRate: number;
@@ -321,6 +334,8 @@ export interface TradingSignal {
   riskRewardRatio: number | null;
   alertLevel: string;
   previousSignal: string;
+  aiAnalysis: string | null;
+  aiAnalysisTimestamp: string | null;
 }
 
 export interface SignalOverview {

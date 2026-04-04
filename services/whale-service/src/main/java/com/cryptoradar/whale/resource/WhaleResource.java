@@ -98,6 +98,17 @@ public class WhaleResource {
         );
     }
 
+    private static final Set<String> VALID_DIST_WINDOWS = Set.of("1h", "2h", "4h", "8h", "12h", "24h");
+
+    @GET
+    @Path("/distribution")
+    public Map<String, Object> getDistribution(@QueryParam("window") @DefaultValue("1h") String window) {
+        if (!VALID_DIST_WINDOWS.contains(window)) {
+            return Map.of("error", "Invalid window. Valid: " + VALID_DIST_WINDOWS);
+        }
+        return flowService.getDistribution(window);
+    }
+
     @GET
     @Path("/providers")
     public List<Map<String, Object>> getProviders() {

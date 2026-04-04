@@ -1,7 +1,6 @@
 package com.cryptoradar.gateway.resource;
 
 import com.cryptoradar.gateway.client.ServiceClient;
-import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -19,8 +18,17 @@ import jakarta.ws.rs.core.Response;
 @Produces(MediaType.APPLICATION_JSON)
 public class ProxyResource {
 
-    @Inject
-    ServiceClient serviceClient;
+    private static final java.util.regex.Pattern VALID_SYMBOL = java.util.regex.Pattern.compile("[A-Z0-9]{2,20}");
+
+    private final ServiceClient serviceClient;
+
+    public ProxyResource(ServiceClient serviceClient) {
+        this.serviceClient = serviceClient;
+    }
+
+    private boolean isInvalidSymbol(String symbol) {
+        return symbol == null || !VALID_SYMBOL.matcher(symbol.toUpperCase()).matches();
+    }
 
     // --- Market Data proxies ---
 
@@ -251,6 +259,13 @@ public class ProxyResource {
         return proxyResponse(result);
     }
 
+    @GET
+    @Path("/whales/distribution")
+    public Response getWhaleDistribution(@QueryParam("window") @DefaultValue("1h") String window) {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getWhaleServiceUrl() + "/api/whales/distribution?window=" + window));
+    }
+
     // --- Derivatives proxies ---
 
     @GET
@@ -294,7 +309,22 @@ public class ProxyResource {
     @GET
     @Path("/signals/{symbol}")
     public Response getSignalForSymbol(@PathParam("symbol") String symbol) {
+        if (isInvalidSymbol(symbol)) return Response.status(400).build();
         return proxyResponse(serviceClient.getRaw(serviceClient.getSignalServiceUrl() + "/api/signals/" + symbol));
+    }
+
+    @GET
+    @Path("/signals/{symbol}/raw-data")
+    public Response getSignalRawData(@PathParam("symbol") String symbol) {
+        if (isInvalidSymbol(symbol)) return Response.status(400).build();
+        return proxyResponse(serviceClient.getRaw(serviceClient.getSignalServiceUrl() + "/api/signals/" + symbol + "/raw-data"));
+    }
+
+    @POST
+    @Path("/signals/{symbol}/ai-analysis")
+    public Response requestAiAnalysis(@PathParam("symbol") String symbol) {
+        if (isInvalidSymbol(symbol)) return Response.status(400).build();
+        return proxyResponse(serviceClient.postRaw(serviceClient.getSignalServiceUrl() + "/api/signals/" + symbol + "/ai-analysis", ""));
     }
 
     // --- Export proxies (CSV pass-through) ---

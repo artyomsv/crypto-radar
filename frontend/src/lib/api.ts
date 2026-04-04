@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleDistribution, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -32,6 +32,8 @@ export const api = {
     return fetchJson<WhaleTransaction[]>(`/api/whales/transactions?${params}`);
   },
   getWhaleAnalytics: () => fetchJson<WhaleMarketOverview>('/api/whales/analytics'),
+  getWhaleDistribution: (window = '1h') =>
+    fetchJson<WhaleDistribution>(`/api/whales/distribution?window=${window}`),
   getWhaleFlow: (symbol: string, window = '1h') =>
     fetchJson<WhaleFlowSummary>(`/api/whales/flow/${symbol}?window=${window}`),
   getConfigCryptos: () => fetchJson<any[]>('/api/market/config/cryptos'),
@@ -138,6 +140,17 @@ export const api = {
   },
   getSignalOverview: () => fetchJson<SignalOverview>('/api/signals/overview'),
   getSignalForSymbol: (symbol: string) => fetchJson<TradingSignal>(`/api/signals/${symbol}`),
+  getSignalRawData: (symbol: string) => fetchJson<Record<string, unknown>>(`/api/signals/${symbol}/raw-data`),
+  requestAiAnalysis: async (symbol: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/signals/${symbol}/ai-analysis`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json() as { symbol: string; analysis: string; timestamp: string };
+    } catch (error) {
+      console.error('AI analysis request failed:', error);
+      return null;
+    }
+  },
   getMacroOverview: () => fetchJson<MacroOverview>('/api/analytics/macro'),
   getExportUrl: (symbol: string, interval: string, from?: string, to?: string) => {
     let url = `${API_BASE}/api/market/export/${symbol}?interval=${interval}`;

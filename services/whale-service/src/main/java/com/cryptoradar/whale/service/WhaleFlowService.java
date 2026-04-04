@@ -13,7 +13,9 @@ import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @ApplicationScoped
 public class WhaleFlowService {
@@ -216,6 +218,70 @@ public class WhaleFlowService {
                 rs.getDouble("largest_trade"),
                 pressure
         );
+    }
+
+    private static final String DISTRIBUTION_SQL = """
+            SELECT
+                CASE WHEN source = 'whale-alert' THEN 'onchain' ELSE 'exchange' END AS source_type,
+                COALESCE(SUM(value_usd) FILTER (WHERE side = 'BUY'), 0) AS buy_volume,
+                COALESCE(SUM(value_usd) FILTER (WHERE side = 'SELL'), 0) AS sell_volume,
+                COUNT(*) FILTER (WHERE side = 'BUY') AS buy_count,
+                COUNT(*) FILTER (WHERE side = 'SELL') AS sell_count
+            FROM whale_transactions
+            WHERE time > NOW() - ?::interval
+            GROUP BY source_type
+            """;
+
+    public Map<String, Object> getDistribution(String window) {
+        String interval = mapWindowToInterval(window);
+        Map<String, Object> exchange = emptyDistSide();
+        Map<String, Object> onchain = emptyDistSide();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(DISTRIBUTION_SQL)) {
+            stmt.setString(1, interval);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String type = rs.getString("source_type");
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("buyVolume", rs.getDouble("buy_volume"));
+                    row.put("sellVolume", rs.getDouble("sell_volume"));
+                    row.put("buyCount", rs.getInt("buy_count"));
+                    row.put("sellCount", rs.getInt("sell_count"));
+                    if ("exchange".equals(type)) exchange = row;
+                    else onchain = row;
+                }
+            }
+        } catch (java.sql.SQLException e) {
+            LOG.errorf(e, "Failed to query distribution for window=%s", window);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("window", window);
+        result.put("exchange", exchange);
+        result.put("onchain", onchain);
+        return result;
+    }
+
+    private Map<String, Object> emptyDistSide() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("buyVolume", 0.0);
+        m.put("sellVolume", 0.0);
+        m.put("buyCount", 0);
+        m.put("sellCount", 0);
+        return m;
+    }
+
+    private String mapWindowToInterval(String window) {
+        return switch (window) {
+            case "1h" -> "1 hour";
+            case "2h" -> "2 hours";
+            case "4h" -> "4 hours";
+            case "8h" -> "8 hours";
+            case "12h" -> "12 hours";
+            case "24h" -> "24 hours";
+            default -> "1 hour";
+        };
     }
 
     private String mapPeriodToInterval(String period) {

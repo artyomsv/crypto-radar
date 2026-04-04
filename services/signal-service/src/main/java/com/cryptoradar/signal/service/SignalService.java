@@ -29,21 +29,23 @@ public class SignalService {
     private static final String NEUTRAL = "NEUTRAL";
 
     private static final Set<String> ACTIONABLE_SIGNALS = Set.of(STRONG_BUY, STRONG_SELL);
-    private static final Set<String> NON_ACTIONABLE_SIGNALS = Set.of(NEUTRAL, "BUY", "SELL");
 
     private final DataAggregator dataAggregator;
     private final SignalEngine signalEngine;
     private final RedisEventPublisher redisPublisher;
+    private final GeminiAnalysisService geminiService;
 
     private final ConcurrentHashMap<String, String> previousSignals = new ConcurrentHashMap<>();
     private final AtomicReference<SignalOverview> cachedOverview = new AtomicReference<>();
 
     public SignalService(DataAggregator dataAggregator,
                          SignalEngine signalEngine,
-                         RedisEventPublisher redisPublisher) {
+                         RedisEventPublisher redisPublisher,
+                         GeminiAnalysisService geminiService) {
         this.dataAggregator = dataAggregator;
         this.signalEngine = signalEngine;
         this.redisPublisher = redisPublisher;
+        this.geminiService = geminiService;
     }
 
     @SuppressWarnings("unchecked")
@@ -54,19 +56,16 @@ public class SignalService {
         Map<String, Object> marketOverview = dataAggregator.fetchMarketOverview();
         Map<String, Object> macroData = dataAggregator.fetchMacro();
 
-        // Build symbol-indexed maps for whale and derivatives data
         Map<String, Map<String, Object>> whaleBySymbol = indexBySymbol(whaleOverview, "symbolAnalytics");
         Map<String, Map<String, Object>> derivativesBySymbol = indexBySymbol(derivativesOverview, "symbolData");
         Map<String, Map<String, Object>> priceBySymbol = indexPricesbySymbol(prices);
 
-        // Collect all known symbols from prices (primary source of tracked coins)
         List<String> symbols = new ArrayList<>(priceBySymbol.keySet());
         if (symbols.isEmpty()) {
             LOG.warn("No symbols found from price data — skipping signal computation");
             return buildEmptyOverview();
         }
 
-        // Inject Fear & Greed into macroData for sentiment scoring
         Map<String, Object> enrichedMacro = enrichMacroWithFearGreed(macroData, marketOverview);
 
         List<TradingSignal> signals = new ArrayList<>();
@@ -80,14 +79,24 @@ public class SignalService {
                 TradingSignal signal = signalEngine.computeSignal(
                         symbol, analytics, symbolWhale, symbolDerivatives, symbolPrice, enrichedMacro);
 
-                // Set previous signal for transition detection
                 String prevSignal = previousSignals.get(symbol);
                 signal.setPreviousSignal(prevSignal);
 
-                // Detect transitions to STRONG_BUY or STRONG_SELL
                 detectAndPublishAlert(signal, prevSignal);
 
-                // Update previous signal tracking
+                // Trigger AI analysis on noteworthy events
+                if (geminiService.isEnabled() && isNoteworthyEvent(signal, prevSignal)) {
+                    Map<String, Object> rawData = getRawSignalData(symbol);
+                    geminiService.triggerAnalysis(symbol, rawData);
+                }
+
+                // Attach cached AI analysis if available
+                String aiAnalysis = geminiService.getCachedAnalysis(symbol);
+                if (aiAnalysis != null) {
+                    signal.setAiAnalysis(aiAnalysis);
+                    signal.setAiAnalysisTimestamp(geminiService.getCachedAnalysisTimestamp(symbol));
+                }
+
                 previousSignals.put(symbol, signal.getSignal());
 
                 signals.add(signal);
@@ -119,13 +128,71 @@ public class SignalService {
                 .orElse(null);
     }
 
+    /**
+     * Returns all raw data that feeds into signal computation for a given symbol.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getRawSignalData(String symbol) {
+        Map<String, Object> whaleOverview = dataAggregator.fetchWhaleAnalytics();
+        Map<String, Object> derivativesOverview = dataAggregator.fetchDerivativesOverview();
+        List<Map<String, Object>> prices = dataAggregator.fetchPrices();
+        Map<String, Object> marketOverview = dataAggregator.fetchMarketOverview();
+        Map<String, Object> macroData = dataAggregator.fetchMacro();
+        Map<String, Object> analytics = dataAggregator.fetchAnalytics(symbol);
+
+        Map<String, Map<String, Object>> whaleBySymbol = indexBySymbol(whaleOverview, "symbolAnalytics");
+        Map<String, Map<String, Object>> derivativesBySymbol = indexBySymbol(derivativesOverview, "symbolData");
+        Map<String, Map<String, Object>> priceBySymbol = indexPricesbySymbol(prices);
+
+        Map<String, Object> enrichedMacro = enrichMacroWithFearGreed(macroData, marketOverview);
+
+        Map<String, Object> rawData = new java.util.LinkedHashMap<>();
+        rawData.put("symbol", symbol);
+        rawData.put("timestamp", Instant.now().toString());
+        rawData.put("analytics", analytics);
+        rawData.put("whaleData", whaleBySymbol.get(symbol));
+        rawData.put("derivativesData", derivativesBySymbol.get(symbol));
+        rawData.put("priceData", priceBySymbol.get(symbol));
+        rawData.put("macroData", enrichedMacro);
+
+        TradingSignal signal = getSignal(symbol);
+        if (signal != null) {
+            Map<String, Object> signalSummary = new java.util.LinkedHashMap<>();
+            signalSummary.put("signal", signal.getSignal());
+            signalSummary.put("overallScore", signal.getOverallScore());
+            signalSummary.put("confidence", signal.getConfidence());
+            signalSummary.put("dimensions", signal.getDimensions());
+            rawData.put("computedSignal", signalSummary);
+        }
+
+        return rawData;
+    }
+
+    /**
+     * On-demand AI analysis — called from REST endpoint.
+     */
+    public String requestAiAnalysis(String symbol) {
+        Map<String, Object> rawData = getRawSignalData(symbol);
+        return geminiService.analyzeNow(symbol, rawData);
+    }
+
     // --- Internal helpers ---
+
+    /**
+     * Triggers AI analysis only when a potential trade appears:
+     * signal just transitioned to BUY, SELL, STRONG_BUY, or STRONG_SELL.
+     */
+    private boolean isNoteworthyEvent(TradingSignal signal, String prevSignal) {
+        String current = signal.getSignal();
+        boolean isActionable = !NEUTRAL.equals(current);
+        boolean justTransitioned = prevSignal == null || !prevSignal.equals(current);
+        return isActionable && justTransitioned;
+    }
 
     private void detectAndPublishAlert(TradingSignal signal, String prevSignal) {
         if (!ACTIONABLE_SIGNALS.contains(signal.getSignal())) return;
         if (signal.getSignal().equals(prevSignal)) return;
 
-        // Transition from non-strong to strong signal
         boolean wasNonActionable = prevSignal == null || !ACTIONABLE_SIGNALS.contains(prevSignal);
         if (wasNonActionable) {
             LOG.infof("ALERT: %s transitioned to %s (confidence %d%%)",
@@ -201,11 +268,9 @@ public class SignalService {
         overview.setStrongSellCount(strongSell);
         overview.setMarketBias(computeMarketBias(strongBuy, buy, sell, strongSell));
 
-        // Sort by absolute score descending
         signals.sort(Comparator.comparingDouble(s -> -Math.abs(s.getOverallScore())));
         overview.setSignals(signals);
 
-        // Top opportunity = highest confidence actionable signal
         signals.stream()
                 .filter(s -> !NEUTRAL.equals(s.getSignal()))
                 .max(Comparator.comparingInt(TradingSignal::getConfidence))

@@ -101,7 +101,7 @@ public class BitfinexTradeStreamProvider extends AbstractExchangeStreamProvider 
             double price = trade.get(3).asDouble();
             double qty = Math.abs(amount);
             double value = price * qty;
-            if (value < getThreshold()) return null;
+            if (value < getThresholdForSymbol(symbol)) return null;
 
             String side = amount > 0 ? "BUY" : "SELL";
             Instant time = Instant.ofEpochMilli(tsMs);

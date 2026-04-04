@@ -58,7 +58,7 @@ public class OkxTradeStreamProvider extends AbstractExchangeStreamProvider {
                 double price = Double.parseDouble(trade.path("px").asText());
                 double qty = Double.parseDouble(trade.path("sz").asText());
                 double value = price * qty;
-                if (value < getThreshold()) continue;
+                if (value < getThresholdForSymbol(symbol)) continue;
 
                 String side = "buy".equals(trade.path("side").asText()) ? "BUY" : "SELL";
                 long tsMs = Long.parseLong(trade.path("ts").asText());

@@ -4,12 +4,12 @@ import com.cryptoradar.whale.model.WhaleTransaction;
 import com.cryptoradar.whale.service.WhaleFlowService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,14 +26,17 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
     private static final Logger LOG = Logger.getLogger(AbstractExchangeStreamProvider.class);
     private static final long RECONNECT_DELAY_SECONDS = 5;
 
-    @ConfigProperty(name = "whale.threshold.usd")
-    double whaleThresholdUsd;
-
     @Inject
     WhaleFlowService whaleFlowService;
 
     @Inject
     ObjectMapper objectMapper;
+
+    private static final Set<String> TIER_HIGH = Set.of("BTCUSDT", "ETHUSDT", "BNBUSDT");
+    private static final Set<String> TIER_MID = Set.of("BCHUSDT", "ZECUSDT", "XMRUSDT", "SOLUSDT", "LTCUSDT");
+    private static final double THRESHOLD_HIGH = 5000;
+    private static final double THRESHOLD_MID = 1000;
+    private static final double THRESHOLD_LOW = 500;
 
     private final AtomicBoolean connected = new AtomicBoolean(false);
     protected volatile WebSocket webSocket;
@@ -53,8 +56,12 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
         // Default no-op — subclasses can override to send additional subscribe messages
     }
 
-    protected double getThreshold() {
-        return whaleThresholdUsd;
+    protected double getThresholdForSymbol(String symbol) {
+        if (symbol == null) return THRESHOLD_MID;
+        String upper = symbol.toUpperCase();
+        if (TIER_HIGH.contains(upper)) return THRESHOLD_HIGH;
+        if (TIER_MID.contains(upper)) return THRESHOLD_MID;
+        return THRESHOLD_LOW;
     }
 
     protected ObjectMapper mapper() {
@@ -144,7 +151,7 @@ public abstract class AbstractExchangeStreamProvider implements ExchangeTradeStr
     }
 
     protected void processTransaction(WhaleTransaction tx) {
-        if (tx != null && tx.getValueUsd() >= whaleThresholdUsd) {
+        if (tx != null && tx.getValueUsd() >= getThresholdForSymbol(tx.getSymbol())) {
             whaleFlowService.processWhaleTransaction(tx);
         }
     }

@@ -20,12 +20,22 @@ public class SignalEngine {
 
     private static final Logger LOG = Logger.getLogger(SignalEngine.class);
 
-    private static final double WEIGHT_TECHNICAL = 0.25;
+    // Coin-specific signals (65%): differentiate individual assets
+    private static final double WEIGHT_TECHNICAL = 0.35;
     private static final double WEIGHT_WHALE = 0.20;
-    private static final double WEIGHT_DERIVATIVES = 0.20;
-    private static final double WEIGHT_SENTIMENT = 0.15;
     private static final double WEIGHT_ORDER_BOOK = 0.10;
+    // Market-wide signals (35%): shared context, can't distinguish coins
+    private static final double WEIGHT_DERIVATIVES = 0.15;
+    private static final double WEIGHT_SENTIMENT = 0.10;
     private static final double WEIGHT_MACRO = 0.10;
+
+    static {
+        double sum = WEIGHT_TECHNICAL + WEIGHT_WHALE + WEIGHT_ORDER_BOOK
+                   + WEIGHT_DERIVATIVES + WEIGHT_SENTIMENT + WEIGHT_MACRO;
+        if (Math.abs(sum - 1.0) > 0.001) {
+            throw new IllegalStateException("Signal weights must sum to 1.0, got " + sum);
+        }
+    }
 
     private static final String STRONG_BUY = "STRONG_BUY";
     private static final String BUY = "BUY";
@@ -82,61 +92,63 @@ public class SignalEngine {
             return new DimensionScore("Technical", 0, WEIGHT_TECHNICAL, List.of("No analytics data available"));
         }
 
-        double score = 0;
         List<String> reasons = new ArrayList<>();
-
         Map<String, Object> indicators = asMap(analytics.get("technicalIndicators"));
 
-        Double rsi = asDouble(indicators != null ? indicators.get("rsi14") : null);
-        if (rsi != null) {
-            if (rsi < 30) { score += 80; reasons.add(String.format("RSI at %.1f — oversold (bullish)", rsi)); }
-            else if (rsi < 40) { score += 40; reasons.add(String.format("RSI at %.1f — approaching oversold", rsi)); }
-            else if (rsi > 70) { score -= 80; reasons.add(String.format("RSI at %.1f — overbought (bearish)", rsi)); }
-            else if (rsi > 60) { score -= 40; reasons.add(String.format("RSI at %.1f — approaching overbought", rsi)); }
-            else { reasons.add(String.format("RSI at %.1f — neutral", rsi)); }
-        }
-
-        Double macdHistogram = asDouble(indicators != null ? indicators.get("macdHistogram") : null);
-        if (macdHistogram != null) {
-            if (macdHistogram > 0) { score += 30; reasons.add("MACD histogram positive (bullish momentum)"); }
-            else { score -= 30; reasons.add("MACD histogram negative (bearish momentum)"); }
-        }
-
-        Double sma200 = asDouble(indicators != null ? indicators.get("sma200") : null);
-        Double currentPrice = asDouble(analytics.get("supportLevel") != null ? null : null);
-        // Use support/resistance proximity as price proxy
-        if (sma200 != null && sma200 > 0) {
-            Double support = asDouble(analytics.get("supportLevel"));
-            Double resistance = asDouble(analytics.get("resistanceLevel"));
-            if (support != null && resistance != null && support > 0 && resistance > 0) {
-                double midPrice = (support + resistance) / 2;
-                if (midPrice > sma200) { score += 20; reasons.add("Price above SMA200 (bullish trend)"); }
-                else { score -= 20; reasons.add("Price below SMA200 (bearish trend)"); }
-            }
-        }
-
-        addSupportResistanceScore(analytics, reasons, score);
-        double srScore = computeSupportResistanceScore(analytics, reasons);
-        score += srScore;
-
-        score += computeBollingerScore(indicators, reasons);
+        double score = computeRsiScore(indicators, reasons)
+                + computeMacdScore(indicators, reasons)
+                + computeSma200Score(analytics, indicators, reasons)
+                + computeSupportResistanceScore(analytics, reasons)
+                + computeBollingerScore(indicators, reasons)
+                + computeVolumeConfirmation(analytics, reasons);
 
         return new DimensionScore("Technical", clamp(score, -100, 100), WEIGHT_TECHNICAL, reasons);
+    }
+
+    private double computeRsiScore(Map<String, Object> indicators, List<String> reasons) {
+        Double rsi = asDouble(indicators != null ? indicators.get("rsi14") : null);
+        if (rsi == null) return 0;
+
+        if (rsi < 30) { reasons.add(String.format("RSI at %.1f — oversold (bullish)", rsi)); return 80; }
+        if (rsi < 40) { reasons.add(String.format("RSI at %.1f — approaching oversold", rsi)); return 40; }
+        if (rsi > 70) { reasons.add(String.format("RSI at %.1f — overbought (bearish)", rsi)); return -80; }
+        if (rsi > 60) { reasons.add(String.format("RSI at %.1f — approaching overbought", rsi)); return -40; }
+        reasons.add(String.format("RSI at %.1f — neutral", rsi));
+        return 0;
+    }
+
+    private double computeMacdScore(Map<String, Object> indicators, List<String> reasons) {
+        Double macdHistogram = asDouble(indicators != null ? indicators.get("macdHistogram") : null);
+        if (macdHistogram == null) return 0;
+
+        if (macdHistogram > 0) { reasons.add("MACD histogram positive (bullish momentum)"); return 30; }
+        reasons.add("MACD histogram negative (bearish momentum)");
+        return -30;
+    }
+
+    private double computeSma200Score(Map<String, Object> analytics, Map<String, Object> indicators, List<String> reasons) {
+        Double sma200 = asDouble(indicators != null ? indicators.get("sma200") : null);
+        if (sma200 == null || sma200 <= 0) return 0;
+
+        Double support = asDouble(analytics.get("supportLevel"));
+        Double resistance = asDouble(analytics.get("resistanceLevel"));
+        if (support == null || resistance == null || support <= 0 || resistance <= 0) return 0;
+
+        double midPrice = (support + resistance) / 2;
+        if (midPrice > sma200) { reasons.add("Price above SMA200 (bullish macro trend)"); return 35; }
+        reasons.add("Price below SMA200 (bearish macro trend — major headwind)");
+        return -35;
     }
 
     private double computeSupportResistanceScore(Map<String, Object> analytics, List<String> reasons) {
         Double support = asDouble(analytics.get("supportLevel"));
         Double resistance = asDouble(analytics.get("resistanceLevel"));
         if (support == null || resistance == null || support <= 0 || resistance <= 0) return 0;
+        if (resistance - support <= 0) return 0;
 
-        double range = resistance - support;
-        if (range <= 0) return 0;
-
-        // Estimate where price is within the range using overall score as proxy
         Double overallScore = asDouble(analytics.get("overallScore"));
         if (overallScore == null) return 0;
 
-        // overallScore 0-100 maps to position in the support/resistance range
         double position = overallScore / 100.0;
         if (position < 0.3) {
             reasons.add(String.format("Near support %.2f (potential bounce)", support));
@@ -148,8 +160,18 @@ public class SignalEngine {
         return 0;
     }
 
-    private void addSupportResistanceScore(Map<String, Object> analytics, List<String> reasons, double currentScore) {
-        // Intentionally empty — scoring handled in computeSupportResistanceScore
+    private double computeVolumeConfirmation(Map<String, Object> analytics, List<String> reasons) {
+        Object volumeTrend = analytics.get("volumeTrend");
+        String trend = volumeTrend != null ? volumeTrend.toString() : null;
+        if ("DECREASING".equals(trend)) {
+            reasons.add("Volume declining — weakens directional conviction");
+            return -10;
+        }
+        if ("INCREASING".equals(trend)) {
+            reasons.add("Volume increasing — trend has conviction");
+            return 5;
+        }
+        return 0;
     }
 
     private double computeBollingerScore(Map<String, Object> indicators, List<String> reasons) {
@@ -163,7 +185,6 @@ public class SignalEngine {
         if (bbUpper <= bbLower) return 0;
 
         double range = bbUpper - bbLower;
-        // Use middle as reference — closer to lower = bullish, closer to upper = bearish
         double position = (bbMiddle - bbLower) / range;
 
         if (position < 0.3) {
@@ -192,11 +213,19 @@ public class SignalEngine {
         reasons.add(String.format("Whale pressure %+.0f — %s", pressure,
                 pressure > 30 ? "heavy buying" : pressure < -30 ? "heavy selling" : "balanced"));
 
+        // Sample size gate: few trades = statistically meaningless pressure reading
         Integer tradeCount = asInt(whaleData.get("tradeCount1h"));
-        if (tradeCount != null && tradeCount > 5) {
-            double amplification = score * 0.20;
-            score += amplification;
-            reasons.add(String.format("%d whale trades in 1h — amplified signal by 20%%", tradeCount));
+        if (tradeCount != null) {
+            if (tradeCount < 15) {
+                double dampening = tradeCount / 15.0;
+                score *= dampening;
+                reasons.add(String.format("%d whale trades in 1h — low sample, signal at %.0f%%", tradeCount, dampening * 100));
+            } else if (tradeCount >= 30) {
+                score *= 1.20;
+                reasons.add(String.format("%d whale trades in 1h — high activity, signal amplified", tradeCount));
+            } else {
+                reasons.add(String.format("%d whale trades in 1h — moderate activity", tradeCount));
+            }
         }
 
         return new DimensionScore("Whale", clamp(score, -100, 100), WEIGHT_WHALE, reasons);
@@ -210,42 +239,53 @@ public class SignalEngine {
         double score = 0;
         List<String> reasons = new ArrayList<>();
 
-        // Funding rate — contrarian
+        // Funding rate — contrarian, graduated and symmetric
         Double fundingRate = asDouble(derivativesData.get("fundingRate"));
         if (fundingRate != null) {
-            double fundingPct = fundingRate * 100; // convert to percentage
-            if (fundingRate > 0.0005) {
-                score -= 50;
-                reasons.add(String.format("Funding rate %.4f%% — longs overcrowded (bearish)", fundingPct));
-            } else if (fundingRate < -0.0001) {
-                score += 50;
-                reasons.add(String.format("Funding rate %.4f%% — shorts overcrowded (bullish)", fundingPct));
+            double fundingPct = fundingRate * 100;
+            double absFunding = Math.abs(fundingRate);
+
+            if (absFunding < 0.0003) {
+                reasons.add(String.format("Funding rate %.4f%% — neutral range", fundingPct));
             } else {
-                reasons.add(String.format("Funding rate %.4f%% — neutral", fundingPct));
+                double fundingScore;
+                if (absFunding >= 0.0015) {
+                    fundingScore = 50;
+                } else if (absFunding >= 0.0008) {
+                    fundingScore = 35;
+                } else {
+                    fundingScore = 20;
+                }
+
+                if (fundingRate < 0) {
+                    score += fundingScore;
+                    reasons.add(String.format("Funding rate %.4f%% — shorts overcrowded, %s contrarian bullish",
+                            fundingPct, fundingScore >= 35 ? "strongly" : "mildly"));
+                } else {
+                    score -= fundingScore;
+                    reasons.add(String.format("Funding rate %.4f%% — longs overcrowded, %s contrarian bearish",
+                            fundingPct, fundingScore >= 35 ? "strongly" : "mildly"));
+                }
             }
         }
 
         // Long/short ratio — contrarian
         Double longPct = asDouble(derivativesData.get("longPct"));
         if (longPct != null) {
-            if (longPct > 65) {
-                score -= 30;
+            if (longPct > 70) {
+                score -= 35;
+                reasons.add(String.format("%.0f%% long — extremely crowded (bearish)", longPct));
+            } else if (longPct > 60) {
+                score -= 20;
                 reasons.add(String.format("%.0f%% long — crowded longs (bearish)", longPct));
-            } else if (longPct < 35) {
-                score += 30;
+            } else if (longPct < 30) {
+                score += 35;
+                reasons.add(String.format("%.0f%% long — extremely crowded shorts (bullish)", longPct));
+            } else if (longPct < 40) {
+                score += 20;
                 reasons.add(String.format("%.0f%% long — crowded shorts (bullish)", longPct));
             } else {
                 reasons.add(String.format("%.0f%% long — balanced positioning", longPct));
-            }
-        }
-
-        // Open interest confirmation
-        Double oiUsd = asDouble(derivativesData.get("openInterestUsd"));
-        if (oiUsd != null && oiUsd > 0) {
-            // OI growing is a trend confirmation — add directional bias
-            score += (score > 0) ? 20 : (score < 0) ? -20 : 0;
-            if (score != 0) {
-                reasons.add("Open interest confirms trend direction");
             }
         }
 
@@ -260,24 +300,28 @@ public class SignalEngine {
         if (analytics != null) {
             Double sentimentScore = asDouble(analytics.get("sentimentScore"));
             if (sentimentScore != null) {
-                // sentimentScore is typically -1 to +1, scale to -50 to +50
                 score += sentimentScore * 50;
                 reasons.add(String.format("News sentiment %.2f — %s", sentimentScore,
                         sentimentScore > 0.3 ? "positive" : sentimentScore < -0.3 ? "negative" : "neutral"));
             }
         }
 
-        // Fear & Greed — contrarian
+        // Fear & Greed — contrarian, graduated scale
         if (macroData != null) {
-            // Look in market overview first (passed via macroData)
             Integer fearGreed = asInt(macroData.get("fearGreedIndex"));
             if (fearGreed != null) {
-                if (fearGreed < 25) {
-                    score += 40;
-                    reasons.add(String.format("Fear & Greed at %d — extreme fear (contrarian buy)", fearGreed));
-                } else if (fearGreed > 75) {
-                    score -= 40;
-                    reasons.add(String.format("Fear & Greed at %d — extreme greed (contrarian sell)", fearGreed));
+                if (fearGreed <= 10) {
+                    score += 30;
+                    reasons.add(String.format("Fear & Greed at %d — extreme fear (strong contrarian buy)", fearGreed));
+                } else if (fearGreed <= 25) {
+                    score += 15;
+                    reasons.add(String.format("Fear & Greed at %d — fear (mild contrarian buy)", fearGreed));
+                } else if (fearGreed >= 90) {
+                    score -= 30;
+                    reasons.add(String.format("Fear & Greed at %d — extreme greed (strong contrarian sell)", fearGreed));
+                } else if (fearGreed >= 75) {
+                    score -= 15;
+                    reasons.add(String.format("Fear & Greed at %d — greed (mild contrarian sell)", fearGreed));
                 } else {
                     reasons.add(String.format("Fear & Greed at %d — neutral zone", fearGreed));
                 }
@@ -292,28 +336,45 @@ public class SignalEngine {
     }
 
     private DimensionScore scoreOrderBook(Map<String, Object> derivativesData) {
-        // Use long/short ratio as order book proxy since we don't have direct bid/ask
+        // Scores based on OI and liquidation data — L/S ratio is already used in scoreDerivatives
         if (derivativesData == null) {
             return new DimensionScore("Order Book", 0, WEIGHT_ORDER_BOOK, List.of("No order book data available"));
         }
 
+        double score = 0;
         List<String> reasons = new ArrayList<>();
-        Double longPct = asDouble(derivativesData.get("longPct"));
-        Double shortPct = asDouble(derivativesData.get("shortPct"));
 
-        if (longPct == null || shortPct == null) {
-            return new DimensionScore("Order Book", 0, WEIGHT_ORDER_BOOK, List.of("Order book data unavailable"));
+        Double liquidations24h = asDouble(derivativesData.get("liquidations24hUsd"));
+        Double oiUsd = asDouble(derivativesData.get("openInterestUsd"));
+
+        if (liquidations24h != null && oiUsd != null && oiUsd > 0) {
+            double liquidationRatio = liquidations24h / oiUsd;
+            if (liquidationRatio > 0.05) {
+                score -= 20;
+                reasons.add(String.format("High liquidation activity (%.1f%% of OI) — volatile, risky", liquidationRatio * 100));
+            } else if (liquidationRatio > 0.01) {
+                reasons.add(String.format("Moderate liquidation activity (%.2f%% of OI)", liquidationRatio * 100));
+            } else {
+                score += 10;
+                reasons.add("Low liquidation activity — stable positioning");
+            }
         }
 
-        // Imbalance: positive = more buying pressure, negative = more selling pressure
-        double imbalance = longPct - shortPct;
-        double score = clamp(imbalance * 2, -100, 100);
+        if (oiUsd != null) {
+            reasons.add(String.format("Open interest $%s", formatOi(oiUsd)));
+        }
 
-        reasons.add(String.format("Long/short imbalance %+.1f%% — %s",
-                imbalance,
-                imbalance > 10 ? "buy-side pressure" : imbalance < -10 ? "sell-side pressure" : "balanced"));
+        if (reasons.isEmpty()) {
+            reasons.add("Insufficient order book data");
+        }
 
-        return new DimensionScore("Order Book", score, WEIGHT_ORDER_BOOK, reasons);
+        return new DimensionScore("Order Book", clamp(score, -100, 100), WEIGHT_ORDER_BOOK, reasons);
+    }
+
+    private String formatOi(double value) {
+        if (value >= 1e9) return String.format("%.1fB", value / 1e9);
+        if (value >= 1e6) return String.format("%.1fM", value / 1e6);
+        return String.format("%.0f", value);
     }
 
     private DimensionScore scoreMacro(Map<String, Object> macroData, String symbol) {
@@ -327,7 +388,6 @@ public class SignalEngine {
 
         Double btcDominance = asDouble(macroData.get("btcDominance"));
         if (btcDominance != null) {
-            // BTC dominance rising = BTC bullish, altcoins bearish
             if (btcDominance > 50) {
                 if (isBtc) {
                     score += 20;
@@ -346,8 +406,6 @@ public class SignalEngine {
 
         Double totalStablecoinCap = asDouble(macroData.get("totalStablecoinCap"));
         if (totalStablecoinCap != null) {
-            // Higher stablecoin cap = more dry powder = bullish
-            // We don't have historical data to compare, so use a simple heuristic
             if (totalStablecoinCap > 150_000_000_000.0) {
                 score += 20;
                 reasons.add("Stablecoin supply above $150B — significant dry powder");
@@ -368,39 +426,58 @@ public class SignalEngine {
 
     // --- Composite helpers ---
 
+    /**
+     * Confidence based on weighted signal strength, not binary alignment.
+     * A dimension at +80 contributes far more than one at +1.
+     * Strong contradictions actively reduce confidence.
+     * Max confidence capped at 90% — no signal is ever certain.
+     */
     private int computeConfidence(List<DimensionScore> dimensions, double overallScore) {
-        if (overallScore == 0) return 30;
+        if (Math.abs(overallScore) < 5) return 15;
 
         boolean isPositive = overallScore > 0;
-        int aligned = 0;
+        double weightedStrength = 0;
+        double totalWeight = 0;
+        int contradictions = 0;
+
         for (DimensionScore dim : dimensions) {
-            if ((isPositive && dim.score() > 0) || (!isPositive && dim.score() < 0)) {
-                aligned++;
+            double w = dim.weight();
+            totalWeight += w;
+            double s = dim.score();
+            boolean aligned = isPositive ? s > 0 : s < 0;
+            double absScore = Math.abs(s);
+
+            if (aligned) {
+                weightedStrength += (absScore / 100.0) * w;
+            } else if (absScore >= 30) {
+                contradictions++;
+                weightedStrength -= (absScore / 100.0) * w * 0.5;
             }
         }
 
-        return switch (aligned) {
-            case 6 -> 100;
-            case 5 -> 85;
-            case 4 -> 70;
-            case 3 -> 50;
-            default -> 30;
-        };
+        double raw = totalWeight > 0 ? (weightedStrength / totalWeight) * 100 : 0;
+
+        if (contradictions >= 2) raw *= 0.6;
+        else if (contradictions >= 1) raw *= 0.8;
+
+        int confidence = (int) (raw * 0.9);
+        return Math.max(15, Math.min(90, confidence));
     }
 
     private String determineSignalLabel(double score, int confidence) {
-        if (score >= 60 && confidence >= 70) return STRONG_BUY;
-        if (score >= 30 && confidence >= 50) return BUY;
-        if (score <= -60 && confidence >= 70) return STRONG_SELL;
-        if (score <= -30 && confidence >= 50) return SELL;
+        // Thresholds calibrated to new strength-based confidence (max 90%)
+        if (score >= 55 && confidence >= 60) return STRONG_BUY;
+        if (score >= 25 && confidence >= 35) return BUY;
+        if (score <= -55 && confidence >= 60) return STRONG_SELL;
+        if (score <= -25 && confidence >= 35) return SELL;
         return NEUTRAL;
     }
 
     private String determineAlertLevel(String signalLabel, int confidence) {
-        if ((STRONG_BUY.equals(signalLabel) || STRONG_SELL.equals(signalLabel)) && confidence >= 70) {
+        if ((STRONG_BUY.equals(signalLabel) || STRONG_SELL.equals(signalLabel)) && confidence >= 60) {
             return "OPPORTUNITY";
         }
-        if ((BUY.equals(signalLabel) || SELL.equals(signalLabel)) && confidence >= 50) {
+        if ((BUY.equals(signalLabel) || SELL.equals(signalLabel)) && confidence >= 35) {
             return "WATCH";
         }
         return "NEUTRAL";
@@ -418,22 +495,18 @@ public class SignalEngine {
 
         if (price == null || price <= 0) return;
 
-        // Swing trade targets: tight stop (1.5 ATR), ambitious target (5:1 R:R minimum)
-        // Designed for multi-day holds, not scalps
         double atrValue = (atr != null && atr > 0) ? atr : price * 0.02;
-        double MIN_RR = 5.0; // minimum 5:1 reward-to-risk
+        double MIN_RR = 5.0;
 
         String signalLabel = signal.getSignal();
         if (BUY.equals(signalLabel) || STRONG_BUY.equals(signalLabel)) {
             signal.setSuggestedEntry(round2(price));
 
-            // Stop: 1.5 ATR below entry, or below support — whichever is lower
             double stopFromAtr = price - (atrValue * 1.5);
             double stopFromSupport = (support != null && support > 0) ? support - (atrValue * 0.5) : stopFromAtr;
             double stopLoss = Math.min(stopFromAtr, stopFromSupport);
             signal.setSuggestedStopLoss(round2(stopLoss));
 
-            // Target: minimum 5:1 R:R for swing trades
             double risk = price - stopLoss;
             double minTarget = price + (risk * MIN_RR);
             double resistanceTarget = (resistance != null && resistance > price) ? resistance : minTarget;
@@ -443,13 +516,11 @@ public class SignalEngine {
         } else if (SELL.equals(signalLabel) || STRONG_SELL.equals(signalLabel)) {
             signal.setSuggestedEntry(round2(price));
 
-            // Stop: 1.5 ATR above entry, or above resistance
             double stopFromAtr = price + (atrValue * 1.5);
             double stopFromResistance = (resistance != null && resistance > 0) ? resistance + (atrValue * 0.5) : stopFromAtr;
             double stopLoss = Math.max(stopFromAtr, stopFromResistance);
             signal.setSuggestedStopLoss(round2(stopLoss));
 
-            // Target: minimum 5:1 R:R for swing trades
             double risk = stopLoss - price;
             double minTarget = price - (risk * MIN_RR);
             double supportTarget = (support != null && support > 0 && support < price) ? support : minTarget;

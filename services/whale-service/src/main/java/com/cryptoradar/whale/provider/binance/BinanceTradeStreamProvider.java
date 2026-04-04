@@ -61,9 +61,9 @@ public class BinanceTradeStreamProvider extends AbstractExchangeStreamProvider {
             double valueUsd = price * quantity;
             if (valueUsd >= 10000) {
                 LOG.debugf("Large trade: %s %s $%.0f (threshold: $%.0f)",
-                        symbol, isBuyerMaker ? "SELL" : "BUY", valueUsd, getThreshold());
+                        symbol, isBuyerMaker ? "SELL" : "BUY", valueUsd, getThresholdForSymbol(symbol));
             }
-            if (valueUsd < getThreshold()) return null;
+            if (valueUsd < getThresholdForSymbol(symbol)) return null;
 
             LOG.infof("WHALE TRADE: %s %s $%.0f @ $%.2f",
                     symbol, isBuyerMaker ? "SELL" : "BUY", valueUsd, price);

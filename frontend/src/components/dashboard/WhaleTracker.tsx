@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useWhaleData } from '@/hooks/useWhaleData';
+import { api } from '@/lib/api';
 import { Loader2, Activity, TrendingUp, TrendingDown, Waves, Zap, Flame } from 'lucide-react';
 import { formatLargeNumber, formatPrice, formatTimeAgo } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
-import type { WhaleTransaction, WhaleAnalytics } from '@/types';
+import type { WhaleTransaction, WhaleAnalytics, WhaleDistribution } from '@/types';
 
 const PERIODS = [
   { value: '1d', label: '1 Day' },
@@ -16,16 +17,27 @@ const PERIODS = [
   { value: '1y', label: '1 Year' },
 ] as const;
 
+const DIST_WINDOWS = ['1h', '2h', '4h', '8h', '12h', '24h'] as const;
+
 export function WhaleTracker() {
   const [period, setPeriod] = useState('1d');
   const [hideTransfers, setHideTransfers] = useState(false);
+  const [distWindow, setDistWindow] = useState<string>('1h');
+  const [distribution, setDistribution] = useState<WhaleDistribution | null>(null);
   const { overview, recentTrades, loading, connected } = useWhaleData(period);
 
+  const fetchDistribution = useCallback(async () => {
+    const data = await api.getWhaleDistribution(distWindow);
+    if (data) setDistribution(data);
+  }, [distWindow]);
+
+  useEffect(() => {
+    fetchDistribution();
+    const interval = setInterval(fetchDistribution, 30000);
+    return () => clearInterval(interval);
+  }, [fetchDistribution]);
+
   const filteredTrades = hideTransfers ? recentTrades.filter(t => t.side !== 'TRANSFER') : recentTrades;
-  const exchangeTrades = recentTrades.filter(t => t.source !== 'whale-alert');
-  const whaleTrades = recentTrades.filter(t => t.source === 'whale-alert');
-  const exchangeDist = calcDistribution(exchangeTrades);
-  const whaleDist = calcDistribution(whaleTrades);
 
   if (loading) {
     return (
@@ -138,7 +150,7 @@ export function WhaleTracker() {
             <div className="space-y-1">
               <p className="text-xs text-text-secondary">Active Symbols</p>
               <p className="text-2xl font-bold font-mono text-accent">{overview.activeSymbolCount}</p>
-              <p className="text-xs text-text-secondary">of 10</p>
+              <p className="text-xs text-text-secondary">of {overview.symbolAnalytics?.length ?? overview.activeSymbolCount}</p>
             </div>
           </div>
         </section>
@@ -188,13 +200,49 @@ export function WhaleTracker() {
           </div>
           <div className="glass-card p-3 overflow-y-auto space-y-2 flex-1 min-h-0">
             <div className="space-y-2 mb-3">
-              <DistributionBar label="Exchanges" data={exchangeDist} />
-              <DistributionBar label="On-Chain" data={whaleDist} />
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-text-secondary">Buy/Sell Distribution</span>
+                <div className="flex gap-0.5">
+                  {DIST_WINDOWS.map(w => (
+                    <button
+                      key={w}
+                      onClick={() => setDistWindow(w)}
+                      className={`px-1.5 py-0.5 text-[9px] rounded transition-colors ${
+                        distWindow === w
+                          ? 'bg-accent text-background font-medium'
+                          : 'text-text-secondary hover:text-text-primary'
+                      }`}
+                    >
+                      {w}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {distribution && (
+                <>
+                  <DistributionBar label="Exchanges" data={{
+                    buyVol: distribution.exchange.buyVolume,
+                    sellVol: distribution.exchange.sellVolume,
+                    buyPct: (distribution.exchange.buyVolume + distribution.exchange.sellVolume) > 0
+                      ? (distribution.exchange.buyVolume / (distribution.exchange.buyVolume + distribution.exchange.sellVolume)) * 100
+                      : 50,
+                    total: distribution.exchange.buyVolume + distribution.exchange.sellVolume,
+                  }} />
+                  <DistributionBar label="On-Chain" data={{
+                    buyVol: distribution.onchain.buyVolume,
+                    sellVol: distribution.onchain.sellVolume,
+                    buyPct: (distribution.onchain.buyVolume + distribution.onchain.sellVolume) > 0
+                      ? (distribution.onchain.buyVolume / (distribution.onchain.buyVolume + distribution.onchain.sellVolume)) * 100
+                      : 50,
+                    total: distribution.onchain.buyVolume + distribution.onchain.sellVolume,
+                  }} />
+                </>
+              )}
             </div>
             {filteredTrades.length === 0 ? (
               <p className="text-text-secondary text-sm text-center py-8">
                 Waiting for whale trades...<br />
-                <span className="text-xs">Threshold: $50K+</span>
+                <span className="text-xs">Threshold: $0.5K-$5K per coin</span>
               </p>
             ) : (
               filteredTrades.slice(0, 30).map((tx, i) => (

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSignalData } from '@/hooks/useSignalData';
-import { Zap, Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { AiAnalysisModal } from './AiAnalysisModal';
+import { Zap, Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react';
 import { formatPrice, formatTimeAgo } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
 import type { TradingSignal, DimensionScore } from '@/types';
@@ -130,7 +131,7 @@ function DimensionBar({ dimension }: { dimension: DimensionScore }) {
   );
 }
 
-function SignalCard({ signal, isExpanded, onToggle }: { signal: TradingSignal; isExpanded: boolean; onToggle: () => void }) {
+function SignalCard({ signal, isExpanded, onToggle, onAiAnalysis }: { signal: TradingSignal; isExpanded: boolean; onToggle: () => void; onAiAnalysis: () => void }) {
   const style = getSignalStyle(signal.signal);
   const symbolName = SYMBOL_NAMES[signal.symbol] ?? signal.symbol.replace('USDT', '');
   const symbolIcon = SYMBOL_ICONS[signal.symbol] ?? '';
@@ -138,6 +139,7 @@ function SignalCard({ signal, isExpanded, onToggle }: { signal: TradingSignal; i
   const isOpportunity = signal.alertLevel === 'OPPORTUNITY';
   const hasTransition = signal.previousSignal && signal.previousSignal !== signal.signal;
   const hasTradeInfo = signal.suggestedEntry !== null && (signal.signal === 'STRONG_BUY' || signal.signal === 'BUY' || signal.signal === 'SELL' || signal.signal === 'STRONG_SELL');
+  const hasAiAnalysis = signal.aiAnalysis != null;
 
   return (
     <div
@@ -269,14 +271,44 @@ function SignalCard({ signal, isExpanded, onToggle }: { signal: TradingSignal; i
           </div>
         )}
 
-        {/* Expand toggle */}
-        <button
-          onClick={onToggle}
-          className="w-full flex items-center justify-center gap-1 text-[10px] text-text-secondary hover:text-accent transition-colors pt-1"
-        >
-          {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          {isExpanded ? 'Less' : 'More'}
-        </button>
+        {/* AI Analysis inline */}
+        {hasAiAnalysis && (
+          <div className="rounded-lg bg-accent/5 border border-accent/15 p-2.5 mb-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <BrainCircuit className="h-3 w-3 text-accent" />
+              <span className="text-[10px] font-medium text-accent">Gemini AI</span>
+              {signal.aiAnalysisTimestamp && (
+                <span className="text-[9px] text-text-secondary ml-auto">{formatTimeAgo(signal.aiAnalysisTimestamp)}</span>
+              )}
+            </div>
+            {signal.aiAnalysis!.split('\n').filter(l => l.trim()).map((line, i) => (
+              <p key={i} className="text-[11px] text-text-secondary leading-snug">{line}</p>
+            ))}
+          </div>
+        )}
+
+        {/* Actions row */}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={onToggle}
+            className="flex-1 flex items-center justify-center gap-1 text-[10px] text-text-secondary hover:text-accent transition-colors"
+          >
+            {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {isExpanded ? 'Less' : 'More'}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onAiAnalysis(); }}
+            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded transition-colors ${
+              hasAiAnalysis
+                ? 'text-accent bg-accent/10 hover:bg-accent/20'
+                : 'text-accent/70 hover:text-accent hover:bg-accent/10'
+            }`}
+            title={hasAiAnalysis ? 'View AI analysis' : 'Request AI analysis'}
+          >
+            <BrainCircuit className="h-3 w-3" />
+            {hasAiAnalysis ? 'AI View' : 'AI Analyze'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -434,6 +466,7 @@ function OpportunityAlerts({ signals }: { signals: TradingSignal[] }) {
 export function SignalDashboard() {
   const { overview, loading, connected, refresh } = useSignalData();
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [rawDataSymbol, setRawDataSymbol] = useState<string | null>(null);
 
   const toggleCard = (symbol: string) => {
     setExpandedCards((prev) => {
@@ -514,6 +547,7 @@ export function SignalDashboard() {
             signal={signal}
             isExpanded={expandedCards.has(signal.symbol)}
             onToggle={() => toggleCard(signal.symbol)}
+            onAiAnalysis={() => setRawDataSymbol(signal.symbol)}
           />
         ))}
       </div>
@@ -522,6 +556,14 @@ export function SignalDashboard() {
         <div className="glass-card p-8 text-center">
           <p className="text-text-secondary text-sm">No signals generated yet. Waiting for data...</p>
         </div>
+      )}
+
+      {rawDataSymbol && (
+        <AiAnalysisModal
+          symbol={rawDataSymbol}
+          existingAnalysis={sortedSignals.find(s => s.symbol === rawDataSymbol)?.aiAnalysis ?? null}
+          onClose={() => setRawDataSymbol(null)}
+        />
       )}
     </div>
   );
