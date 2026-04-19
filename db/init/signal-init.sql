@@ -58,3 +58,25 @@ ALTER TABLE signal_outcomes SET (
 );
 
 SELECT add_compression_policy('signal_outcomes', INTERVAL '30 days', if_not_exists => TRUE);
+
+-- =============================================================================
+-- Trailing-stop columns (PR2)
+-- =============================================================================
+-- Each outcome carries its own trail config so per-strategy calibration stays
+-- auditable. Defaults match the winning simulation parameters: activation at
+-- 1R MFE, step 0.5R, offset 0.5R (stop trails 0.5R behind MFE peak).
+--
+-- dynamic_stop_price is updated by the evaluator as MFE climbs. When a candle
+-- crosses it, final_exit_reason = TRAIL_STOP (vs INITIAL_STOP / TARGET / EXPIRED).
+-- Existing PENDING rows adopt the defaults via ALTER … DEFAULT and continue
+-- tracking on the next evaluator tick.
+
+ALTER TABLE signal_outcomes
+    ADD COLUMN IF NOT EXISTS trail_activation_r DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    ADD COLUMN IF NOT EXISTS trail_step_r       DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    ADD COLUMN IF NOT EXISTS trail_offset_r     DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    ADD COLUMN IF NOT EXISTS trail_highest_r    DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    ADD COLUMN IF NOT EXISTS dynamic_stop_price DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS trail_triggered_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS final_exit_reason  VARCHAR(16);
+    -- final_exit_reason values: INITIAL_STOP | TRAIL_STOP | TARGET | EXPIRED

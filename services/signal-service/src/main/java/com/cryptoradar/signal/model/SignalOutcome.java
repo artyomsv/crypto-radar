@@ -106,6 +106,42 @@ public class SignalOutcome {
     @Column(name = "last_evaluated_at")
     private Instant lastEvaluatedAt;
 
+    // --- Trailing-stop fields (PR2) ---
+
+    /** MFE in R-units at which trailing first activates. Default: 1.0R. */
+    @Column(name = "trail_activation_r", nullable = false)
+    private Double trailActivationR = 1.0;
+
+    /** Size of each trail rung in R-units. Default: 0.5R. */
+    @Column(name = "trail_step_r", nullable = false)
+    private Double trailStepR = 0.5;
+
+    /** Distance (in R-units) the trail stop sits behind the current rung. Default: 0.5R. */
+    @Column(name = "trail_offset_r", nullable = false)
+    private Double trailOffsetR = 0.5;
+
+    /**
+     * Highest trail-stop rung reached (in R-units above entry for LONG, below
+     * for SHORT). Monotonically non-decreasing — trail never loosens.
+     */
+    @Column(name = "trail_highest_r", nullable = false)
+    private Double trailHighestR = 0.0;
+
+    /** Current active trail stop price. Null until MFE first crosses {@code trailActivationR}. */
+    @Column(name = "dynamic_stop_price")
+    private Double dynamicStopPrice;
+
+    /** Wall clock when the trail first activated. Null until then. */
+    @Column(name = "trail_triggered_at")
+    private Instant trailTriggeredAt;
+
+    /**
+     * Populated on close. One of {@code INITIAL_STOP}, {@code TRAIL_STOP},
+     * {@code TARGET}, {@code EXPIRED}. Null while status is {@code PENDING}.
+     */
+    @Column(name = "final_exit_reason", length = 16)
+    private String finalExitReason;
+
     public SignalOutcome() {
     }
 
@@ -189,4 +225,25 @@ public class SignalOutcome {
 
     public Instant getLastEvaluatedAt() { return lastEvaluatedAt; }
     public void setLastEvaluatedAt(Instant lastEvaluatedAt) { this.lastEvaluatedAt = lastEvaluatedAt; }
+
+    public Double getTrailActivationR() { return trailActivationR; }
+    public void setTrailActivationR(Double trailActivationR) { this.trailActivationR = trailActivationR; }
+
+    public Double getTrailStepR() { return trailStepR; }
+    public void setTrailStepR(Double trailStepR) { this.trailStepR = trailStepR; }
+
+    public Double getTrailOffsetR() { return trailOffsetR; }
+    public void setTrailOffsetR(Double trailOffsetR) { this.trailOffsetR = trailOffsetR; }
+
+    public Double getTrailHighestR() { return trailHighestR; }
+    public void setTrailHighestR(Double trailHighestR) { this.trailHighestR = trailHighestR; }
+
+    public Double getDynamicStopPrice() { return dynamicStopPrice; }
+    public void setDynamicStopPrice(Double dynamicStopPrice) { this.dynamicStopPrice = dynamicStopPrice; }
+
+    public Instant getTrailTriggeredAt() { return trailTriggeredAt; }
+    public void setTrailTriggeredAt(Instant trailTriggeredAt) { this.trailTriggeredAt = trailTriggeredAt; }
+
+    public String getFinalExitReason() { return finalExitReason; }
+    public void setFinalExitReason(String finalExitReason) { this.finalExitReason = finalExitReason; }
 }

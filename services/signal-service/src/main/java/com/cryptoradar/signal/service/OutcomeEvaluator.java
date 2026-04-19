@@ -31,6 +31,11 @@ public class OutcomeEvaluator {
     private static final Duration MAX_HOLD = Duration.ofDays(7);
     private static final String DIRECTION_LONG = "LONG";
 
+    private static final String EXIT_TARGET = "TARGET";
+    private static final String EXIT_INITIAL_STOP = "INITIAL_STOP";
+    private static final String EXIT_TRAIL_STOP = "TRAIL_STOP";
+    private static final String EXIT_EXPIRED = "EXPIRED";
+
     private final SignalOutcomeRepository repository;
     private final CandleClient candleClient;
 
@@ -65,6 +70,7 @@ public class OutcomeEvaluator {
         for (CandleBar bar : bars) {
             if (!bar.time().isAfter(scanAfter)) continue;
             updateExcursions(outcome, bar);
+            updateTrailingStop(outcome, bar);
             OutcomeStatus hit = detectHit(outcome, bar);
             if (hit != null) {
                 closeOutcome(outcome, hit, bar.time(), priceFor(outcome, hit));
@@ -81,26 +87,103 @@ public class OutcomeEvaluator {
         return last != null ? last : outcome.getFiredAt();
     }
 
-    private OutcomeStatus detectHit(SignalOutcome outcome, CandleBar bar) {
+    // Package-private for unit tests — exercises the stop/target detection
+    // logic directly without needing to stub the repository or candle client.
+    OutcomeStatus detectHit(SignalOutcome outcome, CandleBar bar) {
         boolean isLong = DIRECTION_LONG.equals(outcome.getDirection());
+        double effectiveStop = effectiveStop(outcome, isLong);
+
         boolean stopHit = isLong
-                ? bar.low() <= outcome.getStopPrice()
-                : bar.high() >= outcome.getStopPrice();
+                ? bar.low() <= effectiveStop
+                : bar.high() >= effectiveStop;
         boolean targetHit = isLong
                 ? bar.high() >= outcome.getTargetPrice()
                 : bar.low() <= outcome.getTargetPrice();
 
-        // If both levels are inside a single 1m bar we can't know order without
-        // tick data — assume stop first as the pessimistic convention.
+        // Intra-bar ordering is unknowable from OHLC alone. Two policies:
+        //   1. Trail inactive → pessimistic (stop first). Matches historical convention.
+        //   2. Trail active → optimistic target-first. Reasoning: the trail level was
+        //      ratcheted by a prior MFE excursion that already passed this bar's target
+        //      threshold — if the trade had range to retrace to trail, it had range
+        //      to print target first on the way down.
+        boolean trailActive = outcome.getDynamicStopPrice() != null;
+        if (targetHit && trailActive) return OutcomeStatus.HIT_TARGET;
         if (stopHit) return OutcomeStatus.HIT_STOP;
         if (targetHit) return OutcomeStatus.HIT_TARGET;
         return null;
     }
 
+    /**
+     * Current stop price to compare candles against: the tighter of the initial
+     * stop and any ratcheted dynamic stop.
+     */
+    private double effectiveStop(SignalOutcome outcome, boolean isLong) {
+        Double dyn = outcome.getDynamicStopPrice();
+        if (dyn == null) return outcome.getStopPrice();
+        return isLong
+                ? Math.max(outcome.getStopPrice(), dyn)
+                : Math.min(outcome.getStopPrice(), dyn);
+    }
+
     private double priceFor(SignalOutcome outcome, OutcomeStatus terminal) {
-        return terminal == OutcomeStatus.HIT_TARGET
-                ? outcome.getTargetPrice()
-                : outcome.getStopPrice();
+        if (terminal == OutcomeStatus.HIT_TARGET) return outcome.getTargetPrice();
+        boolean isLong = DIRECTION_LONG.equals(outcome.getDirection());
+        return effectiveStop(outcome, isLong);
+    }
+
+    /**
+     * Ratchets the trailing stop when the latest bar's favorable excursion
+     * advances past the next rung. Trail logic:
+     *
+     * <pre>{@code
+     *   mfe_r = (best_price - entry) / risk            (LONG; flip sign for SHORT)
+     *   if mfe_r < activation_r: do nothing
+     *   rung     = floor((mfe_r - activation_r) / step_r)
+     *   stop_r   = activation_r + rung * step_r - offset_r
+     *   stop$    = entry + stop_r * risk               (LONG; subtract for SHORT)
+     * }</pre>
+     *
+     * <p>The trail is monotonic — it never loosens, so a subsequent pull-back
+     * below the current rung doesn't reset it.
+     */
+    // Package-private for unit tests — see detectHit note above.
+    void updateTrailingStop(SignalOutcome outcome, CandleBar bar) {
+        boolean isLong = DIRECTION_LONG.equals(outcome.getDirection());
+        double entry = outcome.getEntryPrice();
+        double risk = Math.abs(entry - outcome.getStopPrice());
+        if (risk <= 0) return;
+
+        // Use the cumulative MFE (already refreshed by updateExcursions for this
+        // bar). Doing this — rather than reading bar.high() / bar.low() in
+        // isolation — matters for two cases:
+        //   1. Backfill: existing PENDING rows with historical peaks above
+        //      activation must ratchet the trail immediately on the first
+        //      evaluator tick after deploy, without waiting for a new peak.
+        //   2. Pull-backs: a bar whose high is below the lifetime peak must
+        //      still track the ratcheted level rather than reset to a lower rung.
+        double riskPct = risk / entry * 100.0;
+        if (riskPct <= 0) return;
+        double mfeR = outcome.getMaxFavorablePct() / riskPct;
+
+        double activationR = outcome.getTrailActivationR();
+        if (mfeR < activationR) return;
+
+        double stepR = outcome.getTrailStepR();
+        double offsetR = outcome.getTrailOffsetR();
+        double rung = Math.floor((mfeR - activationR) / stepR);
+        double newTrailR = activationR + rung * stepR - offsetR;
+
+        if (newTrailR <= outcome.getTrailHighestR()) return;
+
+        outcome.setTrailHighestR(newTrailR);
+        double newStop = isLong ? entry + newTrailR * risk
+                                : entry - newTrailR * risk;
+        outcome.setDynamicStopPrice(newStop);
+        if (outcome.getTrailTriggeredAt() == null) {
+            outcome.setTrailTriggeredAt(bar.time());
+            LOG.infof("TRAIL activated %s %s at rung %.2fR → stop=%.4f",
+                    outcome.getSymbol(), outcome.getDirection(), newTrailR, newStop);
+        }
     }
 
     private void updateExcursions(SignalOutcome outcome, CandleBar bar) {
@@ -141,6 +224,7 @@ public class OutcomeEvaluator {
         outcome.setClosedAt(closedAt);
         outcome.setClosedPrice(closedPrice);
         outcome.setLastEvaluatedAt(closedAt);
+        outcome.setFinalExitReason(exitReason(outcome, status));
 
         boolean isLong = DIRECTION_LONG.equals(outcome.getDirection());
         double pnlPct = pctMove(outcome.getEntryPrice(), closedPrice, isLong);
@@ -152,7 +236,19 @@ public class OutcomeEvaluator {
         outcome.setRealizedPnlPct(pnlPct);
         outcome.setRealizedRMultiple(rMultiple);
 
-        LOG.infof("CLOSE %s %s %s @ %.4f  pnl=%.2f%%  R=%.2f",
-                outcome.getSymbol(), outcome.getDirection(), status, closedPrice, pnlPct, rMultiple);
+        LOG.infof("CLOSE %s %s %s (%s) @ %.4f  pnl=%.2f%%  R=%.2f",
+                outcome.getSymbol(), outcome.getDirection(), status,
+                outcome.getFinalExitReason(), closedPrice, pnlPct, rMultiple);
+    }
+
+    /**
+     * Resolves the human-readable exit reason. Distinguishes {@code TRAIL_STOP}
+     * (dynamic stop filled) from {@code INITIAL_STOP} (never ratcheted) so that
+     * post-hoc metrics can attribute profit/loss to the trailing-stop behavior.
+     */
+    private String exitReason(SignalOutcome outcome, OutcomeStatus status) {
+        if (status == OutcomeStatus.HIT_TARGET) return EXIT_TARGET;
+        if (status == OutcomeStatus.EXPIRED) return EXIT_EXPIRED;
+        return outcome.getDynamicStopPrice() != null ? EXIT_TRAIL_STOP : EXIT_INITIAL_STOP;
     }
 }
