@@ -43,6 +43,20 @@ public class SignalEngine {
     private static final String SELL = "SELL";
     private static final String STRONG_SELL = "STRONG_SELL";
 
+    /**
+     * Minimum stop distance as a fraction of entry price. Prevents near-zero-risk
+     * stops that get wicked by normal intrabar noise (observed on LTC in low-ATR
+     * regimes: ATR collapsed, swing-low support was essentially at entry, resulting
+     * in stops 0.01% away and RR ratios above 1500).
+     */
+    private static final double MIN_RISK_PCT = 0.005;
+
+    /**
+     * Minimum target/risk ratio for the suggested take-profit. Floor only —
+     * resistance-based targets above this take precedence.
+     */
+    private static final double MIN_RR = 2.0;
+
     public TradingSignal computeSignal(String symbol,
                                        Map<String, Object> analytics,
                                        Map<String, Object> whaleData,
@@ -355,8 +369,9 @@ public class SignalEngine {
             } else if (liquidationRatio > 0.01) {
                 reasons.add(String.format("Moderate liquidation activity (%.2f%% of OI)", liquidationRatio * 100));
             } else {
-                score += 10;
-                reasons.add("Low liquidation activity — stable positioning");
+                // "+10 for low liquidation" removed: crypto markets sit in this zone by default,
+                // which made every signal every cycle carry a +10 bias. Informational only.
+                reasons.add("Low liquidation activity — stable positioning (informational)");
             }
         }
 
@@ -391,29 +406,37 @@ public class SignalEngine {
             if (btcDominance > 50) {
                 if (isBtc) {
                     score += 20;
-                    reasons.add(String.format("BTC dominance %.1f%% (rising) — bullish for BTC", btcDominance));
+                    reasons.add(String.format("BTC dominance %.1f%% — bullish for BTC", btcDominance));
                 } else {
                     score -= 20;
-                    reasons.add(String.format("BTC dominance %.1f%% (rising) — bearish for alts", btcDominance));
+                    reasons.add(String.format("BTC dominance %.1f%% — bearish for alts", btcDominance));
                 }
             } else {
-                if (!isBtc) {
+                // Previously omitted the BTC-below-50 branch entirely — that asymmetry
+                // gave BTC a neutral (0) score while alts got +20. BTC should carry a
+                // mild bearish bias when rotation is toward alts.
+                if (isBtc) {
+                    score -= 10;
+                    reasons.add(String.format("BTC dominance %.1f%% — mildly bearish for BTC (rotation to alts)", btcDominance));
+                } else {
                     score += 20;
-                    reasons.add(String.format("BTC dominance %.1f%% (falling) — bullish for alts", btcDominance));
+                    reasons.add(String.format("BTC dominance %.1f%% — bullish for alts", btcDominance));
                 }
             }
         }
 
         Double totalStablecoinCap = asDouble(macroData.get("totalStablecoinCap"));
         if (totalStablecoinCap != null) {
+            // Absolute thresholds removed: stablecoin cap has sat above $150B continuously,
+            // producing a constant +20 bias to every signal. Backtest analysis showed this
+            // single rule was enough to suppress SELL emissions for 21 days straight.
+            // Informational only until a rolling baseline is available.
             if (totalStablecoinCap > 150_000_000_000.0) {
-                score += 20;
-                reasons.add("Stablecoin supply above $150B — significant dry powder");
+                reasons.add("Stablecoin supply above $150B (informational)");
             } else if (totalStablecoinCap > 100_000_000_000.0) {
-                reasons.add("Stablecoin supply moderate");
+                reasons.add("Stablecoin supply moderate (informational)");
             } else {
-                score -= 20;
-                reasons.add("Stablecoin supply below $100B — limited dry powder");
+                reasons.add("Stablecoin supply below $100B (informational)");
             }
         }
 
@@ -465,11 +488,16 @@ public class SignalEngine {
     }
 
     private String determineSignalLabel(double score, int confidence) {
-        // Thresholds calibrated to new strength-based confidence (max 90%)
+        // Thresholds intentionally asymmetric (transitional): SELL side is easier to trip than
+        // BUY side because the prior scoring stack carried a ~+45 systemic bias from macro and
+        // order-book dimensions (fixed in this same change). Until rolling-baseline replacements
+        // for those dimensions land and are validated on at least two weeks of outcome data, the
+        // asymmetry compensates for residual bullish bias. Revert to ±55 / ±25 symmetry once
+        // SELL signals are landing at a rate comparable to BUY signals.
         if (score >= 55 && confidence >= 60) return STRONG_BUY;
         if (score >= 25 && confidence >= 35) return BUY;
-        if (score <= -55 && confidence >= 60) return STRONG_SELL;
-        if (score <= -25 && confidence >= 35) return SELL;
+        if (score <= -40 && confidence >= 60) return STRONG_SELL;
+        if (score <= -15 && confidence >= 35) return SELL;
         return NEUTRAL;
     }
 
@@ -496,7 +524,6 @@ public class SignalEngine {
         if (price == null || price <= 0) return;
 
         double atrValue = (atr != null && atr > 0) ? atr : price * 0.02;
-        double MIN_RR = 5.0;
 
         String signalLabel = signal.getSignal();
         if (BUY.equals(signalLabel) || STRONG_BUY.equals(signalLabel)) {
@@ -505,6 +532,7 @@ public class SignalEngine {
             double stopFromAtr = price - (atrValue * 1.5);
             double stopFromSupport = (support != null && support > 0) ? support - (atrValue * 0.5) : stopFromAtr;
             double stopLoss = Math.min(stopFromAtr, stopFromSupport);
+            stopLoss = enforceMinRiskDistance(price, stopLoss, true);
             signal.setSuggestedStopLoss(round2(stopLoss));
 
             double risk = price - stopLoss;
@@ -519,6 +547,7 @@ public class SignalEngine {
             double stopFromAtr = price + (atrValue * 1.5);
             double stopFromResistance = (resistance != null && resistance > 0) ? resistance + (atrValue * 0.5) : stopFromAtr;
             double stopLoss = Math.max(stopFromAtr, stopFromResistance);
+            stopLoss = enforceMinRiskDistance(price, stopLoss, false);
             signal.setSuggestedStopLoss(round2(stopLoss));
 
             double risk = stopLoss - price;
@@ -529,6 +558,17 @@ public class SignalEngine {
         }
 
         computeRiskReward(signal);
+    }
+
+    /**
+     * Widens the stop to {@link #MIN_RISK_PCT} of entry price if the computed
+     * stop sat inside that floor. Returns the stop unchanged otherwise.
+     */
+    private double enforceMinRiskDistance(double entry, double stop, boolean isLong) {
+        double actualRisk = Math.abs(entry - stop);
+        double minRisk = entry * MIN_RISK_PCT;
+        if (actualRisk >= minRisk) return stop;
+        return isLong ? entry - minRisk : entry + minRisk;
     }
 
     private double round2(double value) {

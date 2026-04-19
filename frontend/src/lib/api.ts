@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleDistribution, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleDistribution, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal, PerformanceReport, SignalOutcomeView } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -139,6 +139,13 @@ export const api = {
     }
   },
   getSignalOverview: () => fetchJson<SignalOverview>('/api/signals/overview'),
+  getSignalMetrics: (periodDays = 30) =>
+    fetchJson<PerformanceReport>(`/api/signals/metrics?periodDays=${periodDays}`),
+  getSignalOutcomes: (symbol?: string, limit = 50) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (symbol) params.set('symbol', symbol);
+    return fetchJson<SignalOutcomeView[]>(`/api/signals/outcomes?${params}`);
+  },
   getSignalForSymbol: (symbol: string) => fetchJson<TradingSignal>(`/api/signals/${symbol}`),
   getSignalRawData: (symbol: string) => fetchJson<Record<string, unknown>>(`/api/signals/${symbol}/raw-data`),
   requestAiAnalysis: async (symbol: string) => {

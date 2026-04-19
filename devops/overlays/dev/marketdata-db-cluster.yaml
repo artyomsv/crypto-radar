@@ -1,0 +1,46 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: marketdata-db
+  labels:
+    app.kubernetes.io/name: marketdata-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: projectr-x
+spec:
+  instances: 1   # bump to 3 for HA in a prod overlay
+  # CNPG-compatible TimescaleDB image (community-maintained).
+  # Swap if you build your own — see devops/README.md.
+  imageName: ghcr.io/imusmanmalik/timescaledb-postgis:16-3.4
+  storage:
+    size: 5Gi
+    storageClass: longhorn
+  postgresql:
+    shared_preload_libraries:
+      - timescaledb
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      timescaledb.telemetry_level: "off"
+  bootstrap:
+    initdb:
+      database: marketdata
+      owner: cryptoradar
+      # Run as superuser in template1 so the extension is inherited
+      # by the application database (the app user can't CREATE EXTENSION).
+      postInitTemplateSQL:
+        - CREATE EXTENSION IF NOT EXISTS timescaledb;
+      # Application schema, hypertables, indexes and policies.
+      # Run as the application user inside the application database.
+      postInitApplicationSQLRefs:
+        configMapRefs:
+          - name: marketdata-db-init-sql
+            key: 01-tables.sql
+          - name: marketdata-db-init-sql
+            key: 02-whale.sql
+          - name: marketdata-db-init-sql
+            key: 03-derivatives.sql
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: marketdata-backup-store

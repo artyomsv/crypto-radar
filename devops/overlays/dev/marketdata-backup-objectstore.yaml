@@ -1,0 +1,27 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: marketdata-backup-store
+  labels:
+    app.kubernetes.io/name: marketdata-db
+    app.kubernetes.io/part-of: projectr-x
+spec:
+  configuration:
+    # CHANGE-ME: bucket and prefix for marketdata-db backups.
+    destinationPath: "s3://CHANGE-ME-bucket/projectr-x/marketdata-db/"
+    # CHANGE-ME: endpoint of your S3-compatible object store
+    # (e.g. https://s3.amazonaws.com, https://fra1.digitaloceanspaces.com,
+    #  https://<minio-host>:9000).
+    endpointURL: "https://s3.amazonaws.com"
+    s3Credentials:
+      accessKeyId:
+        name: backup-s3-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: backup-s3-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  retentionPolicy: "30d"

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: derivatives-service-env-config
+data:
+  TZ: "UTC"
+  QUARKUS_HTTP_PORT: "8085"
+  QUARKUS_LOG_LEVEL: "INFO"
+  QUARKUS_REDIS_HOSTS: "redis://redis:6379"
+  QUARKUS_DATASOURCE_JDBC_URL: "jdbc:postgresql://marketdata-db-rw:5432/marketdata"

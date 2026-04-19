@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Single environment overlay. Clone this folder (e.g. to overlays/prod) when
+# adding more environments — only the namespace, replica counts, storage
+# sizes, ingress hosts and backup destinations should differ.
+namespace: crypto-radar
+
+resources:
+  # Namespace must be a resource (cluster-scoped, not namespace-injected)
+  - namespace.yaml
+
+  # Stateless application (services, redis, frontend) from base
+  - ../../base
+
+  # External access
+  - ingress.yaml
+
+  # Database init SQL (referenced by Cluster bootstrap)
+  - marketdata-db-init-sql.yaml
+  - cryptonews-db-init-sql.yaml
+
+  # CNPG postgres clusters
+  - marketdata-db-cluster.yaml
+  - cryptonews-db-cluster.yaml
+
+  # Barman Cloud backup destinations + scheduled backups
+  - marketdata-backup-objectstore.yaml
+  - marketdata-db-scheduled-backup.yaml
+  - cryptonews-backup-objectstore.yaml
+  - cryptonews-db-scheduled-backup.yaml
+
+  # NOTE: secrets.yaml is intentionally NOT listed here.
+  # It is applied out-of-band with `kubectl apply -f secrets.yaml` and is
+  # excluded from git via devops/.gitignore. The committed
+  # secrets.example.yaml is a template only.

@@ -1,0 +1,22 @@
+# --------------------------------------------------------------------------
+# devops/.gitignore — protect this PUBLIC repo from leaked secrets
+# --------------------------------------------------------------------------
+# Real Secret manifests must NEVER be committed. Only *.example.yaml templates
+# (with placeholder values) are tracked in git.
+
+# Real secret files (any name)
+secrets.yaml
+secrets.*.yaml
+!secrets.example.yaml
+
+*.secret.yaml
+*-secret.yaml
+secret.yaml
+
+# Local kubeconfig snippets
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Sealed-secret backup blobs (if you adopt sealed-secrets later)
+*.sealed.yaml.bak

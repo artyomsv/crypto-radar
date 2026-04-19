@@ -1,0 +1,25 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: cryptonews-backup-store
+  labels:
+    app.kubernetes.io/name: cryptonews-db
+    app.kubernetes.io/part-of: projectr-x
+spec:
+  configuration:
+    # CHANGE-ME: bucket and prefix for cryptonews-db backups.
+    destinationPath: "s3://CHANGE-ME-bucket/projectr-x/cryptonews-db/"
+    # CHANGE-ME: endpoint of your S3-compatible object store.
+    endpointURL: "https://s3.amazonaws.com"
+    s3Credentials:
+      accessKeyId:
+        name: backup-s3-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: backup-s3-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  retentionPolicy: "30d"

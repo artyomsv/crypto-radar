@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: projectr-x-frontend
+  annotations:
+    # Traefik (k3s default ingress controller)
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # Uncomment to enable TLS via cert-manager:
+    # traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: crypto-radar.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+  # Uncomment for TLS:
+  # tls:
+  #   - hosts:
+  #       - crypto-radar.local
+  #     secretName: crypto-radar-tls

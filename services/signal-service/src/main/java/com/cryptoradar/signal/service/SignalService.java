@@ -2,6 +2,8 @@ package com.cryptoradar.signal.service;
 
 import com.cryptoradar.signal.event.RedisEventPublisher;
 import com.cryptoradar.signal.model.SignalOverview;
+import com.cryptoradar.signal.model.SymbolRawData;
+import com.cryptoradar.signal.model.TradeSetup;
 import com.cryptoradar.signal.model.TradingSignal;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
@@ -34,6 +36,8 @@ public class SignalService {
     private final SignalEngine signalEngine;
     private final RedisEventPublisher redisPublisher;
     private final GeminiAnalysisService geminiService;
+    private final OutcomeTracker outcomeTracker;
+    private final TradeSetupEngine tradeSetupEngine;
 
     private final ConcurrentHashMap<String, String> previousSignals = new ConcurrentHashMap<>();
     private final AtomicReference<SignalOverview> cachedOverview = new AtomicReference<>();
@@ -41,11 +45,15 @@ public class SignalService {
     public SignalService(DataAggregator dataAggregator,
                          SignalEngine signalEngine,
                          RedisEventPublisher redisPublisher,
-                         GeminiAnalysisService geminiService) {
+                         GeminiAnalysisService geminiService,
+                         OutcomeTracker outcomeTracker,
+                         TradeSetupEngine tradeSetupEngine) {
         this.dataAggregator = dataAggregator;
         this.signalEngine = signalEngine;
         this.redisPublisher = redisPublisher;
         this.geminiService = geminiService;
+        this.outcomeTracker = outcomeTracker;
+        this.tradeSetupEngine = tradeSetupEngine;
     }
 
     @SuppressWarnings("unchecked")
@@ -95,6 +103,22 @@ public class SignalService {
                 if (aiAnalysis != null) {
                     signal.setAiAnalysis(aiAnalysis);
                     signal.setAiAnalysisTimestamp(geminiService.getCachedAnalysisTimestamp(symbol));
+                }
+
+                // Persist actionable transitions so the evaluator can measure them.
+                if (isNoteworthyEvent(signal, prevSignal)) {
+                    outcomeTracker.trackTransition(signal);
+                }
+
+                // Run detector-based trade setups alongside dimension scoring.
+                // Each fired setup becomes its own tracked outcome keyed by strategy,
+                // so dimension-scoring and every detector are measured independently.
+                SymbolRawData rawData = new SymbolRawData(
+                        analytics, symbolWhale, symbolDerivatives, symbolPrice, enrichedMacro);
+                List<TradeSetup> setups = tradeSetupEngine.detectForSymbol(
+                        symbol, rawData, signal.getDimensions());
+                for (TradeSetup setup : setups) {
+                    outcomeTracker.trackSetup(setup);
                 }
 
                 previousSignals.put(symbol, signal.getSignal());

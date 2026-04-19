@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: news-service
+  labels:
+    app.kubernetes.io/name: news-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: news-service

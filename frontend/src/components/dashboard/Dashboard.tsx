@@ -37,7 +37,7 @@ export function Dashboard() {
         <div className="glass-card p-8 text-center max-w-md">
           <p className="text-loss text-lg font-medium mb-2">Connection Error</p>
           <p className="text-text-secondary text-sm">
-            {error || 'Unable to fetch dashboard data. Make sure the API gateway is running on port 8080.'}
+            {error || 'Unable to fetch dashboard data. Make sure the API gateway is running on port 31080.'}
           </p>
         </div>
       </div>

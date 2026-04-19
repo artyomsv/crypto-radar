@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useSignalData } from '@/hooks/useSignalData';
 import { AiAnalysisModal } from './AiAnalysisModal';
+import { SignalPerformanceCard } from './SignalPerformanceCard';
+import { TradeLedger } from './TradeLedger';
 import { Zap, Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react';
 import { formatPrice, formatTimeAgo } from '@/lib/utils';
 import { SYMBOL_NAMES, SYMBOL_ICONS } from '@/types';
@@ -538,6 +540,12 @@ export function SignalDashboard() {
 
       {/* Market Signal Summary */}
       <MarketBiasSummary overview={overview} />
+
+      {/* Closed-loop Feedback — measured signal performance */}
+      <SignalPerformanceCard />
+
+      {/* Trade Ledger — exact list with timestamps; click a row to see the chart */}
+      <TradeLedger />
 
       {/* Signal Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

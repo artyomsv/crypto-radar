@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: signal-service
+  labels:
+    app.kubernetes.io/name: signal-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8086
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: signal-service

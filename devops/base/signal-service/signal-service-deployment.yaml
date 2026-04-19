@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signal-service
+  labels:
+    app.kubernetes.io/name: signal-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: projectr-x
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: signal-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: signal-service
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: projectr-x
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8086"
+        prometheus.io/path: "/q/metrics"
+    spec:
+      serviceAccountName: projectr-x-sa
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: wait-for-redis
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z redis 6379; do echo "Waiting for redis..."; sleep 2; done; echo "redis ready"']
+        - name: wait-for-market-data
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z market-data-service 8081; do echo "Waiting for market-data-service..."; sleep 3; done']
+        - name: wait-for-analytics
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z analytics-service 8083; do echo "Waiting for analytics-service..."; sleep 3; done']
+        - name: wait-for-whale
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z whale-service 8084; do echo "Waiting for whale-service..."; sleep 3; done']
+        - name: wait-for-derivatives
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z derivatives-service 8085; do echo "Waiting for derivatives-service..."; sleep 3; done']
+      containers:
+        - name: signal-service
+          image: ghcr.io/stukans/projectr-x-signal-service:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: signal-service-env-config
+          env:
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: projectr-x-api-keys
+                  key: GEMINI_API_KEY
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8086
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          startupProbe:
+            httpGet:
+              path: /q/health/started
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            periodSeconds: 10

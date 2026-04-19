@@ -350,6 +350,54 @@ export interface SignalOverview {
   signals: TradingSignal[];
 }
 
+export interface PerformanceSummary {
+  total: number;
+  pending: number;
+  hitTarget: number;
+  hitStop: number;
+  expired: number;
+  winRate: number;
+  avgRMultiple: number;
+  totalRMultiple: number;
+  bestRMultiple: number;
+  worstRMultiple: number;
+  profitFactor: number;
+  avgMaxFavorablePct: number;
+  avgMaxAdversePct: number;
+}
+
+export interface PerformanceReport {
+  from: string;
+  to: string;
+  periodDays: number;
+  overall: PerformanceSummary;
+  byStrategy: Record<string, PerformanceSummary>;
+  bySignalType: Record<string, PerformanceSummary>;
+  bySymbol: Record<string, PerformanceSummary>;
+}
+
+export interface SignalOutcomeView {
+  signalId: string;
+  symbol: string;
+  strategy: string;
+  signalType: string;
+  direction: 'LONG' | 'SHORT';
+  firedAt: string;
+  entryPrice: number;
+  stopPrice: number;
+  targetPrice: number;
+  riskRewardRatio: number;
+  confidence: number;
+  status: 'PENDING' | 'HIT_TARGET' | 'HIT_STOP' | 'EXPIRED';
+  closedAt: string | null;
+  closedPrice: number | null;
+  realizedPnlPct: number | null;
+  realizedRMultiple: number | null;
+  maxFavorablePct: number;
+  maxAdversePct: number;
+  aiAnalysis: string | null;
+}
+
 export interface PriceLevelData {
   price: number;
   quantity: number;

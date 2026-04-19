@@ -1,0 +1,299 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketdata-db-init-sql
+  labels:
+    app.kubernetes.io/name: marketdata-db
+    app.kubernetes.io/part-of: projectr-x
+# These SQL blocks mirror db/init/{timescaledb,whale,derivatives}-init.sql
+# in the repository root (which docker-compose mounts directly).
+# The `CREATE EXTENSION timescaledb` statement is intentionally NOT included
+# here — it is created in template1 via postInitTemplateSQL on the cluster
+# spec, because the application user lacks superuser rights.
+data:
+  01-tables.sql: |
+    -- Crypto assets reference table
+    CREATE TABLE IF NOT EXISTS crypto_assets (
+        symbol VARCHAR(20) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        rank INTEGER,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- OHLCV Candle data - will be converted to hypertable
+    CREATE TABLE IF NOT EXISTS candles (
+        time TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        open DOUBLE PRECISION NOT NULL,
+        high DOUBLE PRECISION NOT NULL,
+        low DOUBLE PRECISION NOT NULL,
+        close DOUBLE PRECISION NOT NULL,
+        volume DOUBLE PRECISION NOT NULL,
+        quote_volume DOUBLE PRECISION DEFAULT 0,
+        trade_count INTEGER DEFAULT 0,
+        interval VARCHAR(10) NOT NULL DEFAULT '1h',
+        UNIQUE(time, symbol, interval)
+    );
+
+    SELECT create_hypertable('candles', 'time', if_not_exists => TRUE);
+
+    CREATE INDEX IF NOT EXISTS idx_candles_symbol_interval_time ON candles (symbol, interval, time DESC);
+    CREATE INDEX IF NOT EXISTS idx_candles_interval ON candles (interval, symbol, time DESC);
+
+    -- Real-time price snapshots
+    CREATE TABLE IF NOT EXISTS price_snapshots (
+        time TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        price DOUBLE PRECISION NOT NULL,
+        price_change_24h DOUBLE PRECISION,
+        price_change_pct_24h DOUBLE PRECISION,
+        volume_24h DOUBLE PRECISION,
+        market_cap DOUBLE PRECISION,
+        UNIQUE(time, symbol)
+    );
+
+    SELECT create_hypertable('price_snapshots', 'time', if_not_exists => TRUE);
+    CREATE INDEX IF NOT EXISTS idx_price_symbol_time ON price_snapshots (symbol, time DESC);
+
+    -- Backfill tracking
+    CREATE TABLE IF NOT EXISTS backfill_status (
+        symbol VARCHAR(20) NOT NULL,
+        interval VARCHAR(10) NOT NULL,
+        oldest_candle TIMESTAMPTZ,
+        newest_candle TIMESTAMPTZ,
+        candle_count BIGINT DEFAULT 0,
+        last_backfill_at TIMESTAMPTZ DEFAULT NOW(),
+        is_complete BOOLEAN DEFAULT false,
+        PRIMARY KEY (symbol, interval)
+    );
+
+    -- Backfill depth configuration
+    CREATE TABLE IF NOT EXISTS backfill_config (
+        interval VARCHAR(10) PRIMARY KEY,
+        depth_days INTEGER NOT NULL CHECK (depth_days >= 1 AND depth_days <= 5000),
+        description VARCHAR(100)
+    );
+
+    INSERT INTO backfill_config (interval, depth_days, description) VALUES
+        ('1m',  30,   '1 minute candles'),
+        ('5m',  180,  '5 minute candles'),
+        ('15m', 365,  '15 minute candles'),
+        ('30m', 730,  '30 minute candles'),
+        ('1h',  1000, '1 hour candles'),
+        ('2h',  1500, '2 hour candles'),
+        ('4h',  1500, '4 hour candles'),
+        ('8h',  1500, '8 hour candles'),
+        ('12h', 1500, '12 hour candles'),
+        ('1d',  2500, '1 day candles'),
+        ('1w',  3000, '1 week candles')
+    ON CONFLICT (interval) DO NOTHING;
+
+    -- Top 14 crypto assets
+    INSERT INTO crypto_assets (symbol, name, rank) VALUES
+        ('BTCUSDT', 'Bitcoin', 1),
+        ('ETHUSDT', 'Ethereum', 2),
+        ('XRPUSDT', 'XRP', 3),
+        ('BNBUSDT', 'BNB', 4),
+        ('SOLUSDT', 'Solana', 5),
+        ('TRXUSDT', 'TRON', 6),
+        ('DOGEUSDT', 'Dogecoin', 7),
+        ('BCHUSDT', 'Bitcoin Cash', 8),
+        ('ADAUSDT', 'Cardano', 9),
+        ('LINKUSDT', 'Chainlink', 10),
+        -- XMRUSDT skipped: delisted from Binance 2024-02-20, API serves frozen klines
+        ('XLMUSDT', 'Stellar', 11),
+        ('LTCUSDT', 'Litecoin', 12),
+        ('ZECUSDT', 'Zcash', 13)
+    ON CONFLICT (symbol) DO NOTHING;
+
+    -- Continuous aggregates (1d from 1h candles)
+    CREATE MATERIALIZED VIEW IF NOT EXISTS candles_1d_agg
+    WITH (timescaledb.continuous) AS
+    SELECT
+        time_bucket('1 day', time) AS bucket,
+        symbol,
+        first(open, time) AS open,
+        max(high) AS high,
+        min(low) AS low,
+        last(close, time) AS close,
+        sum(volume) AS volume,
+        sum(trade_count) AS trade_count
+    FROM candles
+    WHERE interval = '1h'
+    GROUP BY bucket, symbol
+    WITH NO DATA;
+
+    SELECT add_continuous_aggregate_policy('candles_1d_agg',
+        start_offset => INTERVAL '3 days',
+        end_offset => INTERVAL '1 hour',
+        schedule_interval => INTERVAL '1 hour',
+        if_not_exists => TRUE);
+
+    -- Compression
+    ALTER TABLE candles SET (
+        timescaledb.compress,
+        timescaledb.compress_segmentby = 'symbol,interval',
+        timescaledb.compress_orderby = 'time DESC'
+    );
+
+    ALTER TABLE price_snapshots SET (
+        timescaledb.compress,
+        timescaledb.compress_segmentby = 'symbol',
+        timescaledb.compress_orderby = 'time DESC'
+    );
+
+    SELECT add_compression_policy('candles', INTERVAL '7 days', if_not_exists => TRUE);
+    SELECT add_compression_policy('price_snapshots', INTERVAL '7 days', if_not_exists => TRUE);
+
+    -- Price alerts
+    CREATE TABLE IF NOT EXISTS price_alerts (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        condition VARCHAR(10) NOT NULL,
+        target_price DOUBLE PRECISION NOT NULL,
+        is_active BOOLEAN DEFAULT true,
+        is_triggered BOOLEAN DEFAULT false,
+        triggered_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        note VARCHAR(255)
+    );
+    CREATE INDEX IF NOT EXISTS idx_alerts_active ON price_alerts (is_active, symbol);
+
+    -- Portfolio positions
+    CREATE TABLE IF NOT EXISTS portfolio_positions (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        entry_price DOUBLE PRECISION NOT NULL,
+        quantity DOUBLE PRECISION NOT NULL,
+        side VARCHAR(10) NOT NULL DEFAULT 'LONG',
+        note VARCHAR(255),
+        opened_at TIMESTAMPTZ DEFAULT NOW(),
+        is_open BOOLEAN DEFAULT true,
+        closed_at TIMESTAMPTZ,
+        close_price DOUBLE PRECISION
+    );
+    CREATE INDEX IF NOT EXISTS idx_portfolio_open ON portfolio_positions (is_open, symbol);
+
+  02-whale.sql: |
+    -- Whale Tracker Tables
+
+    CREATE TABLE IF NOT EXISTS whale_transactions (
+        time TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        price DOUBLE PRECISION NOT NULL,
+        quantity DOUBLE PRECISION NOT NULL,
+        value_usd DOUBLE PRECISION NOT NULL,
+        side VARCHAR(10) NOT NULL,
+        source VARCHAR(50) NOT NULL DEFAULT 'binance',
+        trade_id VARCHAR(100),
+        from_address VARCHAR(255),
+        to_address VARCHAR(255),
+        from_label VARCHAR(100),
+        to_label VARCHAR(100),
+        blockchain VARCHAR(50),
+        tx_hash VARCHAR(255)
+    );
+
+    SELECT create_hypertable('whale_transactions', 'time', if_not_exists => TRUE);
+    CREATE INDEX IF NOT EXISTS idx_whale_tx_symbol_time ON whale_transactions (symbol, time DESC);
+    CREATE INDEX IF NOT EXISTS idx_whale_tx_source ON whale_transactions (source, time DESC);
+    CREATE INDEX IF NOT EXISTS idx_whale_tx_value ON whale_transactions (value_usd DESC, time DESC);
+    CREATE INDEX IF NOT EXISTS idx_whale_tx_side ON whale_transactions (side, symbol, time DESC);
+
+    CREATE TABLE IF NOT EXISTS whale_flow_summary (
+        bucket TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        buy_count INTEGER DEFAULT 0,
+        sell_count INTEGER DEFAULT 0,
+        buy_volume_usd DOUBLE PRECISION DEFAULT 0,
+        sell_volume_usd DOUBLE PRECISION DEFAULT 0,
+        net_flow_usd DOUBLE PRECISION DEFAULT 0,
+        avg_trade_size_usd DOUBLE PRECISION DEFAULT 0,
+        largest_trade_usd DOUBLE PRECISION DEFAULT 0,
+        whale_pressure DOUBLE PRECISION DEFAULT 0,
+        PRIMARY KEY (bucket, symbol)
+    );
+
+    CREATE MATERIALIZED VIEW IF NOT EXISTS whale_flow_5m
+    WITH (timescaledb.continuous) AS
+    SELECT
+        time_bucket('5 minutes', time) AS bucket,
+        symbol,
+        COUNT(*) FILTER (WHERE side = 'BUY') AS buy_count,
+        COUNT(*) FILTER (WHERE side = 'SELL') AS sell_count,
+        COALESCE(SUM(value_usd) FILTER (WHERE side = 'BUY'), 0) AS buy_volume_usd,
+        COALESCE(SUM(value_usd) FILTER (WHERE side = 'SELL'), 0) AS sell_volume_usd,
+        COALESCE(SUM(value_usd) FILTER (WHERE side = 'BUY'), 0) -
+            COALESCE(SUM(value_usd) FILTER (WHERE side = 'SELL'), 0) AS net_flow_usd,
+        AVG(value_usd) AS avg_trade_size_usd,
+        MAX(value_usd) AS largest_trade_usd
+    FROM whale_transactions
+    GROUP BY bucket, symbol
+    WITH NO DATA;
+
+    SELECT add_continuous_aggregate_policy('whale_flow_5m',
+        start_offset => INTERVAL '1 hour',
+        end_offset => INTERVAL '5 minutes',
+        schedule_interval => INTERVAL '5 minutes',
+        if_not_exists => TRUE);
+
+    ALTER TABLE whale_transactions SET (
+        timescaledb.compress,
+        timescaledb.compress_segmentby = 'symbol,source',
+        timescaledb.compress_orderby = 'time DESC'
+    );
+    SELECT add_compression_policy('whale_transactions', INTERVAL '7 days', if_not_exists => TRUE);
+
+  03-derivatives.sql: |
+    -- Derivatives data tables
+
+    CREATE TABLE IF NOT EXISTS funding_rates (
+        time TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        funding_rate DOUBLE PRECISION NOT NULL,
+        mark_price DOUBLE PRECISION,
+        index_price DOUBLE PRECISION,
+        UNIQUE(time, symbol)
+    );
+    SELECT create_hypertable('funding_rates', 'time', if_not_exists => TRUE);
+    CREATE INDEX IF NOT EXISTS idx_funding_symbol_time ON funding_rates (symbol, time DESC);
+
+    CREATE TABLE IF NOT EXISTS open_interest (
+        time TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        open_interest DOUBLE PRECISION NOT NULL,
+        open_interest_usd DOUBLE PRECISION,
+        UNIQUE(time, symbol)
+    );
+    SELECT create_hypertable('open_interest', 'time', if_not_exists => TRUE);
+    CREATE INDEX IF NOT EXISTS idx_oi_symbol_time ON open_interest (symbol, time DESC);
+
+    CREATE TABLE IF NOT EXISTS liquidations (
+        time TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        side VARCHAR(10) NOT NULL,
+        price DOUBLE PRECISION NOT NULL,
+        quantity DOUBLE PRECISION NOT NULL,
+        value_usd DOUBLE PRECISION NOT NULL
+    );
+    SELECT create_hypertable('liquidations', 'time', if_not_exists => TRUE);
+    CREATE INDEX IF NOT EXISTS idx_liq_symbol_time ON liquidations (symbol, time DESC);
+    CREATE INDEX IF NOT EXISTS idx_liq_side ON liquidations (side, time DESC);
+
+    CREATE TABLE IF NOT EXISTS long_short_ratio (
+        time TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR(20) NOT NULL,
+        long_account DOUBLE PRECISION NOT NULL,
+        short_account DOUBLE PRECISION NOT NULL,
+        long_short_ratio DOUBLE PRECISION NOT NULL,
+        UNIQUE(time, symbol)
+    );
+    SELECT create_hypertable('long_short_ratio', 'time', if_not_exists => TRUE);
+
+    ALTER TABLE funding_rates SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol', timescaledb.compress_orderby = 'time DESC');
+    ALTER TABLE open_interest SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol', timescaledb.compress_orderby = 'time DESC');
+    ALTER TABLE liquidations SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol', timescaledb.compress_orderby = 'time DESC');
+    SELECT add_compression_policy('funding_rates', INTERVAL '7 days', if_not_exists => TRUE);
+    SELECT add_compression_policy('open_interest', INTERVAL '7 days', if_not_exists => TRUE);
+    SELECT add_compression_policy('liquidations', INTERVAL '7 days', if_not_exists => TRUE);

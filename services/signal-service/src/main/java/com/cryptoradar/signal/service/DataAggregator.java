@@ -93,6 +93,26 @@ public class DataAggregator {
                 analyticsUrl + "/api/analytics/macro");
     }
 
+    /**
+     * Fetches recent OHLCV candles for a symbol. Cached with the same 30s TTL
+     * as the other endpoints — safe because a candle interval of 1h+ changes
+     * much slower than 30s, and the rare fresh-close-within-TTL case is
+     * harmless (detector just re-evaluates on the next cycle).
+     *
+     * @return list of raw candle maps, or empty list on failure
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> fetchCandles(String symbol, String interval, int limit) {
+        String key = "candles:" + symbol + ":" + interval + ":" + limit;
+        String url = marketDataUrl + "/api/market/candles/" + symbol
+                + "?interval=" + interval + "&limit=" + limit;
+        Object cached = fetchCached(key, url);
+        if (cached instanceof List<?> list) {
+            return (List<Map<String, Object>>) list;
+        }
+        return List.of();
+    }
+
     private Object fetchCached(String cacheKey, String url) {
         CacheEntry entry = cache.get(cacheKey);
         if (entry != null && !entry.isExpired()) {

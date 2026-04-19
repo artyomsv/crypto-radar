@@ -1,0 +1,17 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: marketdata-db-daily-backup
+  labels:
+    app.kubernetes.io/name: marketdata-db
+    app.kubernetes.io/part-of: projectr-x
+spec:
+  # Cron format with seconds: "S M H DoM Mo DoW"
+  # Daily at 04:00 UTC
+  schedule: "0 0 4 * * *"
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  cluster:
+    name: marketdata-db
+  backupOwnerReference: self

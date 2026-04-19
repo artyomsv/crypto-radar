@@ -1,0 +1,31 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cryptonews-db
+  labels:
+    app.kubernetes.io/name: cryptonews-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: projectr-x
+spec:
+  instances: 1   # bump to 3 for HA in a prod overlay
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  storage:
+    size: 2Gi
+    storageClass: longhorn
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "128MB"
+  bootstrap:
+    initdb:
+      database: cryptonews
+      owner: cryptoradar
+      postInitApplicationSQLRefs:
+        configMapRefs:
+          - name: cryptonews-db-init-sql
+            key: 01-tables.sql
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: cryptonews-backup-store

@@ -307,6 +307,26 @@ public class ProxyResource {
     }
 
     @GET
+    @Path("/signals/metrics")
+    public Response getSignalMetrics(@QueryParam("periodDays") @DefaultValue("30") int periodDays) {
+        String url = serviceClient.getSignalServiceUrl() + "/api/signals/metrics?periodDays=" + periodDays;
+        return proxyResponse(serviceClient.getRaw(url));
+    }
+
+    @GET
+    @Path("/signals/outcomes")
+    public Response getSignalOutcomes(
+            @QueryParam("symbol") String symbol,
+            @QueryParam("limit") @DefaultValue("50") int limit) {
+        StringBuilder url = new StringBuilder(serviceClient.getSignalServiceUrl());
+        url.append("/api/signals/outcomes?limit=").append(limit);
+        if (symbol != null && !symbol.isBlank()) {
+            url.append("&symbol=").append(symbol.toUpperCase());
+        }
+        return proxyResponse(serviceClient.getRaw(url.toString()));
+    }
+
+    @GET
     @Path("/signals/{symbol}")
     public Response getSignalForSymbol(@PathParam("symbol") String symbol) {
         if (isInvalidSymbol(symbol)) return Response.status(400).build();

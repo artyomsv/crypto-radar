@@ -80,7 +80,11 @@ INSERT INTO backfill_config (interval, depth_days, description) VALUES
     ('1w',  3000, '1 week candles')
 ON CONFLICT (interval) DO NOTHING;
 
--- Insert top 14 crypto assets
+-- Initial tracked assets (Binance USDT spot pairs).
+-- XMRUSDT is deliberately excluded: Monero was delisted from Binance on
+-- 2024-02-20 and the API still serves frozen historical klines, which would
+-- silently appear "fresh" in the scheduler log while never advancing in time.
+-- If Binance re-lists it, re-insert manually via /api/market/config/cryptos.
 INSERT INTO crypto_assets (symbol, name, rank) VALUES
     ('BTCUSDT', 'Bitcoin', 1),
     ('ETHUSDT', 'Ethereum', 2),
@@ -92,10 +96,9 @@ INSERT INTO crypto_assets (symbol, name, rank) VALUES
     ('BCHUSDT', 'Bitcoin Cash', 8),
     ('ADAUSDT', 'Cardano', 9),
     ('LINKUSDT', 'Chainlink', 10),
-    ('XMRUSDT', 'Monero', 11),
-    ('XLMUSDT', 'Stellar', 12),
-    ('LTCUSDT', 'Litecoin', 13),
-    ('ZECUSDT', 'Zcash', 14)
+    ('XLMUSDT', 'Stellar', 11),
+    ('LTCUSDT', 'Litecoin', 12),
+    ('ZECUSDT', 'Zcash', 13)
 ON CONFLICT (symbol) DO NOTHING;
 
 -- Continuous aggregates for faster dashboard queries (derived from 1h candles)
