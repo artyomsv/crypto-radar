@@ -38,6 +38,7 @@ public class SignalService {
     private final GeminiAnalysisService geminiService;
     private final OutcomeTracker outcomeTracker;
     private final TradeSetupEngine tradeSetupEngine;
+    private final MarketRegimeService marketRegimeService;
 
     private final ConcurrentHashMap<String, String> previousSignals = new ConcurrentHashMap<>();
     private final AtomicReference<SignalOverview> cachedOverview = new AtomicReference<>();
@@ -47,13 +48,15 @@ public class SignalService {
                          RedisEventPublisher redisPublisher,
                          GeminiAnalysisService geminiService,
                          OutcomeTracker outcomeTracker,
-                         TradeSetupEngine tradeSetupEngine) {
+                         TradeSetupEngine tradeSetupEngine,
+                         MarketRegimeService marketRegimeService) {
         this.dataAggregator = dataAggregator;
         this.signalEngine = signalEngine;
         this.redisPublisher = redisPublisher;
         this.geminiService = geminiService;
         this.outcomeTracker = outcomeTracker;
         this.tradeSetupEngine = tradeSetupEngine;
+        this.marketRegimeService = marketRegimeService;
     }
 
     @SuppressWarnings("unchecked")
@@ -76,6 +79,11 @@ public class SignalService {
 
         Map<String, Object> enrichedMacro = enrichMacroWithFearGreed(macroData, marketOverview);
 
+        // Query regime once per cycle — it refreshes on a 15-minute cadence, so
+        // reading it per-symbol would be both wasteful and non-atomic across the
+        // same compute pass.
+        com.cryptoradar.signal.model.MarketRegime regime = marketRegimeService.currentRegime();
+
         List<TradingSignal> signals = new ArrayList<>();
         for (String symbol : symbols) {
             try {
@@ -85,7 +93,7 @@ public class SignalService {
                 Map<String, Object> symbolPrice = priceBySymbol.get(symbol);
 
                 TradingSignal signal = signalEngine.computeSignal(
-                        symbol, analytics, symbolWhale, symbolDerivatives, symbolPrice, enrichedMacro);
+                        symbol, analytics, symbolWhale, symbolDerivatives, symbolPrice, enrichedMacro, regime);
 
                 String prevSignal = previousSignals.get(symbol);
                 signal.setPreviousSignal(prevSignal);

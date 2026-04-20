@@ -57,12 +57,28 @@ public class SignalEngine {
      */
     private static final double MIN_RR = 2.0;
 
+    /**
+     * Regime-agnostic overload — callers that don't have regime context (such
+     * as unit tests) fall through to this and are treated as {@link
+     * com.cryptoradar.signal.model.MarketRegime#CHOP}.
+     */
     public TradingSignal computeSignal(String symbol,
                                        Map<String, Object> analytics,
                                        Map<String, Object> whaleData,
                                        Map<String, Object> derivativesData,
                                        Map<String, Object> priceData,
                                        Map<String, Object> macroData) {
+        return computeSignal(symbol, analytics, whaleData, derivativesData, priceData, macroData,
+                com.cryptoradar.signal.model.MarketRegime.CHOP);
+    }
+
+    public TradingSignal computeSignal(String symbol,
+                                       Map<String, Object> analytics,
+                                       Map<String, Object> whaleData,
+                                       Map<String, Object> derivativesData,
+                                       Map<String, Object> priceData,
+                                       Map<String, Object> macroData,
+                                       com.cryptoradar.signal.model.MarketRegime regime) {
         DimensionScore technical = scoreTechnical(analytics);
         DimensionScore whale = scoreWhale(whaleData);
         DimensionScore derivatives = scoreDerivatives(derivativesData);
@@ -83,7 +99,7 @@ public class SignalEngine {
         overallScore = clamp(overallScore, -100, 100);
 
         int confidence = computeConfidence(dimensions, overallScore);
-        String signalLabel = determineSignalLabel(overallScore, confidence);
+        String signalLabel = determineSignalLabel(overallScore, confidence, regime);
 
         TradingSignal signal = new TradingSignal();
         signal.setSymbol(symbol);
@@ -487,18 +503,54 @@ public class SignalEngine {
         return Math.max(15, Math.min(90, confidence));
     }
 
-    private String determineSignalLabel(double score, int confidence) {
-        // Thresholds intentionally asymmetric (transitional): SELL side is easier to trip than
-        // BUY side because the prior scoring stack carried a ~+45 systemic bias from macro and
-        // order-book dimensions (fixed in this same change). Until rolling-baseline replacements
-        // for those dimensions land and are validated on at least two weeks of outcome data, the
-        // asymmetry compensates for residual bullish bias. Revert to ±55 / ±25 symmetry once
-        // SELL signals are landing at a rate comparable to BUY signals.
-        if (score >= 55 && confidence >= 60) return STRONG_BUY;
-        if (score >= 25 && confidence >= 35) return BUY;
-        if (score <= -40 && confidence >= 60) return STRONG_SELL;
-        if (score <= -15 && confidence >= 35) return SELL;
+    private String determineSignalLabel(double score, int confidence,
+                                        com.cryptoradar.signal.model.MarketRegime regime) {
+        int[] thresholds = regimeAdjustedThresholds(regime);
+        int strongBuyMin = thresholds[0];
+        int buyMin       = thresholds[1];
+        int strongSellMax = thresholds[2];
+        int sellMax       = thresholds[3];
+
+        if (score >= strongBuyMin && confidence >= 60) return STRONG_BUY;
+        if (score >= buyMin        && confidence >= 35) return BUY;
+        if (score <= strongSellMax && confidence >= 60) return STRONG_SELL;
+        if (score <= sellMax       && confidence >= 35) return SELL;
         return NEUTRAL;
+    }
+
+    /**
+     * Regime-modulated thresholds. In a strong regime, counter-trend signals
+     * need more evidence to fire; trend-aligned signals keep their defaults.
+     *
+     * <p>Returns {@code [strongBuyMin, buyMin, strongSellMax, sellMax]}.
+     * The SELL-side defaults are intentionally looser than BUY-side
+     * (transitional asymmetry per PR3); regime modulation layers on top of
+     * that.
+     */
+    // Package-private for unit tests — pure function returning the threshold
+    // tuple so tests can assert BULL/BEAR modulation without constructing
+    // a full scoring pipeline.
+    int[] regimeAdjustedThresholds(com.cryptoradar.signal.model.MarketRegime regime) {
+        int strongBuy = 55, buy = 25;
+        int strongSell = -40, sell = -15;
+
+        switch (regime) {
+            case BULL -> {
+                // Counter-trend SELLs need stronger evidence — revert to symmetric
+                // thresholds so we don't short a rising market on mild bearish reads.
+                strongSell = -55;
+                sell = -30;
+            }
+            case BEAR -> {
+                // Counter-trend BUYs face a higher bar — don't catch falling knives.
+                strongBuy = 70;
+                buy = 40;
+            }
+            case CHOP, UNKNOWN -> {
+                // defaults already set
+            }
+        }
+        return new int[]{strongBuy, buy, strongSell, sell};
     }
 
     private String determineAlertLevel(String signalLabel, int confidence) {
