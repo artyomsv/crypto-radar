@@ -962,10 +962,255 @@ git commit -m "feat(trade-execution): GuardrailPolicy with 6 capital-preservatio
 ## Task 4: `OrderPlacer` — place market orders with TP/SL
 
 **Files:**
+- Create: `.../lifecycle/InstrumentRegistry.java`
+- Create: test: `.../lifecycle/InstrumentRegistryTest.java`
 - Create: `.../lifecycle/OrderPlacer.java`
 - Create: test: `.../lifecycle/OrderPlacerTest.java`
 
-- [ ] **Step 1: Implement `OrderPlacer`**
+**Why we need `InstrumentRegistry`:** Bybit's `lotSizeFilter.qtyStep` varies per symbol. BTCUSDT=0.001, ETHUSDT=0.01, SOLUSDT=0.1, XRPUSDT/DOGEUSDT/ADAUSDT=1. Hardcoding a single step truncates most symbols to zero or over-orders on coarse ones. The registry fetches once per symbol via the public `/v5/market/instruments-info` endpoint (no auth required) and caches the result in process memory. A fallback table covers the current 13-pair watchlist so a Bybit outage at startup does not brick the placer.
+
+- [ ] **Step 1: Implement `InstrumentRegistry`**
+
+Write `services/trade-execution-service/src/main/java/com/cryptoradar/execution/lifecycle/InstrumentRegistry.java`:
+
+```java
+package com.cryptoradar.execution.lifecycle;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.smallrye.config.ConfigMapping;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Caches per-symbol qty step ("lot size") fetched from Bybit's public
+ * /v5/market/instruments-info endpoint. No auth required.
+ *
+ * Falls back to a static table when the HTTP fetch fails so a flaky
+ * network at startup does not block order placement for known symbols.
+ */
+@ApplicationScoped
+public class InstrumentRegistry {
+
+    private static final Logger LOG = Logger.getLogger(InstrumentRegistry.class);
+
+    /** Fallback qty steps for the 13-symbol watchlist. Authoritative source is Bybit. */
+    private static final Map<String, Double> FALLBACK_QTY_STEP = Map.ofEntries(
+            Map.entry("BTCUSDT", 0.001),
+            Map.entry("ETHUSDT", 0.01),
+            Map.entry("SOLUSDT", 0.1),
+            Map.entry("BNBUSDT", 0.01),
+            Map.entry("XRPUSDT", 1.0),
+            Map.entry("DOGEUSDT", 1.0),
+            Map.entry("LINKUSDT", 0.1),
+            Map.entry("AVAXUSDT", 0.1),
+            Map.entry("LTCUSDT", 0.01),
+            Map.entry("DOTUSDT", 0.1),
+            Map.entry("NEARUSDT", 0.1),
+            Map.entry("ADAUSDT", 1.0),
+            Map.entry("MATICUSDT", 1.0)
+    );
+
+    /** Cache key = env + "|" + symbol. */
+    private final ConcurrentHashMap<String, Double> cache = new ConcurrentHashMap<>();
+
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(3))
+            .build();
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @ConfigProperty(name = "bybit.rest-base-override.DEMO", defaultValue = "https://api-demo.bybit.com")
+    String demoBase;
+
+    @ConfigProperty(name = "bybit.rest-base-override.MAINNET", defaultValue = "https://api.bybit.com")
+    String mainnetBase;
+
+    public double qtyStepFor(String environment, String symbol) {
+        String key = environment + "|" + symbol;
+        Double cached = cache.get(key);
+        if (cached != null) return cached;
+        Optional<Double> fetched = fetchQtyStep(environment, symbol);
+        double resolved = fetched.orElseGet(() -> FALLBACK_QTY_STEP.getOrDefault(symbol, 0.001));
+        cache.put(key, resolved);
+        if (fetched.isEmpty()) {
+            LOG.warnf("InstrumentRegistry: falling back to static qtyStep for %s = %s", symbol, resolved);
+        }
+        return resolved;
+    }
+
+    /** Visible for tests — flush cache between cases. */
+    public void invalidate() {
+        cache.clear();
+    }
+
+    private Optional<Double> fetchQtyStep(String environment, String symbol) {
+        String base = "MAINNET".equals(environment) ? mainnetBase : demoBase;
+        URI uri = URI.create(base + "/v5/market/instruments-info?category=linear&symbol=" + symbol);
+        try {
+            HttpResponse<String> resp = http.send(
+                    HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(3)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                LOG.warnf("instruments-info HTTP %d for %s", resp.statusCode(), symbol);
+                return Optional.empty();
+            }
+            JsonNode root = mapper.readTree(resp.body());
+            if (root.path("retCode").asInt(-1) != 0) {
+                LOG.warnf("instruments-info retCode=%d retMsg=%s for %s",
+                        root.path("retCode").asInt(-1),
+                        root.path("retMsg").asText("?"), symbol);
+                return Optional.empty();
+            }
+            JsonNode list = root.path("result").path("list");
+            if (!list.isArray() || list.isEmpty()) {
+                return Optional.empty();
+            }
+            String step = list.get(0).path("lotSizeFilter").path("qtyStep").asText("");
+            if (step.isEmpty()) return Optional.empty();
+            return Optional.of(Double.parseDouble(step));
+        } catch (Exception e) {
+            LOG.warnf("instruments-info fetch failed for %s: %s", symbol, e.getMessage());
+            return Optional.empty();
+        }
+    }
+}
+```
+
+- [ ] **Step 2: `InstrumentRegistryTest`**
+
+Write `services/trade-execution-service/src/test/java/com/cryptoradar/execution/lifecycle/InstrumentRegistryTest.java`:
+
+```java
+package com.cryptoradar.execution.lifecycle;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.client.WireMock;
+import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
+import jakarta.inject.Inject;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+@QuarkusTest
+@TestProfile(InstrumentRegistryTest.Profile.class)
+class InstrumentRegistryTest {
+
+    public static class Profile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            byte[] k = new byte[32];
+            new SecureRandom().nextBytes(k);
+            return Map.of(
+                    "bybit.rest-base-override.DEMO", "http://localhost:38103",
+                    "execution.master-key", Base64.getEncoder().encodeToString(k)
+            );
+        }
+    }
+
+    static WireMockServer wireMock;
+
+    @Inject InstrumentRegistry registry;
+    @Inject ObjectMapper mapper;
+
+    @BeforeEach
+    void setup() {
+        wireMock = new WireMockServer(38103);
+        wireMock.start();
+        WireMock.configureFor("localhost", 38103);
+        registry.invalidate();
+    }
+
+    @AfterEach
+    void tearDown() {
+        wireMock.stop();
+    }
+
+    private void stubInstrument(String symbol, String qtyStep) throws Exception {
+        stubFor(get(urlPathEqualTo("/v5/market/instruments-info"))
+                .withQueryParam("category", equalTo("linear"))
+                .withQueryParam("symbol", equalTo(symbol))
+                .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                        "retCode", 0, "retMsg", "OK",
+                        "result", Map.of("list", List.of(Map.of(
+                                "symbol", symbol,
+                                "lotSizeFilter", Map.of("qtyStep", qtyStep)
+                        ))),
+                        "time", 1700000000000L
+                )))));
+    }
+
+    @Test
+    void fetchesXrpQtyStepAsOne() throws Exception {
+        stubInstrument("XRPUSDT", "1");
+        assertEquals(1.0, registry.qtyStepFor("DEMO", "XRPUSDT"));
+    }
+
+    @Test
+    void fetchesBtcQtyStepAsThousandth() throws Exception {
+        stubInstrument("BTCUSDT", "0.001");
+        assertEquals(0.001, registry.qtyStepFor("DEMO", "BTCUSDT"));
+    }
+
+    @Test
+    void cachesAfterFirstFetch() throws Exception {
+        stubInstrument("SOLUSDT", "0.1");
+        assertEquals(0.1, registry.qtyStepFor("DEMO", "SOLUSDT"));
+        wireMock.resetRequests();
+        assertEquals(0.1, registry.qtyStepFor("DEMO", "SOLUSDT"));
+        // second call hits cache — no new HTTP request
+        verify(0, getRequestedFor(urlPathEqualTo("/v5/market/instruments-info")));
+    }
+
+    @Test
+    void fallsBackToStaticTableOnHttpFailure() {
+        // no stub — WireMock returns 404 → fall back to FALLBACK_QTY_STEP["DOGEUSDT"] = 1.0
+        assertEquals(1.0, registry.qtyStepFor("DEMO", "DOGEUSDT"));
+    }
+
+    @Test
+    void fallsBackToSmallStepForUnknownSymbol() {
+        // unknown symbol, no stub → FALLBACK map returns default 0.001
+        assertEquals(0.001, registry.qtyStepFor("DEMO", "WEIRDUSDT"));
+    }
+}
+```
+
+- [ ] **Step 3: Run — expect 5 passing**
+
+```bash
+cd services/trade-execution-service && mvn test -Dtest=InstrumentRegistryTest -B
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add services/trade-execution-service/src/main/java/com/cryptoradar/execution/lifecycle/InstrumentRegistry.java \
+        services/trade-execution-service/src/test/java/com/cryptoradar/execution/lifecycle/InstrumentRegistryTest.java
+git commit -m "feat(trade-execution): InstrumentRegistry caches per-symbol qtyStep"
+```
+
+- [ ] **Step 5: Implement `OrderPlacer`**
 
 Write `services/trade-execution-service/src/main/java/com/cryptoradar/execution/lifecycle/OrderPlacer.java`:
 
@@ -1001,19 +1246,20 @@ import java.util.Map;
 public class OrderPlacer {
 
     private static final Logger LOG = Logger.getLogger(OrderPlacer.class);
-    private static final double DEFAULT_LOT_SIZE = 0.001;   // conservative default; Bybit-specific lot sizes can be fetched later
     private static final int RETCODE_OK = 0;
     private static final int RETCODE_LEVERAGE_UNCHANGED = 110043;
     private static final int RETCODE_DUPLICATE_ORDER = 110061;
     private static final int RETCODE_INSUFFICIENT_MARGIN = 110007;
 
     private final BybitV5RestClient bybit;
+    private final InstrumentRegistry instruments;
     private final ExecutedTradeRepository tradeRepo;
     private final ExecutionEventRepository eventRepo;
 
-    public OrderPlacer(BybitV5RestClient bybit, ExecutedTradeRepository tradeRepo,
-                       ExecutionEventRepository eventRepo) {
+    public OrderPlacer(BybitV5RestClient bybit, InstrumentRegistry instruments,
+                       ExecutedTradeRepository tradeRepo, ExecutionEventRepository eventRepo) {
         this.bybit = bybit;
+        this.instruments = instruments;
         this.tradeRepo = tradeRepo;
         this.eventRepo = eventRepo;
     }
@@ -1036,8 +1282,9 @@ public class OrderPlacer {
         // 2. Compute qty and equity-derived risk (mock equity here; real code pulls from wallet)
         double equity = fetchEquity(account);
         double riskPct = account.getRiskPercent().doubleValue();
+        double qtyStep = instruments.qtyStepFor(account.getEnvironment(), req.symbol());
         double qty = RUnitMath.computeQty(equity, riskPct,
-                req.entryPrice().doubleValue(), req.stopPrice().doubleValue(), DEFAULT_LOT_SIZE);
+                req.entryPrice().doubleValue(), req.stopPrice().doubleValue(), qtyStep);
         if (qty <= 0) {
             return fail(account, req, "qty computed as zero — skip");
         }
@@ -1158,7 +1405,7 @@ public class OrderPlacer {
 }
 ```
 
-- [ ] **Step 2: Integration tests (WireMock)**
+- [ ] **Step 6: Integration tests (WireMock)**
 
 Write `services/trade-execution-service/src/test/java/com/cryptoradar/execution/lifecycle/OrderPlacerTest.java`:
 
@@ -1213,6 +1460,7 @@ class OrderPlacerTest {
     static WireMockServer wireMock;
 
     @Inject OrderPlacer placer;
+    @Inject InstrumentRegistry instruments;
     @Inject ObjectMapper mapper;
     @Inject CredentialCipher cipher;
     @Inject ExchangeAccountRepository accountRepo;
@@ -1227,6 +1475,7 @@ class OrderPlacerTest {
         wireMock = new WireMockServer(38101);
         wireMock.start();
         WireMock.configureFor("localhost", 38101);
+        instruments.invalidate();
         eventRepo.deleteAll();
         tradeRepo.deleteAll();
         accountRepo.deleteAll();
@@ -1239,6 +1488,7 @@ class OrderPlacerTest {
 
         stubWallet("1000");
         stubSetLeverageOk();
+        stubInstrument("BTCUSDT", "0.001");
     }
 
     @AfterEach
@@ -1272,6 +1522,22 @@ class OrderPlacerTest {
                     .willReturn(okJson(mapper.writeValueAsString(Map.of(
                             "retCode", 0, "retMsg", "OK", "result", Map.of(),
                             "time", 1700000000000L)))));
+        } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    private void stubInstrument(String symbol, String qtyStep) {
+        try {
+            stubFor(get(urlPathEqualTo("/v5/market/instruments-info"))
+                    .withQueryParam("category", equalTo("linear"))
+                    .withQueryParam("symbol", equalTo(symbol))
+                    .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                            "retCode", 0, "retMsg", "OK",
+                            "result", Map.of("list", List.of(Map.of(
+                                    "symbol", symbol,
+                                    "lotSizeFilter", Map.of("qtyStep", qtyStep)
+                            ))),
+                            "time", 1700000000000L
+                    )))));
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 
@@ -1339,7 +1605,7 @@ class OrderPlacerTest {
 }
 ```
 
-- [ ] **Step 3: Run + commit**
+- [ ] **Step 7: Run + commit**
 
 ```bash
 cd services/trade-execution-service && mvn test -Dtest=OrderPlacerTest -B
@@ -2224,13 +2490,17 @@ public class SignalSubscriber {
         if (accounts.isEmpty()) return;
 
         for (ExchangeAccount account : accounts) {
-            boolean hasLong = tradeRepo.findOpenBySymbolAndDirectionAndStrategy(account.getId(), symbol, "LONG", "").isPresent()
-                    || !tradeRepo.findOpenForAccount(account.getId()).stream()
-                    .filter(t -> t.getSymbol().equals(symbol) && "LONG".equals(t.getDirection()))
-                    .toList().isEmpty();
-            boolean hasShort = !tradeRepo.findOpenForAccount(account.getId()).stream()
-                    .filter(t -> t.getSymbol().equals(symbol) && "SHORT".equals(t.getDirection()))
-                    .toList().isEmpty();
+            // Single DB pass: check if the account holds ANY open position for this symbol in
+            // either direction, across ALL strategies. Strategy-scoped dedup happens separately
+            // in dispatchEnter via findOpenBySymbolAndDirectionAndStrategy.
+            boolean hasLong = false;
+            boolean hasShort = false;
+            for (var t : tradeRepo.findOpenForAccount(account.getId())) {
+                if (!symbol.equals(t.getSymbol())) continue;
+                if ("LONG".equals(t.getDirection())) hasLong = true;
+                else if ("SHORT".equals(t.getDirection())) hasShort = true;
+                if (hasLong && hasShort) break;
+            }
 
             FlipTracker.Action action = flipTracker.observe(
                     symbol, label, account.getFlipPersistenceTicks(), hasLong, hasShort);
@@ -3392,6 +3662,28 @@ curl -fsS http://localhost:31087/q/health/ready
 1. Go to https://testnet.bybit.com (or their demo trading UI — the endpoint is `api-demo.bybit.com`).
 2. Create an API key with: Derivatives → Order + Position, Wallet → Account Info. **NOT Withdraw.**
 3. Copy the key + secret into a safe place — you'll POST them to our service.
+
+- [ ] **Step 3b: VERIFY `/v5/user/query-api` response shape matches `ApiKeyPermissionsV5` DTO**
+
+> **Why:** The WireMock stubs in `AccountResourceTest` return a response shape we *assumed* from Bybit docs. If the real API returns a different structure (e.g., `permissions` as an array instead of a nested object, or field names in `PascalCase` vs `camelCase`), `ApiKeyPermissionsV5` deserialization will yield null fields and `PermissionValidator` will either reject every valid key or accept keys with Withdraw. Verify BEFORE proceeding with Step 4.
+>
+> The demo endpoint requires valid signing, so call it from inside the service via the `test` resource rather than hand-rolling an HMAC signature:
+
+1. Start a temporary curl against the real Bybit demo using the key from Step 3. Bybit docs: https://bybit-exchange.github.io/docs/v5/user/apikey-info
+2. Easiest: have the service log the raw JSON. Temporarily enable DEBUG on the REST client:
+   ```bash
+   curl -X POST http://localhost:31087/api/execution/test/debug-query-api \
+     -H 'Content-Type: application/json' \
+     -d '{"apiKey":"<demo-key>","apiSecret":"<demo-secret>","environment":"DEMO"}'
+   ```
+   The response echoes the raw upstream body.
+3. Compare against `ApiKeyPermissionsV5` fields (`id`, `apiKey`, `readOnly`, `permissions.Derivatives`, `permissions.Withdraw`). Check:
+   - `retCode` / `retMsg` at top level
+   - `result.id`, `result.apiKey`, `result.readOnly` present
+   - `result.permissions` is an object (not array) with category keys (`Derivatives`, `Wallet`, `Withdraw`, ...) each mapping to a list of allowed actions
+4. **If shape differs:** update `ApiKeyPermissionsV5.java` fields / `@JsonProperty` annotations AND the stubs in `AccountResourceTest.stubValidKey` / `stubKeyWithWithdraw` to match real shape. Re-run `mvn test -Dtest=AccountResourceTest` — must pass. Also update `PermissionValidator` if the permission-category key names differ.
+
+> **Fallback if `/api/execution/test/debug-query-api` is not shipped:** skip this step and inspect the service logs when you hit Step 4 — the Bybit response body is logged at WARN on `retCode != 0` via `BybitV5RestClient` (added by Plan 2a Task 5). If Step 4 returns 400 "Bybit key validation returned retCode=0 retMsg=OK" but nothing validates, it means deserialization silently produced nulls — that is the shape-mismatch signature.
 
 - [ ] **Step 4: POST the account**
 
