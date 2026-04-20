@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Function;
 
 /**
  * Turns raw signal outcomes into aggregate performance metrics.
@@ -21,14 +22,23 @@ import java.util.TreeMap;
  * <p>Everything is computed at request time — no caching yet. The volume of
  * outcomes is small (a few per symbol per day × 14 symbols) so even a full
  * 90-day scan is cheap. Add caching if the table ever grows past ~100k rows.
+ *
+ * <p>Slices beyond the core {@code byStrategy / bySignalType / bySymbol}
+ * (added in PR5+PR6b): {@code byExitReason} distinguishes TRAIL_STOP from
+ * INITIAL_STOP so the trail's contribution is measurable; {@code
+ * byAlignmentBucket} groups by the alignment score (formerly "confidence")
+ * to validate or refute the inverse-correlation hypothesis over fresh data.
  */
 @ApplicationScoped
 public class PerformanceMetricsService {
 
     private final SignalOutcomeRepository repository;
+    private final MarketRegimeService regimeService;
 
-    public PerformanceMetricsService(SignalOutcomeRepository repository) {
+    public PerformanceMetricsService(SignalOutcomeRepository repository,
+                                     MarketRegimeService regimeService) {
         this.repository = repository;
+        this.regimeService = regimeService;
     }
 
     @Transactional
@@ -38,16 +48,42 @@ public class PerformanceMetricsService {
 
         List<SignalOutcome> outcomes = repository.findFiredSince(from);
         PerformanceSummary overall = summarize(outcomes);
-        Map<String, PerformanceSummary> byStrategy = groupAndSummarize(outcomes, SignalOutcome::getStrategy);
-        Map<String, PerformanceSummary> bySignalType = groupAndSummarize(outcomes, SignalOutcome::getSignalType);
-        Map<String, PerformanceSummary> bySymbol = groupAndSummarize(outcomes, SignalOutcome::getSymbol);
 
-        return new PerformanceReport(from, to, periodDays, overall, byStrategy, bySignalType, bySymbol);
+        return new PerformanceReport(
+                from, to, periodDays,
+                regimeService.currentRegime().name(),
+                overall,
+                groupAndSummarize(outcomes, SignalOutcome::getStrategy),
+                groupAndSummarize(outcomes, SignalOutcome::getSignalType),
+                groupAndSummarize(outcomes, SignalOutcome::getSymbol),
+                groupAndSummarize(outcomes, this::classifyExitReason),
+                groupAndSummarize(outcomes, this::classifyAlignmentBucket));
+    }
+
+    /**
+     * Maps an outcome to its exit-reason label. Open (PENDING) rows report
+     * {@code OPEN} so they still contribute to the summary counts without
+     * colliding with the close labels.
+     */
+    private String classifyExitReason(SignalOutcome outcome) {
+        if (outcome.getStatus() == OutcomeStatus.PENDING) return "OPEN";
+        String reason = outcome.getFinalExitReason();
+        return reason != null ? reason : "UNKNOWN";
+    }
+
+    /** Coarse alignment buckets for correlation analysis. */
+    private String classifyAlignmentBucket(SignalOutcome outcome) {
+        Integer alignment = outcome.getAlignment();
+        if (alignment == null) return "UNKNOWN";
+        if (alignment >= 80) return "80+";
+        if (alignment >= 70) return "70-79";
+        if (alignment >= 60) return "60-69";
+        return "<60";
     }
 
     private Map<String, PerformanceSummary> groupAndSummarize(
             List<SignalOutcome> outcomes,
-            java.util.function.Function<SignalOutcome, String> classifier) {
+            Function<SignalOutcome, String> classifier) {
         Map<String, List<SignalOutcome>> grouped = new TreeMap<>();
         for (SignalOutcome outcome : outcomes) {
             String key = classifier.apply(outcome);

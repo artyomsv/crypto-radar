@@ -370,10 +370,13 @@ export interface PerformanceReport {
   from: string;
   to: string;
   periodDays: number;
+  currentRegime: 'BULL' | 'BEAR' | 'CHOP' | 'UNKNOWN';
   overall: PerformanceSummary;
   byStrategy: Record<string, PerformanceSummary>;
   bySignalType: Record<string, PerformanceSummary>;
   bySymbol: Record<string, PerformanceSummary>;
+  byExitReason: Record<string, PerformanceSummary>;
+  byAlignmentBucket: Record<string, PerformanceSummary>;
 }
 
 export interface SignalOutcomeView {
