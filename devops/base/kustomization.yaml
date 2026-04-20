@@ -14,5 +14,6 @@ resources:
   - whale-service/
   - derivatives-service/
   - signal-service/
+  - trade-execution-service/
   - api-gateway/
   - frontend/

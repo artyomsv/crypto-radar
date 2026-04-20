@@ -11,6 +11,7 @@ Project memory for future Claude sessions. Start here before making changes.
 - **CI/local tools**: `mvnd` (Maven daemon) for fast iterative test runs
 - **Build chain**: `pom.xml` → Quarkus uber-jar → Dockerfile COPY into runtime image
 - **Shared Java module**: `shared-trade-core/` — pure-JAR Maven module, no framework deps. Holds `TrailCalculator`, `TrailConfig`, `RUnitMath`. Installed into local `.m2` via `mvn install`; consumed by `signal-service` (outcome evaluator's trail math) and the upcoming `trade-execution-service`.
+- **Trade execution**: `trade-execution-service/` — Quarkus 3.17 service that mirrors signals to real Bybit V5 USDT-perpetual orders. Depends on `shared-trade-core`. Encrypts API credentials (AES-GCM), validates permissions (rejects withdraw-enabled keys), maintains stops natively on Bybit. Tables: `exchange_accounts`, `executed_trades`, `execution_events` (see `db/init/execution-init.sql`).
 
 ## Services + host ports
 
@@ -26,6 +27,7 @@ Per `~/.claude/rules/local-port-ranges.md` — all host-exposed ports in `31xxx`
 | whale-service | 31084 | 8084 | 6-exchange WebSocket streams |
 | derivatives-service | 31085 | 8085 | Funding, OI, long/short, liquidations |
 | signal-service | 31086 | 8086 | Dimension scoring + detectors + outcome tracker |
+| trade-execution-service | 31087 | 8087 | Bybit V5 execution, trail-mirror, reconciler |
 | timescaledb | 31432 | 5432 | Time-series hypertables |
 | postgres | 31433 | 5432 | News/metadata |
 | redis | 31379 | 6379 | Pub/sub |

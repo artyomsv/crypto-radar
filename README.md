@@ -14,6 +14,7 @@ Real-time cryptocurrency monitoring and trading signal platform with microservic
 - **Signal Outcome Tracking** -- every actionable signal and detector setup is persisted as a TimescaleDB hypertable row and evaluated against live 1m candles. Each row captures entry/stop/target, MFE/MAE, time-to-MFE/MAE, realized R (net of round-trip fees), trail ladder state, and exit reason. `GET /api/signals/metrics?periodDays=30` returns aggregate win rate + avg R-multiple + profit factor, plus breakdowns `byStrategy` / `bySignalType` / `bySymbol` / `byExitReason` / `byAlignmentBucket` and the `currentRegime`
 - **Deployment Markers** -- engine-change cutover timestamps stored in `deployment_markers` and exposed via `GET /api/signals/deployments`, so outcome metrics can be sliced cleanly "before/after" a rollout
 - **Closed-Loop Feedback UI** -- visual feedback loop card on the Signals page showing fired→pending→closed→win-rate flow. Trade ledger surfaces per-trade exit reason as distinct badges (`TARGET` / `TRAIL` / `STOP` / `LOCK +NR` for open-with-armed-trail / `EXPIRED`)
+- **Live trade execution** — optional per-exchange trading service (`trade-execution-service`) that mirrors signal-service STRONG_BUY/STRONG_SELL signals to real Bybit V5 perpetual orders with native TP/SL and a trailing-stop ladder matching the outcome-tracker's math. Encrypted credentials, withdraw-permission rejection, kill switch, daily-loss halt, and per-symbol flip-close policy.
 - **AI Analysis** -- integrated Google Gemini AI for on-demand trade evaluation with minimum 3:1 R:R constraint
 - **Whale Tracking** -- real-time large trade detection across 6 exchanges (Binance, Coinbase, Kraken, OKX, Bybit, Bitfinex) + Whale Alert on-chain monitoring
 - **Derivatives & Leverage** -- funding rates, open interest, long/short ratios, live liquidation streams, estimated liquidation level maps
@@ -106,6 +107,7 @@ All host-exposed ports use the **31xxx** namespace (per `~/.claude/rules/local-p
 | Whale | **31084** | 8084 | Large trade tracking |
 | Derivatives | **31085** | 8085 | Funding, OI, liquidations |
 | Signals | **31086** | 8086 | Trading signal engine + AI |
+| Trade Execution | **31087** | 8087 | Bybit V5 mirroring |
 | TimescaleDB | **31432** | 5432 | Time-series storage |
 | PostgreSQL | **31433** | 5432 | News/metadata storage |
 | Redis | **31379** | 6379 | Event pub/sub |

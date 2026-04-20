@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-execution-service-config
+data:
+  QUARKUS_REDIS_HOSTS: "redis://redis:6379"
+  MARKET_DATA_URL: "http://market-data-service:8081"
+  EXECUTION_MAINNET_ENABLED: "false"
+  EXECUTION_DEV_MODE_ENABLED: "false"

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trade-execution-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trade-execution-service
+  template:
+    metadata:
+      labels:
+        app: trade-execution-service
+    spec:
+      containers:
+        - name: trade-execution-service
+          image: ghcr.io/stukans/projectr-x-trade-execution-service:latest
+          ports:
+            - containerPort: 8087
+          envFrom:
+            - configMapRef:
+                name: trade-execution-service-config
+            - secretRef:
+                name: trade-execution-service-secrets
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8087
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8087
+            initialDelaySeconds: 30
+            periodSeconds: 30

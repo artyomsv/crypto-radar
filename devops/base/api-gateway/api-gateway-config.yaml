@@ -13,3 +13,4 @@ data:
   WHALE_SERVICE_URL: "http://whale-service:8084"
   DERIVATIVES_SERVICE_URL: "http://derivatives-service:8085"
   SIGNAL_SERVICE_URL: "http://signal-service:8086"
+  EXECUTION_SERVICE_URL: "http://trade-execution-service:8087"
