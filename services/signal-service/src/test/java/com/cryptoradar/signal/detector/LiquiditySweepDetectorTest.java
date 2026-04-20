@@ -129,6 +129,46 @@ class LiquiditySweepDetectorTest {
         assertTrue(result.isEmpty(), "deriv dimension opposing > tolerance should reject");
     }
 
+    @Test
+    @DisplayName("skips detection when trigger volume < 1.3 × avg of prior 3 bars")
+    void rejectsWhenVolumeBelowThreshold() {
+        // prior 3 bars avg volume = 100; trigger volume 100 (ratio = 1.0 < 1.3).
+        CandleBar trigger = new CandleBar(
+                Instant.now().minusSeconds(3600),
+                99.0, 101.0, 97.0, 100.5, /* volume */ 100.0);
+        MarketContext ctx = buildContextWithVolumes(100.0, trigger, 98.0, 2.0,
+                /* priorVolumes */ 100.0, 100.0, 100.0);
+
+        Optional<TradeSetup> result = detector.detect(ctx);
+        assertTrue(result.isEmpty(), "quiet-volume wick should not fire LS");
+    }
+
+    @Test
+    @DisplayName("fires when trigger volume meets 1.3× threshold")
+    void firesWhenVolumeSpikes() {
+        // prior avg = 100; trigger volume 150 (ratio = 1.5 > 1.3).
+        CandleBar trigger = new CandleBar(
+                Instant.now().minusSeconds(3600),
+                99.0, 101.0, 97.0, 100.5, /* volume */ 150.0);
+        MarketContext ctx = buildContextWithVolumes(100.0, trigger, 98.0, 2.0,
+                100.0, 100.0, 100.0);
+
+        Optional<TradeSetup> result = detector.detect(ctx);
+        assertTrue(result.isPresent(), "volume-confirmed sweep should emit");
+    }
+
+    @Test
+    @DisplayName("volume filter degrades gracefully when trigger has no volume data")
+    void volumeFilterSkippedWhenDataMissing() {
+        // trigger volume == 0 → legacy bar, filter skipped, other filters decide.
+        CandleBar trigger = buildBullishSweepTrigger(99.0, 101.0, 97.0, 100.5);
+        MarketContext ctx = buildContext(100.0, trigger, 98.0, 2.0);
+
+        Optional<TradeSetup> result = detector.detect(ctx);
+        assertTrue(result.isPresent(),
+                "missing volume should not cause rejection — other filters still apply");
+    }
+
     // --- Fixtures ---
 
     /**
@@ -159,14 +199,34 @@ class LiquiditySweepDetectorTest {
         return buildContextInternal(entry, entry, trigger, swingLow, atr, derivScore);
     }
 
+    private MarketContext buildContextWithVolumes(double entry, CandleBar trigger,
+                                                  double swingLow, double atr,
+                                                  double v1, double v2, double v3) {
+        return buildContextInternal(entry, entry, trigger, swingLow, atr, 0.0,
+                new double[]{v1, v2, v3});
+    }
+
     private MarketContext buildContextInternal(double entry, double currentPrice,
                                                CandleBar trigger, double swingLow,
                                                double atr, double derivScore) {
+        return buildContextInternal(entry, currentPrice, trigger, swingLow, atr, derivScore, null);
+    }
+
+    private MarketContext buildContextInternal(double entry, double currentPrice,
+                                               CandleBar trigger, double swingLow,
+                                               double atr, double derivScore,
+                                               double[] priorBarVolumes) {
         List<CandleBar> bars = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
+            // If explicit volumes supplied, place them on the last 3 pre-trigger bars
+            // (indexes 3, 4, 5). Otherwise default to 0 (unknown).
+            double volume = 0.0;
+            if (priorBarVolumes != null && i >= 3) {
+                volume = priorBarVolumes[i - 3];
+            }
             bars.add(new CandleBar(
                     Instant.now().minusSeconds((10 - i) * 14400L),
-                    entry * 1.01, entry * 1.02, swingLow, entry * 1.015));
+                    entry * 1.01, entry * 1.02, swingLow, entry * 1.015, volume));
         }
         bars.add(trigger);
         bars.add(new CandleBar(

@@ -109,6 +109,10 @@ public class CandleClient {
         double high = ((Number) highObj).doubleValue();
         double low = ((Number) lowObj).doubleValue();
         double close = ((Number) closeObj).doubleValue();
-        return new CandleBar(time, open, high, low, close);
+        // Volume is present in the market-data-service response but optional
+        // here — absence falls back to 0 (treated as "unknown" by detectors).
+        Object volumeObj = row.get("volume");
+        double volume = volumeObj != null ? ((Number) volumeObj).doubleValue() : 0.0;
+        return new CandleBar(time, open, high, low, close, volume);
     }
 }

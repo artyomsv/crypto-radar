@@ -98,6 +98,21 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
      */
     private static final double LS_MIN_RISK_PCT = 0.005;
 
+    /**
+     * Trigger-bar volume must be at least this ratio of the prior 3 bars'
+     * average volume to qualify. Genuine liquidity sweeps run stop orders →
+     * volume spike; quiet wicks with normal volume are indistinguishable
+     * from random retests.
+     *
+     * <p>Degrades gracefully when volume data is missing (bar volume = 0):
+     * the filter is skipped rather than rejecting the signal. New CandleBars
+     * via the legacy 5-argument constructor default to {@code volume == 0}.
+     */
+    private static final double MIN_VOLUME_RATIO = 1.3;
+
+    /** Number of prior bars used to compute the volume baseline. */
+    private static final int VOLUME_BASELINE_BARS = 3;
+
     @Override
     public String name() {
         return NAME;
@@ -130,7 +145,34 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
 
         if (!confluenceAgrees(direction, context)) return Optional.empty();
 
+        if (!hasVolumeConfirmation(bars, trigger)) return Optional.empty();
+
         return Optional.of(buildSetup(context, direction, trigger, atr14, swingHigh, swingLow));
+    }
+
+    /**
+     * True if the trigger bar's volume is at least {@link #MIN_VOLUME_RATIO}
+     * times the average of the prior {@link #VOLUME_BASELINE_BARS} closed
+     * bars. Degrades to {@code true} when volume data is missing so legacy
+     * pipelines don't silently reject every signal.
+     */
+    private boolean hasVolumeConfirmation(List<CandleBar> bars, CandleBar trigger) {
+        if (trigger.volume() <= 0) return true;   // no volume data → skip filter
+        int triggerIdx = bars.size() - 2;
+        if (triggerIdx < VOLUME_BASELINE_BARS) return true;   // not enough history
+
+        double sum = 0;
+        int counted = 0;
+        for (int i = triggerIdx - VOLUME_BASELINE_BARS; i < triggerIdx; i++) {
+            double v = bars.get(i).volume();
+            if (v > 0) {
+                sum += v;
+                counted++;
+            }
+        }
+        if (counted == 0) return true;   // no valid baseline → skip filter
+        double avg = sum / counted;
+        return trigger.volume() >= avg * MIN_VOLUME_RATIO;
     }
 
     private String classifySweep(CandleBar trigger, double swingHigh, double swingLow, double atr) {
