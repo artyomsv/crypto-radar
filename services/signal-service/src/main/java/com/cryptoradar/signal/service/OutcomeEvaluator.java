@@ -186,7 +186,8 @@ public class OutcomeEvaluator {
         }
     }
 
-    private void updateExcursions(SignalOutcome outcome, CandleBar bar) {
+    // Package-private for unit tests — see updateTrailingStop note.
+    void updateExcursions(SignalOutcome outcome, CandleBar bar) {
         double entry = outcome.getEntryPrice();
         boolean isLong = DIRECTION_LONG.equals(outcome.getDirection());
 
@@ -198,10 +199,20 @@ public class OutcomeEvaluator {
 
         if (mfeCandidate > outcome.getMaxFavorablePct()) {
             outcome.setMaxFavorablePct(mfeCandidate);
+            outcome.setTimeToMfeSeconds(secondsFromFire(outcome, bar));
         }
         if (maeCandidate < outcome.getMaxAdversePct()) {
             outcome.setMaxAdversePct(maeCandidate);
+            outcome.setTimeToMaeSeconds(secondsFromFire(outcome, bar));
         }
+    }
+
+    /**
+     * Elapsed seconds between signal fire and the supplied bar. Cast to int is
+     * safe because even the max hold window (7 days) fits comfortably.
+     */
+    private int secondsFromFire(SignalOutcome outcome, CandleBar bar) {
+        return (int) Duration.between(outcome.getFiredAt(), bar.time()).toSeconds();
     }
 
     private double pctMove(double entry, double price, boolean isLong) {
@@ -229,16 +240,36 @@ public class OutcomeEvaluator {
         boolean isLong = DIRECTION_LONG.equals(outcome.getDirection());
         double pnlPct = pctMove(outcome.getEntryPrice(), closedPrice, isLong);
         double risk = Math.abs(outcome.getEntryPrice() - outcome.getStopPrice());
-        double rMultiple = risk > 0
+        double rMultipleGross = risk > 0
                 ? (closedPrice - outcome.getEntryPrice()) * (isLong ? 1 : -1) / risk
                 : 0.0;
 
-        outcome.setRealizedPnlPct(pnlPct);
-        outcome.setRealizedRMultiple(rMultiple);
+        // Convert round-trip fees (in bps) to R-units: fees_pct / risk_pct.
+        // A 0.10% fee on a 1% risk eats 0.1R out of every closed trade.
+        double feesInR = feesInRUnits(outcome, risk);
+        double rMultipleNet = rMultipleGross - feesInR;
 
-        LOG.infof("CLOSE %s %s %s (%s) @ %.4f  pnl=%.2f%%  R=%.2f",
+        outcome.setRealizedPnlPct(pnlPct);
+        outcome.setRealizedRMultiple(rMultipleNet);
+
+        LOG.infof("CLOSE %s %s %s (%s) @ %.4f  pnl=%.2f%%  R=%.2f (gross %.2f, fees %.2f)",
                 outcome.getSymbol(), outcome.getDirection(), status,
-                outcome.getFinalExitReason(), closedPrice, pnlPct, rMultiple);
+                outcome.getFinalExitReason(), closedPrice, pnlPct,
+                rMultipleNet, rMultipleGross, feesInR);
+    }
+
+    /**
+     * Cost of round-trip fees expressed in R-units. Zero when risk is zero or
+     * fee configuration is missing.
+     */
+    // Package-private for unit tests — pure function; no side effects.
+    double feesInRUnits(SignalOutcome outcome, double risk) {
+        if (risk <= 0) return 0.0;
+        Integer feesBps = outcome.getFeesBpsRoundTrip();
+        if (feesBps == null || feesBps <= 0) return 0.0;
+        double riskPct = risk / outcome.getEntryPrice();
+        double feesPct = feesBps / 10000.0;
+        return feesPct / riskPct;
     }
 
     /**

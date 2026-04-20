@@ -27,6 +27,9 @@ import java.util.List;
  * @param confidence      detector-specific confidence 0-100
  * @param reasons         human-readable trail of preconditions that fired
  * @param firedAt         wall clock when the detector fired
+ * @param trailConfig     per-strategy trail parameters; detectors that don't
+ *                        override use {@link TrailConfig#DEFAULT} via the
+ *                        legacy constructor
  */
 public record TradeSetup(
         String strategy,
@@ -39,6 +42,19 @@ public record TradeSetup(
         double riskRewardRatio,
         int confidence,
         List<String> reasons,
-        Instant firedAt
+        Instant firedAt,
+        TrailConfig trailConfig
 ) {
+    /**
+     * Legacy constructor used by detectors that rely on {@link TrailConfig#DEFAULT}.
+     * New detectors should supply their own {@code TrailConfig} explicitly via
+     * the full constructor — calibrated from their specific MFE distribution.
+     */
+    public TradeSetup(String strategy, String symbol, String direction, String signalType,
+                      double entryPrice, double stopPrice, double targetPrice,
+                      double riskRewardRatio, int confidence,
+                      List<String> reasons, Instant firedAt) {
+        this(strategy, symbol, direction, signalType, entryPrice, stopPrice, targetPrice,
+                riskRewardRatio, confidence, reasons, firedAt, TrailConfig.DEFAULT);
+    }
 }

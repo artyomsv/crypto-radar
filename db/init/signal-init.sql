@@ -80,3 +80,16 @@ ALTER TABLE signal_outcomes
     ADD COLUMN IF NOT EXISTS trail_triggered_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS final_exit_reason  VARCHAR(16);
     -- final_exit_reason values: INITIAL_STOP | TRAIL_STOP | TARGET | EXPIRED
+
+-- =============================================================================
+-- Timing + fees columns (PR5)
+-- =============================================================================
+-- time_to_mfe_seconds / time_to_mae_seconds: seconds between firedAt and the
+--   bar where MFE/MAE last extended to its lifetime extreme. Enables
+--   "fast winners vs slow losers" analysis and trail-tightness calibration.
+-- fees_bps_round_trip: round-trip trading costs in basis points (0.10% = 10 bps).
+--   Subtracted from realized_r_multiple so P&L reported is net of costs.
+ALTER TABLE signal_outcomes
+    ADD COLUMN IF NOT EXISTS time_to_mfe_seconds INTEGER,
+    ADD COLUMN IF NOT EXISTS time_to_mae_seconds INTEGER,
+    ADD COLUMN IF NOT EXISTS fees_bps_round_trip INTEGER NOT NULL DEFAULT 10;

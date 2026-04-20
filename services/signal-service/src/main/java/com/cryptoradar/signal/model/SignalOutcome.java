@@ -142,6 +142,24 @@ public class SignalOutcome {
     @Column(name = "final_exit_reason", length = 16)
     private String finalExitReason;
 
+    // --- Timing + fees (PR5) ---
+
+    /** Seconds between fire and the bar where MFE last extended its extreme. Null until MFE records a value. */
+    @Column(name = "time_to_mfe_seconds")
+    private Integer timeToMfeSeconds;
+
+    /** Seconds between fire and the bar where MAE last extended its extreme. Null until MAE records a value. */
+    @Column(name = "time_to_mae_seconds")
+    private Integer timeToMaeSeconds;
+
+    /**
+     * Round-trip trading costs in basis points. Subtracted from
+     * {@code realized_r_multiple} on close so reported P&L is net of fees.
+     * Default 10 bps = 0.10% round-trip (typical crypto spot maker/taker blend).
+     */
+    @Column(name = "fees_bps_round_trip", nullable = false)
+    private Integer feesBpsRoundTrip = 10;
+
     public SignalOutcome() {
     }
 
@@ -246,4 +264,13 @@ public class SignalOutcome {
 
     public String getFinalExitReason() { return finalExitReason; }
     public void setFinalExitReason(String finalExitReason) { this.finalExitReason = finalExitReason; }
+
+    public Integer getTimeToMfeSeconds() { return timeToMfeSeconds; }
+    public void setTimeToMfeSeconds(Integer timeToMfeSeconds) { this.timeToMfeSeconds = timeToMfeSeconds; }
+
+    public Integer getTimeToMaeSeconds() { return timeToMaeSeconds; }
+    public void setTimeToMaeSeconds(Integer timeToMaeSeconds) { this.timeToMaeSeconds = timeToMaeSeconds; }
+
+    public Integer getFeesBpsRoundTrip() { return feesBpsRoundTrip; }
+    public void setFeesBpsRoundTrip(Integer feesBpsRoundTrip) { this.feesBpsRoundTrip = feesBpsRoundTrip; }
 }

@@ -119,7 +119,20 @@ public class OutcomeTracker {
         outcome.setConfidence(setup.confidence());
         outcome.setOverallScore((double) setup.confidence());
         outcome.setAiAnalysis(formatReasons(setup));
+        applyTrailConfig(outcome, setup.trailConfig());
         return outcome;
+    }
+
+    /**
+     * Copies per-strategy trail parameters from the detector-supplied config
+     * onto the outcome. Leaves the entity-level defaults in place when no
+     * config was supplied (legacy setups or the dimension-scoring path).
+     */
+    private void applyTrailConfig(SignalOutcome outcome, com.cryptoradar.signal.model.TrailConfig config) {
+        if (config == null) return;
+        outcome.setTrailActivationR(config.activationR());
+        outcome.setTrailStepR(config.stepR());
+        outcome.setTrailOffsetR(config.offsetR());
     }
 
     private String formatReasons(TradeSetup setup) {
