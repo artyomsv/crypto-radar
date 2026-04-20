@@ -228,6 +228,40 @@ services:
     networks:
       - cryptoradar-net
 
+  trade-execution-service:
+    build:
+      context: .
+      dockerfile: services/trade-execution-service/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${EXECUTION_SERVICE_PORT:-31087}:8087"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      market-data-service:
+        condition: service_started
+      signal-service:
+        condition: service_started
+    environment:
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://timescaledb:5432/${TIMESCALE_DB}
+      QUARKUS_DATASOURCE_USERNAME: ${TIMESCALE_USER}
+      QUARKUS_DATASOURCE_PASSWORD: ${TIMESCALE_PASSWORD}
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      MARKET_DATA_URL: http://market-data-service:8081
+      EXECUTION_MASTER_KEY: ${EXECUTION_MASTER_KEY:-}
+      EXECUTION_MASTER_KEY_PREV: ${EXECUTION_MASTER_KEY_PREV:-}
+      EXECUTION_MAINNET_ENABLED: ${EXECUTION_MAINNET_ENABLED:-false}
+      EXECUTION_DEV_MODE_ENABLED: ${EXECUTION_DEV_MODE_ENABLED:-false}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cryptoradar-net
+
   api-gateway:
     build: ./services/api-gateway
     restart: unless-stopped
@@ -248,6 +282,8 @@ services:
         condition: service_started
       signal-service:
         condition: service_started
+      trade-execution-service:
+        condition: service_started
     environment:
       QUARKUS_REDIS_HOSTS: redis://redis:6379
       MARKET_DATA_URL: http://market-data-service:8081
@@ -256,6 +292,7 @@ services:
       WHALE_SERVICE_URL: http://whale-service:8084
       DERIVATIVES_SERVICE_URL: http://derivatives-service:8085
       SIGNAL_SERVICE_URL: http://signal-service:8086
+      EXECUTION_SERVICE_URL: http://trade-execution-service:8087
     logging:
       driver: json-file
       options:
