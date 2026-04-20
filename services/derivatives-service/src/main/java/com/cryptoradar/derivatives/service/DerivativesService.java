@@ -316,7 +316,7 @@ public class DerivativesService {
     }
 
     private void storeFundingRates(List<FundingRate> rates) {
-        String sql = "INSERT INTO derivatives_funding_rates " +
+        String sql = "INSERT INTO funding_rates " +
                 "(time, symbol, funding_rate, mark_price, index_price, next_funding_time) " +
                 "VALUES (?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT (time, symbol) DO UPDATE SET " +
@@ -340,7 +340,7 @@ public class DerivativesService {
     }
 
     private void storeOpenInterest(OpenInterest oi) {
-        String sql = "INSERT INTO derivatives_open_interest " +
+        String sql = "INSERT INTO open_interest " +
                 "(time, symbol, open_interest, open_interest_usd) " +
                 "VALUES (?, ?, ?, ?) " +
                 "ON CONFLICT (time, symbol) DO UPDATE SET " +

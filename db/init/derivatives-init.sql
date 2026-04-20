@@ -7,8 +7,12 @@ CREATE TABLE IF NOT EXISTS funding_rates (
     funding_rate DOUBLE PRECISION NOT NULL,
     mark_price DOUBLE PRECISION,
     index_price DOUBLE PRECISION,
+    next_funding_time TIMESTAMPTZ,
     UNIQUE(time, symbol)
 );
+
+-- Idempotent migration for pre-existing deployments (missing next_funding_time).
+ALTER TABLE funding_rates ADD COLUMN IF NOT EXISTS next_funding_time TIMESTAMPTZ;
 SELECT create_hypertable('funding_rates', 'time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_time ON funding_rates (symbol, time DESC);
 
