@@ -14,6 +14,7 @@ services:
       - ./db/init/whale-init.sql:/docker-entrypoint-initdb.d/02-whale.sql
       - ./db/init/derivatives-init.sql:/docker-entrypoint-initdb.d/03-derivatives.sql
       - ./db/init/signal-init.sql:/docker-entrypoint-initdb.d/04-signal.sql
+      - ./db/init/execution-init.sql:/docker-entrypoint-initdb.d/05-execution.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER} -d ${TIMESCALE_DB}"]
       interval: 10s
