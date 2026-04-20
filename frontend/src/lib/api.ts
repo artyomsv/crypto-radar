@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleDistribution, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal, PerformanceReport, SignalOutcomeView } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleDistribution, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal, PerformanceReport, SignalOutcomeView, ExchangeAccount, WalletSnapshot, ExecutionPosition, ExecutionTrade, ExecutionEvent, WhyView, CreateAccountRequest, UpdateAccountRequest } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -9,6 +9,32 @@ async function fetchJson<T>(url: string): Promise<T | null> {
   } catch (error) {
     console.error(`API error: ${url}`, error);
     return null;
+  }
+}
+
+async function sendJson<T>(
+  url: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: unknown
+): Promise<{ data: T | null; error: string | null; status: number }> {
+  try {
+    const response = await fetch(`${API_BASE}${url}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+    if (!response.ok) {
+      return {
+        data: null,
+        status: response.status,
+        error: (parsed && typeof parsed === 'object' && 'error' in parsed) ? String(parsed.error) : `HTTP ${response.status}`,
+      };
+    }
+    return { data: parsed as T, status: response.status, error: null };
+  } catch (e) {
+    return { data: null, status: 0, error: e instanceof Error ? e.message : 'network error' };
   }
 }
 
@@ -180,5 +206,29 @@ export const api = {
       console.error('Failed to update backfill depth:', error);
       return { error: 'Request failed' };
     }
+  },
+  execution: {
+    listAccounts: () => fetchJson<ExchangeAccount[]>('/api/execution/accounts'),
+    getAccount: (id: number) => fetchJson<ExchangeAccount>(`/api/execution/accounts/${id}`),
+    createAccount: (req: CreateAccountRequest) =>
+      sendJson<ExchangeAccount>('/api/execution/accounts', 'POST', req),
+    patchAccount: (id: number, req: UpdateAccountRequest) =>
+      sendJson<ExchangeAccount>(`/api/execution/accounts/${id}`, 'PATCH', req),
+    deleteAccount: (id: number) =>
+      sendJson<null>(`/api/execution/accounts/${id}`, 'DELETE'),
+    getWallet: (id: number) => fetchJson<WalletSnapshot>(`/api/execution/accounts/${id}/wallet`),
+    getPositions: (id: number) => fetchJson<ExecutionPosition[]>(`/api/execution/accounts/${id}/positions`),
+    getTrades: (id: number, limit = 50) =>
+      fetchJson<ExecutionTrade[]>(`/api/execution/accounts/${id}/trades?limit=${limit}`),
+    getEvents: (id: number, limit = 100) =>
+      fetchJson<ExecutionEvent[]>(`/api/execution/accounts/${id}/events?limit=${limit}`),
+    getWhy: (accountId: number, tradeId: number) =>
+      fetchJson<WhyView>(`/api/execution/accounts/${accountId}/trades/${tradeId}/why`),
+    toggleKillSwitch: (id: number, enabled: boolean) =>
+      sendJson<{ killSwitch: boolean }>(`/api/execution/accounts/${id}/kill-switch`, 'POST', { enabled }),
+    closeAll: (id: number, confirm: string) =>
+      sendJson<{ closedCount: number }>(`/api/execution/accounts/${id}/close-all`, 'POST', { confirm }),
+    closeTrade: (accountId: number, tradeId: number) =>
+      sendJson<ExecutionTrade>(`/api/execution/accounts/${accountId}/trades/${tradeId}/close`, 'POST'),
   },
 };

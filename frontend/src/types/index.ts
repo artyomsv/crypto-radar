@@ -430,3 +430,111 @@ export interface OrderBookDepth {
   totalAskVolume: number;
   bidAskImbalance: number;
 }
+
+// ==========================================================================
+// Trade execution service (Plan 2b / Plan 3)
+// ==========================================================================
+
+export interface ExchangeAccount {
+  id: number;
+  exchange: string;
+  environment: 'DEMO' | 'MAINNET';
+  label: string | null;
+  keyMask: string;
+  autoTradeEnabled: boolean;
+  killSwitch: boolean;
+  riskPercent: number;
+  defaultLeverage: number;
+  maxConcurrentPositions: number;
+  maxDailyLossPercent: number;
+  signalAgeSeconds: number;
+  positionMaxAgeHours: number;
+  flipPersistenceTicks: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WalletSnapshot {
+  equity: number;
+  available: number;
+  openPnl: number;
+  todayRealized: number;
+  positionsOpen: number;
+}
+
+export interface ExecutionPosition {
+  id: number;
+  accountId: number;
+  signalId: string | null;
+  symbol: string;
+  direction: 'LONG' | 'SHORT';
+  strategy: string | null;
+  status: 'PENDING_PLACE' | 'OPEN' | 'CLOSING' | 'CLOSED' | 'FAILED' | 'CANCELLED';
+  entryPrice: number | null;
+  qty: number | null;
+  leverage: number | null;
+  stopPrice: number;
+  targetPrice: number;
+  dynamicStopPrice: number | null;
+  trailHighestR: number;
+  trailTriggeredAt: string | null;
+  openedAt: string;
+}
+
+export interface ExecutionTrade {
+  id: number;
+  signalId: string | null;
+  symbol: string;
+  direction: 'LONG' | 'SHORT';
+  strategy: string | null;
+  status: ExecutionPosition['status'];
+  entryPrice: number | null;
+  exitPrice: number | null;
+  qty: number | null;
+  realizedPnlUsdt: number | null;
+  realizedRMultiple: number | null;
+  feesUsdt: number | null;
+  exitReason: string | null;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+export interface ExecutionEvent {
+  id: number;
+  eventType: string;
+  signalId: string | null;
+  executedTradeId: number | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface WhyView {
+  tradeId: number;
+  signalId: string | null;
+  symbol: string;
+  direction: string;
+  strategy: string | null;
+  openedAt: string;
+  signalSnapshot: Record<string, unknown>;
+}
+
+export interface CreateAccountRequest {
+  exchange: 'BYBIT';
+  environment: 'DEMO' | 'MAINNET';
+  apiKey: string;
+  apiSecret: string;
+  label?: string;
+}
+
+export interface UpdateAccountRequest {
+  label?: string;
+  autoTradeEnabled?: boolean;
+  killSwitch?: boolean;
+  riskPercent?: number;
+  defaultLeverage?: number;
+  maxConcurrentPositions?: number;
+  maxDailyLossPercent?: number;
+  signalAgeSeconds?: number;
+  positionMaxAgeHours?: number;
+  flipPersistenceTicks?: number;
+}
