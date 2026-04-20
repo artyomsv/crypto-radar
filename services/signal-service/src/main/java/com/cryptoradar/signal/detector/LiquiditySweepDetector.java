@@ -36,17 +36,48 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
     /** Minimum 4h bars required: enough swing history plus one trigger bar. */
     private static final int MIN_BARS = 8;
 
-    /** The "sweep" wick must pierce the level by at least this × ATR to matter. */
-    private static final double MIN_PIERCE_ATR_FRACTION = 0.1;
+    /**
+     * The "sweep" wick must pierce the level by at least this × ATR to matter.
+     * Tightened from 0.1 to 0.3 after outcome analysis: a wick that only pokes
+     * through the swing level by a tenth of an ATR is indistinguishable from
+     * ordinary intrabar jitter. A quarter-ATR minimum weeds out noise without
+     * rejecting real stop-hunts (which typically overshoot by 0.5-1.0 ATR).
+     */
+    private static final double MIN_PIERCE_ATR_FRACTION = 0.3;
 
     /** Rejection wick must be this fraction of the bar body to qualify. */
     private static final double MIN_WICK_BODY_RATIO = 0.5;
 
-    /** Entry is only valid if price hasn't drifted more than this from the trigger close. */
-    private static final double MAX_DRIFT_PCT = 1.5;
+    /**
+     * Close must reclaim the swept level by at least this fraction of the bar's
+     * body. A close one cent above the swing is a failed retest, not a
+     * rejection — require meaningful re-entry into the prior range.
+     */
+    private static final double MIN_RECLAIM_BODY_RATIO = 0.3;
 
-    /** Derivatives dimension must not oppose the reversal by more than this. */
-    private static final double DIM_DERIVATIVES_TOLERANCE = 15.0;
+    /**
+     * Skip detection entirely when ATR/price is below this fraction. Range-bound
+     * or illiquid symbols produce wicks that match the sweep pattern but carry
+     * no directional information. LTC in low-ATR regimes was producing 46 of 54
+     * LS signals by this mechanism.
+     */
+    private static final double MIN_ATR_PCT = 0.003;
+
+    /**
+     * Entry is only valid if price hasn't drifted more than this from the trigger
+     * close. Tightened from 1.5 to 0.5: a 1.5% drift after a reversal trigger
+     * often means half the reversal move has already happened, so the entry R:R
+     * degrades significantly. Tighter window = we enter closer to the sweep low.
+     */
+    private static final double MAX_DRIFT_PCT = 0.5;
+
+    /**
+     * Derivatives dimension must not oppose the reversal by more than this.
+     * Tightened from 15 to 5: the contrarian thesis of a liquidity sweep depends
+     * on crowded positioning to be wrong. Even a mild deriv reading opposite the
+     * reversal direction invalidates the thesis.
+     */
+    private static final double DIM_DERIVATIVES_TOLERANCE = 5.0;
 
     /**
      * Widened from 0.2 to 0.5 after outcome analysis: 23 of 53 stops had MAE ≥ 1.5R,
@@ -82,6 +113,10 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
                 ContextValues.asMap(context.analytics().get("technicalIndicators")), "atr14");
         if (atr14 == null || atr14 <= 0) return Optional.empty();
 
+        // Low-ATR regime guard. Below this threshold, swing levels sit inside the
+        // usual intrabar noise and the sweep pattern carries no reversal signal.
+        if (atr14 / context.currentPrice() < MIN_ATR_PCT) return Optional.empty();
+
         CandleBar trigger = bars.get(bars.size() - 2);  // last *closed* bar
         List<CandleBar> swingBars = bars.subList(0, bars.size() - 2);
         double swingHigh = swingHigh(swingBars);
@@ -106,19 +141,21 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
     }
 
     private boolean isBullishSweep(CandleBar trigger, double swingLow, double atr) {
-        boolean pierced = trigger.low() < swingLow - (atr * MIN_PIERCE_ATR_FRACTION);
-        boolean reclaimed = trigger.close() > swingLow;
-        double lowerWick = Math.min(trigger.open(), trigger.close()) - trigger.low();
         double body = Math.abs(trigger.close() - trigger.open());
+        boolean pierced = trigger.low() < swingLow - (atr * MIN_PIERCE_ATR_FRACTION);
+        // Close must sit meaningfully inside the prior range — a reclaim by
+        // one tick is a failed retest, not a rejection.
+        boolean reclaimed = trigger.close() > swingLow + body * MIN_RECLAIM_BODY_RATIO;
+        double lowerWick = Math.min(trigger.open(), trigger.close()) - trigger.low();
         boolean rejectionWick = body > 0 && lowerWick >= body * MIN_WICK_BODY_RATIO;
         return pierced && reclaimed && rejectionWick;
     }
 
     private boolean isBearishSweep(CandleBar trigger, double swingHigh, double atr) {
-        boolean pierced = trigger.high() > swingHigh + (atr * MIN_PIERCE_ATR_FRACTION);
-        boolean reclaimed = trigger.close() < swingHigh;
-        double upperWick = trigger.high() - Math.max(trigger.open(), trigger.close());
         double body = Math.abs(trigger.close() - trigger.open());
+        boolean pierced = trigger.high() > swingHigh + (atr * MIN_PIERCE_ATR_FRACTION);
+        boolean reclaimed = trigger.close() < swingHigh - body * MIN_RECLAIM_BODY_RATIO;
+        double upperWick = trigger.high() - Math.max(trigger.open(), trigger.close());
         boolean rejectionWick = body > 0 && upperWick >= body * MIN_WICK_BODY_RATIO;
         return pierced && reclaimed && rejectionWick;
     }
