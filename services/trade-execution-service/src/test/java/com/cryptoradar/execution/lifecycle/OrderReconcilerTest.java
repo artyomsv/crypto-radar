@@ -142,6 +142,27 @@ class OrderReconcilerTest {
                         "time", 1700000100000L)))));
     }
 
+    /**
+     * Bybit can omit openFee/closeFee on liquidation or partial-fill edge cases.
+     * Leaving the fields out of the JSON entirely deserializes to null on the DTO record.
+     */
+    private void stubClosedPnlMissingFees() throws Exception {
+        Map<String, Object> entry = Map.ofEntries(
+                Map.entry("symbol", "BTCUSDT"),
+                Map.entry("orderId", "CLOSE-2"),
+                Map.entry("side", "Sell"),
+                Map.entry("qty", "0.001"),
+                Map.entry("orderPrice", "51000"),
+                Map.entry("closedPnl", "1.0"),
+                Map.entry("createdTime", "1700000100000"),
+                Map.entry("updatedTime", "1700000100000"));
+        stubFor(get(urlPathEqualTo("/v5/position/closed-pnl"))
+                .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                        "retCode", 0, "retMsg", "OK",
+                        "result", Map.of("list", List.of(entry)),
+                        "time", 1700000100000L)))));
+    }
+
     @Test
     @Transactional
     void closesLocalRowWhenRemoteHasNoMatchingPosition() throws Exception {
@@ -170,6 +191,33 @@ class OrderReconcilerTest {
         // R-math branch: entry 50000, stop 49500, exit 51000 → (51000-50000)/500 = 2.0R
         assertNotNull(refreshed.getRealizedRMultiple());
         assertEquals(0, new BigDecimal("2.0000").compareTo(refreshed.getRealizedRMultiple()));
+    }
+
+    @Test
+    @Transactional
+    void closesWithZeroFeesWhenBybitOmitsFeeFields() throws Exception {
+        ExecutedTrade t = new ExecutedTrade();
+        t.setExchangeAccountId(account.getId());
+        t.setSymbol("BTCUSDT");
+        t.setDirection("LONG");
+        t.setStatus(TradeStatus.OPEN);
+        t.setEntryPrice(new BigDecimal("50000"));
+        t.setStopPrice(new BigDecimal("49500"));
+        t.setTargetPrice(new BigDecimal("52000"));
+        t.setQty(new BigDecimal("0.001"));
+        t.setExchangeOrderLinkId("ex-test-2");
+        tradeRepo.persist(t);
+
+        stubPositionsEmpty();
+        stubClosedPnlMissingFees();
+
+        // Should NOT throw NPE even though openFee/closeFee are null on the DTO.
+        reconciler.reconcileAccount(account);
+
+        ExecutedTrade refreshed = tradeRepo.findById(t.getId());
+        assertEquals(TradeStatus.CLOSED, refreshed.getStatus());
+        assertNotNull(refreshed.getFeesUsdt());
+        assertEquals(0, BigDecimal.ZERO.compareTo(refreshed.getFeesUsdt()));
     }
 
     @Test

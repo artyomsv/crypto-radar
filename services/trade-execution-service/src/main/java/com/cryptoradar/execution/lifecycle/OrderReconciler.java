@@ -129,7 +129,13 @@ public class OrderReconciler {
         trade.setStatus(TradeStatus.CLOSED);
         trade.setClosedAt(Instant.now());
         trade.setRealizedPnlUsdt(safeBd(match.closedPnl()));
-        trade.setFeesUsdt(safeBd(match.openFee()).add(safeBd(match.closeFee())));
+        // Bybit may omit openFee/closeFee on liquidation or partial-fill edge cases —
+        // coalesce nulls to zero so the addition doesn't NPE.
+        BigDecimal openFee = safeBd(match.openFee());
+        BigDecimal closeFee = safeBd(match.closeFee());
+        trade.setFeesUsdt(
+                (openFee == null ? BigDecimal.ZERO : openFee)
+                        .add(closeFee == null ? BigDecimal.ZERO : closeFee));
         trade.setExitPrice(safeBd(match.orderPrice()));
         trade.setExitReason(trade.getExitReason() != null ? trade.getExitReason() : ExitReason.TARGET);
 
