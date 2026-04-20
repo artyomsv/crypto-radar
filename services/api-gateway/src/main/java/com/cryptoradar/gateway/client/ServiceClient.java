@@ -36,6 +36,9 @@ public class ServiceClient {
     @ConfigProperty(name = "signal-service.url", defaultValue = "http://localhost:8086")
     String signalServiceUrl;
 
+    @ConfigProperty(name = "execution.url")
+    String executionUrl;
+
     private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -139,6 +142,10 @@ public class ServiceClient {
         return sendWithBody(url, "PUT", body);
     }
 
+    public String patchRaw(String url, String body) {
+        return sendWithBody(url, "PATCH", body);
+    }
+
     public String deleteRaw(String url) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -189,6 +196,10 @@ public class ServiceClient {
 
     public String getSignalServiceUrl() {
         return signalServiceUrl;
+    }
+
+    public String getExecutionUrl() {
+        return executionUrl;
     }
 
     public JsonNode getWhaleTransactions(String symbol, int limit) {

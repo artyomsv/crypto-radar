@@ -5,6 +5,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -13,10 +14,13 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 
 @Path("/api")
 @Produces(MediaType.APPLICATION_JSON)
 public class ProxyResource {
+
+    private static final Logger LOG = Logger.getLogger(ProxyResource.class);
 
     private static final java.util.regex.Pattern VALID_SYMBOL = java.util.regex.Pattern.compile("[A-Z0-9]{2,20}");
 
@@ -412,5 +416,107 @@ public class ProxyResource {
     private Response proxyDelete(String url) {
         String result = serviceClient.deleteRaw(url);
         return proxyResponse(result);
+    }
+
+    private Response proxyPatch(String url, String body) {
+        try {
+            String result = serviceClient.patchRaw(url, body);
+            return proxyResponse(result);
+        } catch (RuntimeException e) {
+            LOG.warnf(e, "proxy PATCH failed: %s", url);
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity("{\"error\":\"upstream patch failed\"}")
+                    .build();
+        }
+    }
+
+    // =====================================================================
+    // Execution Service proxies
+    // =====================================================================
+
+    @GET
+    @Path("/execution/accounts")
+    public Response listAccounts() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl() + "/api/execution/accounts"));
+    }
+
+    @POST
+    @Path("/execution/accounts")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createAccount(String body) {
+        return proxyPost(serviceClient.getExecutionUrl() + "/api/execution/accounts", body);
+    }
+
+    @GET
+    @Path("/execution/accounts/{id}")
+    public Response getAccount(@PathParam("id") Long id) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id));
+    }
+
+    @PATCH
+    @Path("/execution/accounts/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response patchAccount(@PathParam("id") Long id, String body) {
+        return proxyPatch(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id, body);
+    }
+
+    @DELETE
+    @Path("/execution/accounts/{id}")
+    public Response deleteAccount(@PathParam("id") Long id) {
+        return proxyDelete(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id);
+    }
+
+    @GET
+    @Path("/execution/accounts/{id}/wallet")
+    public Response wallet(@PathParam("id") Long id) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/wallet"));
+    }
+
+    @GET
+    @Path("/execution/accounts/{id}/positions")
+    public Response positions(@PathParam("id") Long id) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/positions"));
+    }
+
+    @GET
+    @Path("/execution/accounts/{id}/trades")
+    public Response trades(@PathParam("id") Long id, @QueryParam("limit") @DefaultValue("50") int limit) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/trades?limit=" + limit));
+    }
+
+    @GET
+    @Path("/execution/accounts/{id}/events")
+    public Response events(@PathParam("id") Long id, @QueryParam("limit") @DefaultValue("100") int limit) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/events?limit=" + limit));
+    }
+
+    @GET
+    @Path("/execution/accounts/{id}/trades/{tradeId}/why")
+    public Response why(@PathParam("id") Long id, @PathParam("tradeId") Long tradeId) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/trades/" + tradeId + "/why"));
+    }
+
+    @POST
+    @Path("/execution/accounts/{id}/kill-switch")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response killSwitch(@PathParam("id") Long id, String body) {
+        return proxyPost(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/kill-switch", body);
+    }
+
+    @POST
+    @Path("/execution/accounts/{id}/close-all")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response closeAll(@PathParam("id") Long id, String body) {
+        return proxyPost(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/close-all", body);
+    }
+
+    @POST
+    @Path("/execution/accounts/{id}/trades/{tradeId}/close")
+    public Response closeTrade(@PathParam("id") Long id, @PathParam("tradeId") Long tradeId) {
+        return proxyPost(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/trades/" + tradeId + "/close", "");
     }
 }
