@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -59,6 +60,15 @@ public class SignalSubscriber {
     private static final int CONNECT_DELAY_SECONDS = 3;
     private static final int RECONNECT_DELAY_SECONDS = 10;
 
+    // Shared daemon scheduler — one per JVM. Previous impl created a fresh single-thread
+    // pool inside connect()'s error branch, leaking a thread pool per reconnect attempt.
+    private static final ScheduledExecutorService SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "signal-subscriber-reconnect");
+                t.setDaemon(true);
+                return t;
+            });
+
     @Inject Vertx vertx;
     @Inject ObjectMapper mapper;
     @Inject FlipTracker flipTracker;
@@ -73,8 +83,7 @@ public class SignalSubscriber {
 
     void onStart(@Observes StartupEvent event) {
         // Defer connection so CDI + DB init finish first; Redis may not be reachable in tests.
-        Executors.newSingleThreadScheduledExecutor()
-                .schedule(this::connect, CONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
+        SCHEDULER.schedule(this::connect, CONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
     }
 
     void connect() {
@@ -83,10 +92,9 @@ public class SignalSubscriber {
         Redis.createClient(vertx, options).connect().subscribe().with(
                 this::setupSubscription,
                 err -> {
-                    LOG.errorf("SignalSubscriber Redis connect failed: %s - retry in %ds",
-                            err.getMessage(), RECONNECT_DELAY_SECONDS);
-                    Executors.newSingleThreadScheduledExecutor()
-                            .schedule(this::connect, RECONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
+                    LOG.errorf(err, "SignalSubscriber Redis connect failed - retry in %ds",
+                            RECONNECT_DELAY_SECONDS);
+                    SCHEDULER.schedule(this::connect, RECONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
                 }
         );
     }
@@ -107,7 +115,7 @@ public class SignalSubscriber {
         conn.send(io.vertx.mutiny.redis.client.Request.cmd(io.vertx.mutiny.redis.client.Command.SUBSCRIBE).arg(CHANNEL))
                 .subscribe().with(
                         v -> LOG.info("SUBSCRIBE response received"),
-                        err -> LOG.errorf("SUBSCRIBE failed: %s", err.getMessage()));
+                        err -> LOG.errorf(err, "SUBSCRIBE failed"));
     }
 
     /**
