@@ -682,3 +682,96 @@ OpenTelemetry wired via existing project pattern. Span names: `execution.handleS
 - **Bybit V5 API version bumps**: V5 is current and stable as of 2026-04. If Bybit cuts a V6 we'd need to re-test every endpoint. Mitigation: keep `BybitV5Endpoints.java` as a single choke point, version the namespace in package name.
 - **Trail math drift between `OutcomeEvaluator` and `TrailMirror`**: mitigated by sharing `TrailCalculator` via `shared-trade-core` module. Any change to trail math requires editing one file.
 - **Fee schedule changes**: we read fees from Bybit, so schedule changes propagate automatically — but our `MIN_RR=2.0` floor in signal-service assumes fees around 10 bps round-trip. If Bybit fee schedule changes materially, re-tune that floor.
+
+---
+
+## Frontend visual decisions (locked 2026-04-21)
+
+Consolidated from the visual-companion brainstorming sessions. Stored inline so Plan 3 implementers have an unambiguous target.
+
+### Layout
+
+- **Stacked sections** on Portfolio page. Manual card stays at top (backward compat), `ExchangeAccountsSection` sits below, rendering one card per exchange account. Future exchanges append to the stack.
+- **Empty state**: dashed-border card mirroring the exchange-card rectangle, with a centered "+ Add Bybit" CTA and a two-line explanation. Reserves layout space so adding the first exchange doesn't reflow the page.
+
+### Palette (Tailwind tokens map to these hex values)
+
+| Token | Hex | Use |
+|---|---|---|
+| bg-page | `#0f1116` | page background |
+| bg-card | `#141820` | card fill |
+| bg-card-inner | `#0f1116` | nested panels inside a card |
+| border-subtle | `#1c1f27` | card/row separators |
+| border-strong | `#2a3040` | modal/drawer borders |
+| text-primary | `#ffffff` | values, headings |
+| text-secondary | `#aaaaaa` | body copy |
+| text-muted | `#666666`–`#888888` | labels, timestamps |
+| accent-green | `#4ade80` | positive P&L, Connected, LONG side |
+| accent-red | `#ef4444` | negative P&L, KILL SWITCH, SHORT side, destructive actions |
+| accent-amber | `#f7a600` | trail indicator, reconnecting, Bybit logo, TRAIL exit badge |
+| accent-blue | `#1a73e8` | primary CTA, LS detector badge |
+| accent-purple | `#8b5cf6` | TC detector badge |
+
+Faded P&L / staleness uses `opacity: 0.7`. Kill-switch dim uses `opacity: 0.85` plus `filter: grayscale(0.3)`.
+
+### `ExchangeCard` — structure (top to bottom)
+
+1. **Header** (flex row): `[Bybit orange logo 32×32] [Bybit / Connected · Demo · v5 green dot]  ——  [Auto-trade toggle] [KILL SWITCH / DISARM button] [⚙ Settings]`
+2. **Equity strip** (5 cards, `grid-template-columns: repeat(5, 1fr)`): Equity · Avail. margin · Open P&L · Today realized · Positions.
+3. **Open positions table** — grid-columns (px): `100 60 90 90 90 90 80 1fr 24` for `Symbol / Side / Entry / Current / Stop / Target / P&L / Why / ⋯`. Row click opens `WhyModal`. Stop cell shows `94,420 TRAIL +1R` in amber when `trailTriggeredAt != null`.
+4. **Recent closed (24h)** — compact list, `Symbol Side  —  [badge] +1.2R · +$12` per row. Badge: `TARGET` (green), `TRAIL` (amber), `STOP` (red). Click "see all" to open existing trade-ledger modal filtered to this account.
+
+### Kill-switch engaged visual
+
+- **Red banner** across the top of the card: `🛑 KILL SWITCH ACTIVE — no new positions` + `DISARM` button (red→green color flip on click).
+- **Card body dimmed**: `opacity: 0.85`, `filter: grayscale(0.3)`. Position table remains readable and functional (close-one still works) because existing positions keep tracking trails and stops.
+- **Footnote inside card**: `positions still tracked — only NEW signals blocked` (prevents misreading "dim card" as "my positions are gone").
+
+### WebSocket connection indicator
+
+- Header status dot: `green` when WS open, `amber pulsing` during reconnect (pulse 1.5s), `red solid` after >60s of failed reconnect.
+- Status line: `● Connected · Demo · v5` → `● Reconnecting… (last update Xs ago)` → `● Disconnected (polling fallback)`.
+- Values dim to `opacity: 0.7` while reconnecting. Polling fallback hits REST `/wallet` + `/positions` every 15s so numbers keep updating.
+- Small `POLLING FALLBACK` pill in the header right when WS is down.
+- **No toasts, no banners** for normal WS blips. Only if `> 60s` down, add an inline note under the header.
+
+### Setup modal (AddExchangeButton → ExchangeSetupModal)
+
+- **Single step**, 4 form fields in order: Environment toggle (DEMO selected, MAINNET disabled unless `execution.mainnet.enabled=true`), Label (optional), API key, API secret (masked input with show/hide).
+- **Info box** above buttons: `On Bybit: Derivatives → Order + Position. NOT Withdraw. We reject withdraw-enabled keys.` (blue-left-border info style).
+- **Mainnet-disabled warning**: amber-bordered info box above the environment toggle when server flag is off.
+- **Validation errors** appear inline under the offending field (400 response body's `error` key determines which field).
+- **Post-save**: close modal, new card slides into the stack, `autoTradeEnabled=false`, `killSwitch=true`. User must manually flip both to go live (2 explicit clicks).
+
+### First-time auto-trade activation
+
+- Modal on first `autoTradeEnabled: false → true` transition per account (keyed by `accountId` in localStorage under `execution.auto-trade-confirmed.<id>`).
+- Content: `You're about to enable live trading on Bybit {Demo|Mainnet}. STRONG_BUY/STRONG_SELL signals will open real orders with real money. Risk/trade: {riskPercent}% of equity. Max concurrent: {maxConcurrentPositions}. Daily loss halt: {maxDailyLossPercent}%.` + `[ Cancel ] [ I understand, activate ]`.
+- Subsequent toggles on the same account are silent.
+- DEMO accounts still see the modal (rehearsal matters).
+
+### Per-position row menu
+
+- Trailing `⋯` column (24px). Click → popover menu with three items:
+  1. `View in chart` → opens existing `TradeChartModal` scaffold filtered to this symbol+account.
+  2. `Why this trade?` → opens `WhyModal` (same as clicking the row's Why badge).
+  3. `Close at market` — red text, `border-top: 1px solid border-subtle` above it to separate from read actions. Click → small confirmation: `Close {symbol} {direction} at market? ({qty} @ ${currentPrice})` → `POST /trades/{id}/close`.
+- `Close at market` is the only destructive action in the menu. Two barriers to fire (open menu + confirm).
+
+### Settings side-panel
+
+- Opens from right via the header `⚙` gear. Panel is `~240px` wide, slides in over the right third of the card, with the rest of the card dimmed to `opacity: 0.55` but still visible (positions stay scannable).
+- Dismiss: `×` button top-right, Escape key, or click outside.
+- 7 fields, one per row (top to bottom): Risk / trade (%), Leverage (x), Max concurrent, Daily loss halt (%), Signal max age (s), Position max age (h), Flip persistence (ticks).
+- **Save / Cancel** buttons at bottom. Save issues `PATCH /accounts/{id}` with only-changed fields. Inline error if PATCH fails.
+
+### WhyModal content
+
+Reuses the existing `AiAnalysisModal` component scaffold (modal chrome, close behavior, scroll). Body renders:
+
+1. Signal context: `BTCUSDT LONG · strategy: liquidity-sweep · regime: BULL · alignment: 72`.
+2. 6-dimension scores (existing dimension gauge component from `SignalDashboard`).
+3. Trade levels: entry / stop / target / R:R.
+4. Trail state: `current rung: 1.0R, dynamic stop: $94,420, trail activated at 2026-04-21 14:23 UTC`.
+5. Fills (list of `execution` WS events for this trade).
+6. AI analysis (if present in `signal_outcomes.ai_analysis` for the matching signal — joined server-side by `/api/execution/accounts/{id}/trades/{tradeId}/why`; phase 1 is a stub that returns `{note: "..."}` — frontend renders a placeholder when `signalSnapshot.note` is present).
