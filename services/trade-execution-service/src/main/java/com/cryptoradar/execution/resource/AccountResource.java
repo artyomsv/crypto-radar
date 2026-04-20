@@ -86,8 +86,8 @@ public class AccountResource {
         try {
             resp = bybit.queryApiKey(req.environment(), apiKeyCipher, apiSecretCipher);
         } catch (RuntimeException e) {
-            LOG.warnf("Bybit queryApiKey failed for new account: %s", e.getMessage());
-            return error(400, "Bybit key validation failed: " + e.getMessage());
+            LOG.warn("Bybit queryApiKey failed for new account", e);
+            return error(400, "Bybit key validation failed (see server logs)");
         }
         if (!resp.isOk()) {
             return error(400, "Bybit key validation returned retCode=" + resp.retCode() + " retMsg=" + resp.retMsg());
@@ -156,6 +156,7 @@ public class AccountResource {
         try {
             return cipher.decrypt(encrypted);
         } catch (RuntimeException e) {
+            LOG.warn("Failed to decrypt apiKey for exchange account (returning masked placeholder)", e);
             return null;
         }
     }

@@ -51,7 +51,7 @@ class AccountResourceTest {
         }
     }
 
-    static WireMockServer wireMock;
+    WireMockServer wireMock;
 
     @Inject ObjectMapper mapper;
     @Inject ExchangeAccountRepository accountRepo;

@@ -14,7 +14,7 @@ public record CreateAccountRequest(
         @NotBlank String apiKey,
         @NotBlank String apiSecret,
         String label,
-        @JsonProperty("riskPercent") BigDecimal riskPercent,
+        @JsonProperty("riskPercent") @Positive BigDecimal riskPercent,
         @JsonProperty("defaultLeverage") @Min(1) Integer defaultLeverage,
         @JsonProperty("maxConcurrentPositions") @Min(1) Integer maxConcurrentPositions,
         @JsonProperty("maxDailyLossPercent") @Positive BigDecimal maxDailyLossPercent,
