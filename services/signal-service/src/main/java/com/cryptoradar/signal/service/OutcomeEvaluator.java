@@ -14,7 +14,6 @@ import org.jboss.logging.Logger;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Every minute, walks forward through the latest 1m candles of each PENDING
@@ -167,19 +166,17 @@ public class OutcomeEvaluator {
                 outcome.getTrailStepR(),
                 outcome.getTrailOffsetR());
 
-        Optional<Double> newTrailR = TrailCalculator.computeNewTrailR(
-                mfeR, config, outcome.getTrailHighestR());
-        if (newTrailR.isEmpty()) return;
-
-        double newR = newTrailR.get();
-        outcome.setTrailHighestR(newR);
-        double newStop = isLong ? entry + newR * risk : entry - newR * risk;
-        outcome.setDynamicStopPrice(newStop);
-        if (outcome.getTrailTriggeredAt() == null) {
-            outcome.setTrailTriggeredAt(bar.time());
-            LOG.infof("TRAIL activated %s %s at rung %.2fR → stop=%.4f",
-                    outcome.getSymbol(), outcome.getDirection(), newR, newStop);
-        }
+        TrailCalculator.computeNewTrailR(mfeR, config, outcome.getTrailHighestR())
+                .ifPresent(newR -> {
+                    outcome.setTrailHighestR(newR);
+                    double newStop = isLong ? entry + newR * risk : entry - newR * risk;
+                    outcome.setDynamicStopPrice(newStop);
+                    if (outcome.getTrailTriggeredAt() == null) {
+                        outcome.setTrailTriggeredAt(bar.time());
+                        LOG.infof("TRAIL activated %s %s at rung %.2fR → stop=%.4f",
+                                outcome.getSymbol(), outcome.getDirection(), newR, newStop);
+                    }
+                });
     }
 
     // Package-private for unit tests — see updateTrailingStop note.
