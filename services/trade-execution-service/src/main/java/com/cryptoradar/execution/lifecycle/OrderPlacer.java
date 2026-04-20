@@ -162,7 +162,7 @@ public class OrderPlacer {
                 return Double.parseDouble(resp.result().list().get(0).totalEquity());
             }
         } catch (RuntimeException e) {
-            LOG.warnf("wallet fetch failed: %s — falling back to %s equity", e.getMessage(), FALLBACK_EQUITY);
+            LOG.warnf(e, "wallet fetch failed — falling back to %s equity", FALLBACK_EQUITY);
         }
         return FALLBACK_EQUITY;
     }

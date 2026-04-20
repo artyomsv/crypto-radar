@@ -6,6 +6,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -66,13 +67,15 @@ public class InstrumentRegistry {
         Double cached = cache.get(key);
         if (cached != null) return cached;
         Optional<Double> fetched = fetchQtyStep(environment, symbol);
-        double resolved = fetched.orElseGet(
-                () -> FALLBACK_QTY_STEP.getOrDefault(symbol, DEFAULT_UNKNOWN_QTY_STEP));
-        cache.put(key, resolved);
-        if (fetched.isEmpty()) {
-            LOG.warnf("InstrumentRegistry: falling back to static qtyStep for %s = %s", symbol, resolved);
+        if (fetched.isPresent()) {
+            cache.put(key, fetched.get());
+            return fetched.get();
         }
-        return resolved;
+        // Fallback is NOT cached — a later retry may succeed if Bybit comes back.
+        double fallback = FALLBACK_QTY_STEP.getOrDefault(symbol, DEFAULT_UNKNOWN_QTY_STEP);
+        LOG.warnf("InstrumentRegistry: falling back to static qtyStep for %s = %s "
+                + "(not cached, will retry next call)", symbol, fallback);
+        return fallback;
     }
 
     /** Visible for tests — flush cache between cases. */
@@ -105,8 +108,17 @@ public class InstrumentRegistry {
             String step = list.get(0).path("lotSizeFilter").path("qtyStep").asText("");
             if (step.isEmpty()) return Optional.empty();
             return Optional.of(Double.parseDouble(step));
-        } catch (Exception e) {
-            LOG.warnf("instruments-info fetch failed for %s: %s", symbol, e.getMessage());
+        } catch (IOException e) {
+            LOG.warnf(e, "instruments-info fetch failed for %s", symbol);
+            return Optional.empty();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warnf(e, "instruments-info fetch interrupted for %s", symbol);
+            return Optional.empty();
+        } catch (RuntimeException e) {
+            // JSON parse error (JsonProcessingException is IOException, caught above)
+            // or NumberFormatException from a malformed Bybit qtyStep — degrade to fallback.
+            LOG.warnf(e, "instruments-info parse failed for %s", symbol);
             return Optional.empty();
         }
     }
