@@ -299,6 +299,7 @@ public class SignalService {
         overview.setSellCount(sell);
         overview.setStrongSellCount(strongSell);
         overview.setMarketBias(computeMarketBias(strongBuy, buy, sell, strongSell));
+        overview.setMarketRegime(marketRegimeService.currentRegime().name());
 
         signals.sort(Comparator.comparingDouble(s -> -Math.abs(s.getOverallScore())));
         overview.setSignals(signals);
@@ -326,6 +327,7 @@ public class SignalService {
         SignalOverview overview = new SignalOverview();
         overview.setTimestamp(Instant.now());
         overview.setMarketBias("UNKNOWN");
+        overview.setMarketRegime(marketRegimeService.currentRegime().name());
         overview.setSignals(List.of());
         return overview;
     }

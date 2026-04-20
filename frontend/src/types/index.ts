@@ -346,6 +346,7 @@ export interface SignalOverview {
   sellCount: number;
   strongSellCount: number;
   marketBias: string;
+  marketRegime: 'BULL' | 'BEAR' | 'CHOP' | 'UNKNOWN';
   topOpportunity: TradingSignal | null;
   signals: TradingSignal[];
 }

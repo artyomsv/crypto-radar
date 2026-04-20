@@ -13,6 +13,7 @@ public class SignalOverview {
     private int sellCount;
     private int strongSellCount;
     private String marketBias;
+    private String marketRegime;
     private TradingSignal topOpportunity;
     private List<TradingSignal> signals = new ArrayList<>();
 
@@ -38,6 +39,9 @@ public class SignalOverview {
 
     public String getMarketBias() { return marketBias; }
     public void setMarketBias(String marketBias) { this.marketBias = marketBias; }
+
+    public String getMarketRegime() { return marketRegime; }
+    public void setMarketRegime(String marketRegime) { this.marketRegime = marketRegime; }
 
     public TradingSignal getTopOpportunity() { return topOpportunity; }
     public void setTopOpportunity(TradingSignal topOpportunity) { this.topOpportunity = topOpportunity; }

@@ -52,23 +52,50 @@ function rColor(value: number | null): string {
 }
 
 interface StatusBadgeProps {
-  status: SignalOutcomeView['status'];
+  outcome: SignalOutcomeView;
 }
 
-function StatusBadge({ status }: StatusBadgeProps) {
-  const config: Record<SignalOutcomeView['status'], { icon: React.ComponentType<{ className?: string }>; label: string; classes: string }> = {
-    PENDING:    { icon: Clock,         label: 'OPEN',    classes: 'bg-accent/10 text-accent border-accent/40' },
-    HIT_TARGET: { icon: CheckCircle2,  label: 'WIN',     classes: 'bg-gain/10 text-gain border-gain/40' },
-    HIT_STOP:   { icon: XCircle,       label: 'LOSS',    classes: 'bg-loss/10 text-loss border-loss/40' },
-    EXPIRED:    { icon: HelpCircle,    label: 'EXPIRED', classes: 'bg-muted/10 text-muted border-muted/40' },
-  };
-  const { icon: Icon, label, classes } = config[status] ?? config.EXPIRED;
+/**
+ * Status label blends {@code status} with {@code finalExitReason} so the
+ * ledger shows which mechanism closed the trade: TARGET, TRAIL, STOP, or
+ * EXPIRED. Open trades with an armed trail show "LOCKED" (+NR lock-in).
+ */
+function StatusBadge({ outcome }: StatusBadgeProps) {
+  const { label, icon: Icon, classes } = resolveStatus(outcome);
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-semibold ${classes}`}>
       <Icon className="h-2.5 w-2.5" />
       {label}
     </span>
   );
+}
+
+function resolveStatus(outcome: SignalOutcomeView): {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  classes: string;
+} {
+  if (outcome.status === 'PENDING') {
+    const locked = outcome.trailHighestR ?? 0;
+    if (locked > 0) {
+      return {
+        label: `LOCK +${locked.toFixed(1)}R`,
+        icon: Target,
+        classes: 'bg-gain/10 text-gain border-gain/40',
+      };
+    }
+    return { label: 'OPEN', icon: Clock, classes: 'bg-accent/10 text-accent border-accent/40' };
+  }
+  if (outcome.status === 'HIT_TARGET') {
+    return { label: 'TARGET', icon: CheckCircle2, classes: 'bg-gain/10 text-gain border-gain/40' };
+  }
+  if (outcome.status === 'HIT_STOP') {
+    if (outcome.finalExitReason === 'TRAIL_STOP') {
+      return { label: 'TRAIL', icon: CheckCircle2, classes: 'bg-gain/10 text-gain border-gain/40' };
+    }
+    return { label: 'STOP', icon: XCircle, classes: 'bg-loss/10 text-loss border-loss/40' };
+  }
+  return { label: 'EXPIRED', icon: HelpCircle, classes: 'bg-muted/10 text-muted border-muted/40' };
 }
 
 interface DirectionBadgeProps {
@@ -127,7 +154,7 @@ function TradeRow({ outcome, onClick }: TradeRowProps) {
         <span className="text-[10px] text-text-secondary font-mono mr-1">{outcome.alignment}</span>
       </td>
       <td className="py-2 pr-3 pl-1 text-right">
-        <StatusBadge status={outcome.status} />
+        <StatusBadge outcome={outcome} />
       </td>
     </tr>
   );

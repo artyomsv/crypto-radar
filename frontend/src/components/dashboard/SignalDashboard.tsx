@@ -66,6 +66,27 @@ function formatSignalLabel(signal: string): string {
   return signal.replace(/_/g, ' ');
 }
 
+const REGIME_STYLES: Record<string, { label: string; classes: string }> = {
+  BULL:    { label: 'BULL REGIME',    classes: 'bg-gain/10 text-gain border-gain/40' },
+  BEAR:    { label: 'BEAR REGIME',    classes: 'bg-loss/10 text-loss border-loss/40' },
+  CHOP:    { label: 'CHOP',           classes: 'bg-muted/10 text-muted-foreground border-muted/40' },
+  UNKNOWN: { label: 'REGIME UNKNOWN', classes: 'bg-muted/5 text-text-secondary border-muted/20' },
+};
+
+/**
+ * Small pill beneath the Market Bias label showing the BTC-derived regime.
+ * Regime is the classifier's output that drives threshold modulation in the
+ * signal engine — surfacing it here makes the engine's policy visible.
+ */
+function RegimeBadge({ regime }: { regime: string }) {
+  const style = REGIME_STYLES[regime] ?? REGIME_STYLES.UNKNOWN;
+  return (
+    <span className={`mt-2 inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-bold tracking-wide ${style.classes}`}>
+      {style.label}
+    </span>
+  );
+}
+
 function AlignmentGauge({ alignment }: { alignment: number }) {
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
@@ -329,7 +350,7 @@ function MarketBiasSummary({ overview }: { overview: NonNullable<ReturnType<type
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Market Bias */}
+        {/* Market Bias + Regime */}
         <div className="flex flex-col items-center justify-center py-2">
           <p className="text-xs text-text-secondary mb-1">Market Bias</p>
           <p className={`text-4xl font-black tracking-tight ${bias.color}`}>
@@ -340,6 +361,7 @@ function MarketBiasSummary({ overview }: { overview: NonNullable<ReturnType<type
             {overview.marketBias === 'BEARISH' && <TrendingDown className="h-5 w-5 text-loss" />}
             {overview.marketBias === 'NEUTRAL' && <Minus className="h-5 w-5 text-muted" />}
           </div>
+          <RegimeBadge regime={overview.marketRegime} />
         </div>
 
         {/* Signal Distribution */}
