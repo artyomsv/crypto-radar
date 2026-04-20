@@ -1,10 +1,12 @@
 package com.cryptoradar.signal.resource;
 
+import com.cryptoradar.signal.model.DeploymentMarker;
 import com.cryptoradar.signal.model.PerformanceReport;
 import com.cryptoradar.signal.model.SignalOutcome;
 import com.cryptoradar.signal.model.SignalOutcomeView;
 import com.cryptoradar.signal.model.SignalOverview;
 import com.cryptoradar.signal.model.TradingSignal;
+import com.cryptoradar.signal.repository.DeploymentMarkerRepository;
 import com.cryptoradar.signal.repository.SignalOutcomeRepository;
 import com.cryptoradar.signal.service.PerformanceMetricsService;
 import com.cryptoradar.signal.service.SignalService;
@@ -34,19 +36,34 @@ public class SignalResource {
     private final SignalService signalService;
     private final PerformanceMetricsService metricsService;
     private final SignalOutcomeRepository outcomeRepository;
+    private final DeploymentMarkerRepository deploymentMarkerRepository;
 
     public SignalResource(SignalService signalService,
                           PerformanceMetricsService metricsService,
-                          SignalOutcomeRepository outcomeRepository) {
+                          SignalOutcomeRepository outcomeRepository,
+                          DeploymentMarkerRepository deploymentMarkerRepository) {
         this.signalService = signalService;
         this.metricsService = metricsService;
         this.outcomeRepository = outcomeRepository;
+        this.deploymentMarkerRepository = deploymentMarkerRepository;
     }
 
     @GET
     @Path("/overview")
     public SignalOverview getOverview() {
         return signalService.getSignalOverview();
+    }
+
+    /**
+     * Chronological list of engine-change deploy markers. Lets the frontend
+     * render deploy lines on ledger/charts and gives analysts a canonical
+     * reference for slicing outcomes "before/after" a given rollout.
+     */
+    @GET
+    @Path("/deployments")
+    @Transactional
+    public List<DeploymentMarker> getDeployments() {
+        return deploymentMarkerRepository.findAllOrdered();
     }
 
     @GET

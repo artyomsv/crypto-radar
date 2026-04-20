@@ -114,3 +114,33 @@ BEGIN
         ALTER TABLE signal_outcomes RENAME COLUMN confidence TO alignment;
     END IF;
 END $$;
+
+-- =============================================================================
+-- Deployment markers
+-- =============================================================================
+-- Records the timestamp of each signal-engine change that altered the shape
+-- of outcome data. Consumers join on `signal_outcomes.fired_at` ranges to
+-- slice metrics "before/after" a deploy — avoiding the pitfall of mixing
+-- pre- and post-fix outcomes into one misleading aggregate.
+--
+-- Never delete rows. Markers are append-only. PRIMARY KEY on deployed_at
+-- makes inserts idempotent across init.sql reruns.
+
+CREATE TABLE IF NOT EXISTS deployment_markers (
+    deployed_at  TIMESTAMPTZ PRIMARY KEY,
+    version      VARCHAR(32) NOT NULL,
+    description  TEXT
+);
+
+INSERT INTO deployment_markers (deployed_at, version, description) VALUES
+    ('2026-04-19T20:00:00Z', 'v1-initial-fixes',
+     'Bias removal (macro stablecoin cap + orderbook low-liq + BTC dominance symmetry), ' ||
+     'stop-distance guard, MIN_RR 5->2, LS filter tightening (pierce/drift/deriv/reclaim/atr).'),
+    ('2026-04-19T23:30:00Z', 'v2-trail-system',
+     'Trailing-stop ladder (0.5R step, 1R activation), per-outcome trail config, ' ||
+     'final_exit_reason column, time_to_mfe/mae, fees in realized R.'),
+    ('2026-04-20T01:00:00Z', 'v3-full-rollout',
+     'Market regime detection (BULL/BEAR/CHOP) + threshold modulation, LS volume ' ||
+     'confirmation, confidence->alignment rename, metrics slices, derivatives ' ||
+     'table-name fix, frontend surface.')
+ON CONFLICT (deployed_at) DO NOTHING;
