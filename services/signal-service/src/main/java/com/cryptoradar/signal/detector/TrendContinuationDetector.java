@@ -45,7 +45,7 @@ public class TrendContinuationDetector implements TradeSetupDetector {
     // Trade levels.
     private static final double STOP_ATR_MULTIPLE = 1.5;
     private static final double TARGET_R_MULTIPLE = 5.0;
-    private static final int STRONG_SIGNAL_CONFIDENCE = 65;
+    private static final int STRONG_SIGNAL_ALIGNMENT = 65;
 
     @Override
     public String name() {
@@ -101,15 +101,15 @@ public class TrendContinuationDetector implements TradeSetupDetector {
                                 : Math.min(rMultipleTarget, structuralTarget);
         double rr = isLong ? (target - entry) / risk : (entry - target) / risk;
 
-        int confidence = computeConfidence(in, pullbackPct);
-        String signalType = mapSignalType(direction, confidence);
+        int alignment = computeAlignment(in, pullbackPct);
+        String signalType = mapSignalType(direction, alignment);
         List<String> reasons = buildReasons(direction, in, pullbackPct);
 
         return new TradeSetup(NAME, symbol, direction, signalType,
-                entry, stop, target, rr, confidence, reasons, Instant.now());
+                entry, stop, target, rr, alignment, reasons, Instant.now());
     }
 
-    private int computeConfidence(Inputs in, double pullbackPct) {
+    private int computeAlignment(Inputs in, double pullbackPct) {
         int score = 40;
         if (Math.abs(in.technicalScore) >= 60) score += 15;
         else if (Math.abs(in.technicalScore) >= 40) score += 10;
@@ -121,9 +121,9 @@ public class TrendContinuationDetector implements TradeSetupDetector {
         return Math.min(95, score);
     }
 
-    private String mapSignalType(String direction, int confidence) {
+    private String mapSignalType(String direction, int alignment) {
         boolean isLong = DIRECTION_LONG.equals(direction);
-        if (confidence >= STRONG_SIGNAL_CONFIDENCE) return isLong ? "STRONG_BUY" : "STRONG_SELL";
+        if (alignment >= STRONG_SIGNAL_ALIGNMENT) return isLong ? "STRONG_BUY" : "STRONG_SELL";
         return isLong ? "BUY" : "SELL";
     }
 

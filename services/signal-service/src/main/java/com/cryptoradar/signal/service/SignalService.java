@@ -192,7 +192,7 @@ public class SignalService {
             Map<String, Object> signalSummary = new java.util.LinkedHashMap<>();
             signalSummary.put("signal", signal.getSignal());
             signalSummary.put("overallScore", signal.getOverallScore());
-            signalSummary.put("confidence", signal.getConfidence());
+            signalSummary.put("alignment", signal.getAlignment());
             signalSummary.put("dimensions", signal.getDimensions());
             rawData.put("computedSignal", signalSummary);
         }
@@ -227,8 +227,8 @@ public class SignalService {
 
         boolean wasNonActionable = prevSignal == null || !ACTIONABLE_SIGNALS.contains(prevSignal);
         if (wasNonActionable) {
-            LOG.infof("ALERT: %s transitioned to %s (confidence %d%%)",
-                    signal.getSymbol(), signal.getSignal(), signal.getConfidence());
+            LOG.infof("ALERT: %s transitioned to %s (alignment %d%%)",
+                    signal.getSymbol(), signal.getSignal(), signal.getAlignment());
             redisPublisher.publishAlert(signal);
         }
     }
@@ -305,7 +305,7 @@ public class SignalService {
 
         signals.stream()
                 .filter(s -> !NEUTRAL.equals(s.getSignal()))
-                .max(Comparator.comparingInt(TradingSignal::getConfidence))
+                .max(Comparator.comparingInt(TradingSignal::getAlignment))
                 .ifPresent(overview::setTopOpportunity);
 
         return overview;

@@ -55,8 +55,8 @@ class SignalEngineBiasTest {
 
         assertTrue(signal.getOverallScore() <= -40.0,
                 "expected overall_score ≤ -40, got " + signal.getOverallScore());
-        assertTrue(signal.getConfidence() >= 60,
-                "expected confidence ≥ 60 for STRONG_SELL, got " + signal.getConfidence());
+        assertTrue(signal.getAlignment() >= 60,
+                "expected alignment ≥ 60 for STRONG_SELL, got " + signal.getAlignment());
         assertTrue("STRONG_SELL".equals(signal.getSignal()),
                 "expected STRONG_SELL, got " + signal.getSignal());
     }

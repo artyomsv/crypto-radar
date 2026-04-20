@@ -58,7 +58,7 @@ function buildMarkersForOutcome(outcome: SignalOutcomeView, isHighlighted: boole
     position: (isLong ? 'belowBar' : 'aboveBar') as 'belowBar' | 'aboveBar',
     color: entryColor,
     shape: (isLong ? 'arrowUp' : 'arrowDown') as 'arrowUp' | 'arrowDown',
-    text: `${outcome.signalType} ${outcome.confidence}%`,
+    text: `${outcome.signalType} ${outcome.alignment}%`,
   };
 
   if (!outcome.closedAt) return [entryMarker];

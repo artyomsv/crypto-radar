@@ -98,10 +98,10 @@ public class OutcomeTracker {
 
         SignalOutcome outcome = buildOutcomeFromSetup(setup);
         repository.persist(outcome);
-        LOG.infof("Tracking %s %s %s entry=%.4f stop=%.4f target=%.4f rr=%.2f conf=%d",
+        LOG.infof("Tracking %s %s %s entry=%.4f stop=%.4f target=%.4f rr=%.2f align=%d",
                 outcome.getStrategy(), outcome.getSymbol(), outcome.getDirection(),
                 outcome.getEntryPrice(), outcome.getStopPrice(),
-                outcome.getTargetPrice(), outcome.getRiskRewardRatio(), outcome.getConfidence());
+                outcome.getTargetPrice(), outcome.getRiskRewardRatio(), outcome.getAlignment());
     }
 
     private SignalOutcome buildOutcomeFromSetup(TradeSetup setup) {
@@ -116,8 +116,8 @@ public class OutcomeTracker {
         outcome.setStopPrice(setup.stopPrice());
         outcome.setTargetPrice(setup.targetPrice());
         outcome.setRiskRewardRatio(setup.riskRewardRatio());
-        outcome.setConfidence(setup.confidence());
-        outcome.setOverallScore((double) setup.confidence());
+        outcome.setAlignment(setup.alignment());
+        outcome.setOverallScore((double) setup.alignment());
         outcome.setAiAnalysis(formatReasons(setup));
         applyTrailConfig(outcome, setup.trailConfig());
         return outcome;
@@ -167,7 +167,7 @@ public class OutcomeTracker {
         outcome.setStopPrice(signal.getSuggestedStopLoss());
         outcome.setTargetPrice(signal.getSuggestedTakeProfit());
         outcome.setRiskRewardRatio(signal.getRiskRewardRatio());
-        outcome.setConfidence(signal.getConfidence());
+        outcome.setAlignment(signal.getAlignment());
         outcome.setOverallScore(signal.getOverallScore());
         outcome.setAiAnalysis(signal.getAiAnalysis());
         applyDimensionScores(outcome, signal.getDimensions());

@@ -54,8 +54,8 @@ public class SignalOutcome {
     @Column(name = "risk_reward_ratio", nullable = false)
     private Double riskRewardRatio;
 
-    @Column(name = "confidence", nullable = false)
-    private Integer confidence;
+    @Column(name = "alignment", nullable = false)
+    private Integer alignment;
 
     @Column(name = "overall_score", nullable = false)
     private Double overallScore;
@@ -193,8 +193,8 @@ public class SignalOutcome {
     public Double getRiskRewardRatio() { return riskRewardRatio; }
     public void setRiskRewardRatio(Double riskRewardRatio) { this.riskRewardRatio = riskRewardRatio; }
 
-    public Integer getConfidence() { return confidence; }
-    public void setConfidence(Integer confidence) { this.confidence = confidence; }
+    public Integer getAlignment() { return alignment; }
+    public void setAlignment(Integer alignment) { this.alignment = alignment; }
 
     public Double getOverallScore() { return overallScore; }
     public void setOverallScore(Double overallScore) { this.overallScore = overallScore; }

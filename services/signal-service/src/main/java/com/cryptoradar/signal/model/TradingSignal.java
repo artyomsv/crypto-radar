@@ -10,7 +10,7 @@ public class TradingSignal {
     private Instant timestamp;
     private String signal;
     private double overallScore;
-    private int confidence;
+    private int alignment;
     private List<DimensionScore> dimensions = new ArrayList<>();
     private Double suggestedEntry;
     private Double suggestedStopLoss;
@@ -35,8 +35,8 @@ public class TradingSignal {
     public double getOverallScore() { return overallScore; }
     public void setOverallScore(double overallScore) { this.overallScore = overallScore; }
 
-    public int getConfidence() { return confidence; }
-    public void setConfidence(int confidence) { this.confidence = confidence; }
+    public int getAlignment() { return alignment; }
+    public void setAlignment(int alignment) { this.alignment = alignment; }
 
     public List<DimensionScore> getDimensions() { return dimensions; }
     public void setDimensions(List<DimensionScore> dimensions) { this.dimensions = dimensions; }

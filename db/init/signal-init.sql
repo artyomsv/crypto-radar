@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS signal_outcomes (
     stop_price          DOUBLE PRECISION NOT NULL,
     target_price        DOUBLE PRECISION NOT NULL,
     risk_reward_ratio   DOUBLE PRECISION NOT NULL,
-    confidence          INTEGER          NOT NULL,
+    alignment           INTEGER          NOT NULL,   -- renamed from confidence (PR6c)
     overall_score       DOUBLE PRECISION NOT NULL,
     technical_score     DOUBLE PRECISION,
     whale_score         DOUBLE PRECISION,
@@ -93,3 +93,24 @@ ALTER TABLE signal_outcomes
     ADD COLUMN IF NOT EXISTS time_to_mfe_seconds INTEGER,
     ADD COLUMN IF NOT EXISTS time_to_mae_seconds INTEGER,
     ADD COLUMN IF NOT EXISTS fees_bps_round_trip INTEGER NOT NULL DEFAULT 10;
+
+-- =============================================================================
+-- confidence → alignment rename (PR6c)
+-- =============================================================================
+-- The metric previously called "confidence" measures weighted dimension
+-- alignment of the signal — not predictive confidence. Outcome analysis
+-- showed an INVERSE correlation between "confidence" and win rate: signals
+-- at confidence >= 80 had 0% win rate over the observation window. Renamed
+-- to "alignment" to stop the misleading label from causing downstream
+-- judgment errors in analysts reading metrics.
+--
+-- Idempotent: executes only if the old column still exists.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'signal_outcomes' AND column_name = 'confidence'
+    ) THEN
+        ALTER TABLE signal_outcomes RENAME COLUMN confidence TO alignment;
+    END IF;
+END $$;

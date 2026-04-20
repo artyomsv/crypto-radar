@@ -124,7 +124,7 @@ function TradeRow({ outcome, onClick }: TradeRowProps) {
         {formatR(outcome.realizedRMultiple)}
       </td>
       <td className="py-2 px-2 text-right">
-        <span className="text-[10px] text-text-secondary font-mono mr-1">{outcome.confidence}</span>
+        <span className="text-[10px] text-text-secondary font-mono mr-1">{outcome.alignment}</span>
       </td>
       <td className="py-2 pr-3 pl-1 text-right">
         <StatusBadge status={outcome.status} />

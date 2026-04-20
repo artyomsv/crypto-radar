@@ -40,9 +40,9 @@ function getSignalStyle(signal: string) {
   return SIGNAL_STYLES[signal] ?? SIGNAL_STYLES.NEUTRAL;
 }
 
-function getConfidenceColor(confidence: number): string {
-  if (confidence >= 80) return '#10b981';
-  if (confidence >= 60) return '#eab308';
+function getAlignmentColor(alignment: number): string {
+  if (alignment >= 80) return '#10b981';
+  if (alignment >= 60) return '#eab308';
   return '#64748b';
 }
 
@@ -66,11 +66,11 @@ function formatSignalLabel(signal: string): string {
   return signal.replace(/_/g, ' ');
 }
 
-function ConfidenceGauge({ confidence }: { confidence: number }) {
+function AlignmentGauge({ alignment }: { alignment: number }) {
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (confidence / 100) * circumference;
-  const color = getConfidenceColor(confidence);
+  const strokeDashoffset = circumference - (alignment / 100) * circumference;
+  const color = getAlignmentColor(alignment);
 
   return (
     <div className="relative inline-flex items-center justify-center">
@@ -95,7 +95,7 @@ function ConfidenceGauge({ confidence }: { confidence: number }) {
       </svg>
       <div className="absolute flex flex-col items-center">
         <span className="text-sm font-bold font-mono" style={{ color }}>
-          {confidence}%
+          {alignment}%
         </span>
       </div>
     </div>
@@ -189,7 +189,7 @@ function SignalCard({ signal, isExpanded, onToggle, onAiAnalysis }: { signal: Tr
           </div>
         )}
 
-        {/* Score + Confidence row */}
+        {/* Score + Alignment row */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-4">
             <div>
@@ -199,7 +199,7 @@ function SignalCard({ signal, isExpanded, onToggle, onAiAnalysis }: { signal: Tr
               </p>
             </div>
           </div>
-          <ConfidenceGauge confidence={signal.confidence} />
+          <AlignmentGauge alignment={signal.alignment} />
         </div>
 
         {/* Dimension bars */}
@@ -372,9 +372,9 @@ function MarketBiasSummary({ overview }: { overview: NonNullable<ReturnType<type
               </div>
               <div className="flex items-center gap-4 text-xs">
                 <div>
-                  <span className="text-text-secondary">Confidence </span>
-                  <span className="font-mono font-bold" style={{ color: getConfidenceColor(top.confidence) }}>
-                    {top.confidence}%
+                  <span className="text-text-secondary">Alignment </span>
+                  <span className="font-mono font-bold" style={{ color: getAlignmentColor(top.alignment) }}>
+                    {top.alignment}%
                   </span>
                 </div>
                 <div>

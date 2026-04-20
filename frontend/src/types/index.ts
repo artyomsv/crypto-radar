@@ -326,7 +326,7 @@ export interface TradingSignal {
   timestamp: string;
   signal: string;
   overallScore: number;
-  confidence: number;
+  alignment: number;
   dimensions: DimensionScore[];
   suggestedEntry: number | null;
   suggestedStopLoss: number | null;
@@ -387,7 +387,7 @@ export interface SignalOutcomeView {
   stopPrice: number;
   targetPrice: number;
   riskRewardRatio: number;
-  confidence: number;
+  alignment: number;
   status: 'PENDING' | 'HIT_TARGET' | 'HIT_STOP' | 'EXPIRED';
   closedAt: string | null;
   closedPrice: number | null;
@@ -396,6 +396,14 @@ export interface SignalOutcomeView {
   maxFavorablePct: number;
   maxAdversePct: number;
   aiAnalysis: string | null;
+  // Trailing-stop state (PR2)
+  dynamicStopPrice: number | null;
+  trailTriggeredAt: string | null;
+  trailHighestR: number | null;
+  finalExitReason: 'INITIAL_STOP' | 'TRAIL_STOP' | 'TARGET' | 'EXPIRED' | null;
+  // Timing (PR5)
+  timeToMfeSeconds: number | null;
+  timeToMaeSeconds: number | null;
 }
 
 export interface PriceLevelData {

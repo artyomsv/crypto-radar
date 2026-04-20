@@ -24,7 +24,7 @@ import java.util.List;
  * @param stopPrice       protective stop (invalidates the setup)
  * @param targetPrice     profit target (realizes the setup)
  * @param riskRewardRatio {@code (target - entry) / (entry - stop)}
- * @param confidence      detector-specific confidence 0-100
+ * @param alignment      detector-specific alignment 0-100
  * @param reasons         human-readable trail of preconditions that fired
  * @param firedAt         wall clock when the detector fired
  * @param trailConfig     per-strategy trail parameters; detectors that don't
@@ -40,7 +40,7 @@ public record TradeSetup(
         double stopPrice,
         double targetPrice,
         double riskRewardRatio,
-        int confidence,
+        int alignment,
         List<String> reasons,
         Instant firedAt,
         TrailConfig trailConfig
@@ -52,9 +52,9 @@ public record TradeSetup(
      */
     public TradeSetup(String strategy, String symbol, String direction, String signalType,
                       double entryPrice, double stopPrice, double targetPrice,
-                      double riskRewardRatio, int confidence,
+                      double riskRewardRatio, int alignment,
                       List<String> reasons, Instant firedAt) {
         this(strategy, symbol, direction, signalType, entryPrice, stopPrice, targetPrice,
-                riskRewardRatio, confidence, reasons, firedAt, TrailConfig.DEFAULT);
+                riskRewardRatio, alignment, reasons, firedAt, TrailConfig.DEFAULT);
     }
 }

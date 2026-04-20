@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * Core multi-dimensional scoring algorithm.
  * Each dimension produces a score from -100 to +100, combined with weights
- * to produce an overall trading signal with confidence.
+ * to produce an overall trading signal with an alignment score.
  */
 @ApplicationScoped
 public class SignalEngine {
@@ -98,17 +98,17 @@ public class SignalEngine {
 
         overallScore = clamp(overallScore, -100, 100);
 
-        int confidence = computeConfidence(dimensions, overallScore);
-        String signalLabel = determineSignalLabel(overallScore, confidence, regime);
+        int alignment = computeAlignment(dimensions, overallScore);
+        String signalLabel = determineSignalLabel(overallScore, alignment, regime);
 
         TradingSignal signal = new TradingSignal();
         signal.setSymbol(symbol);
         signal.setTimestamp(Instant.now());
         signal.setSignal(signalLabel);
         signal.setOverallScore(Math.round(overallScore * 100.0) / 100.0);
-        signal.setConfidence(confidence);
+        signal.setAlignment(alignment);
         signal.setDimensions(new ArrayList<>(dimensions));
-        signal.setAlertLevel(determineAlertLevel(signalLabel, confidence));
+        signal.setAlertLevel(determineAlertLevel(signalLabel, alignment));
 
         populateTradeLevels(signal, analytics, priceData);
 
@@ -466,12 +466,18 @@ public class SignalEngine {
     // --- Composite helpers ---
 
     /**
-     * Confidence based on weighted signal strength, not binary alignment.
-     * A dimension at +80 contributes far more than one at +1.
-     * Strong contradictions actively reduce confidence.
-     * Max confidence capped at 90% — no signal is ever certain.
+     * Alignment score — measures how strongly weighted dimensions agree on a
+     * direction. Despite the legacy name "confidence" (renamed in PR6c), this
+     * metric does NOT predict win rate: outcome analysis showed an inverse
+     * correlation between alignment and actual outcomes. The honest reading
+     * is "how much does the scoring stack agree internally", not "how likely
+     * is this signal to be profitable".
+     *
+     * <p>A dimension at ±80 contributes far more than one at ±1. Strong
+     * contradictions actively reduce the score. Capped at 90% — no signal
+     * is ever a sure thing.
      */
-    private int computeConfidence(List<DimensionScore> dimensions, double overallScore) {
+    private int computeAlignment(List<DimensionScore> dimensions, double overallScore) {
         if (Math.abs(overallScore) < 5) return 15;
 
         boolean isPositive = overallScore > 0;
@@ -499,11 +505,11 @@ public class SignalEngine {
         if (contradictions >= 2) raw *= 0.6;
         else if (contradictions >= 1) raw *= 0.8;
 
-        int confidence = (int) (raw * 0.9);
-        return Math.max(15, Math.min(90, confidence));
+        int alignment = (int) (raw * 0.9);
+        return Math.max(15, Math.min(90, alignment));
     }
 
-    private String determineSignalLabel(double score, int confidence,
+    private String determineSignalLabel(double score, int alignment,
                                         com.cryptoradar.signal.model.MarketRegime regime) {
         int[] thresholds = regimeAdjustedThresholds(regime);
         int strongBuyMin = thresholds[0];
@@ -511,10 +517,10 @@ public class SignalEngine {
         int strongSellMax = thresholds[2];
         int sellMax       = thresholds[3];
 
-        if (score >= strongBuyMin && confidence >= 60) return STRONG_BUY;
-        if (score >= buyMin        && confidence >= 35) return BUY;
-        if (score <= strongSellMax && confidence >= 60) return STRONG_SELL;
-        if (score <= sellMax       && confidence >= 35) return SELL;
+        if (score >= strongBuyMin && alignment >= 60) return STRONG_BUY;
+        if (score >= buyMin        && alignment >= 35) return BUY;
+        if (score <= strongSellMax && alignment >= 60) return STRONG_SELL;
+        if (score <= sellMax       && alignment >= 35) return SELL;
         return NEUTRAL;
     }
 
@@ -553,11 +559,11 @@ public class SignalEngine {
         return new int[]{strongBuy, buy, strongSell, sell};
     }
 
-    private String determineAlertLevel(String signalLabel, int confidence) {
-        if ((STRONG_BUY.equals(signalLabel) || STRONG_SELL.equals(signalLabel)) && confidence >= 60) {
+    private String determineAlertLevel(String signalLabel, int alignment) {
+        if ((STRONG_BUY.equals(signalLabel) || STRONG_SELL.equals(signalLabel)) && alignment >= 60) {
             return "OPPORTUNITY";
         }
-        if ((BUY.equals(signalLabel) || SELL.equals(signalLabel)) && confidence >= 35) {
+        if ((BUY.equals(signalLabel) || SELL.equals(signalLabel)) && alignment >= 35) {
             return "WATCH";
         }
         return "NEUTRAL";

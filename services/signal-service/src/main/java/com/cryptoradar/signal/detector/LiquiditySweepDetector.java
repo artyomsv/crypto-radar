@@ -87,7 +87,7 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
     private static final double STOP_BUFFER_ATR = 0.5;
 
     private static final double TARGET_R_MULTIPLE = 5.0;
-    private static final int STRONG_SIGNAL_CONFIDENCE = 70;
+    private static final int STRONG_SIGNAL_ALIGNMENT = 70;
 
     /**
      * LS-specific minimum stop distance. Protects against LTC-class contamination:
@@ -226,15 +226,15 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
                                 : Math.min(rMultipleTarget, structuralTarget);
         double rr = risk > 0 ? Math.abs(target - entry) / risk : 0.0;
 
-        int confidence = computeConfidence(context, trigger, isLong);
-        String signalType = mapSignalType(direction, confidence);
+        int alignment = computeAlignment(context, trigger, isLong);
+        String signalType = mapSignalType(direction, alignment);
         List<String> reasons = buildReasons(direction, trigger, swingHigh, swingLow, atr14, context);
 
         return new TradeSetup(NAME, context.symbol(), direction, signalType,
-                entry, stop, target, rr, confidence, reasons, Instant.now());
+                entry, stop, target, rr, alignment, reasons, Instant.now());
     }
 
-    private int computeConfidence(MarketContext context, CandleBar trigger, boolean isLong) {
+    private int computeAlignment(MarketContext context, CandleBar trigger, boolean isLong) {
         double derivScore = ContextValues.dimensionScore(context.dimensionScores(), "Derivatives");
         double whaleScore = ContextValues.dimensionScore(context.dimensionScores(), "Whale");
         double orderBookScore = ContextValues.dimensionScore(context.dimensionScores(), "OrderBook");
@@ -254,9 +254,9 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
         return Math.min(95, score);
     }
 
-    private String mapSignalType(String direction, int confidence) {
+    private String mapSignalType(String direction, int alignment) {
         boolean isLong = DIRECTION_LONG.equals(direction);
-        if (confidence >= STRONG_SIGNAL_CONFIDENCE) return isLong ? "STRONG_BUY" : "STRONG_SELL";
+        if (alignment >= STRONG_SIGNAL_ALIGNMENT) return isLong ? "STRONG_BUY" : "STRONG_SELL";
         return isLong ? "BUY" : "SELL";
     }
 

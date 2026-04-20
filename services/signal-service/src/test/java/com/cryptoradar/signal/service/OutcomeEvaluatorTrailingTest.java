@@ -178,7 +178,7 @@ class OutcomeEvaluatorTrailingTest {
         out.setStrategy("unit-test");
         out.setSignalType("BUY");
         out.setRiskRewardRatio(5.0);
-        out.setConfidence(60);
+        out.setAlignment(60);
         out.setOverallScore(40.0);
         out.setFiredAt(Instant.now().minusSeconds(3600));
         out.setSignalId("test-" + Instant.now().toEpochMilli());

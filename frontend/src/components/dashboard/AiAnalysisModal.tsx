@@ -119,7 +119,7 @@ Review the data below carefully, then provide:
 ## OUR AUTOMATED SIGNAL (for reference — challenge it)
 - Signal: ${computed?.signal ?? 'N/A'}
 - Overall Score: ${num(computed?.overallScore)}/100
-- Confidence: ${computed?.confidence ?? 'N/A'}%
+- Alignment: ${computed?.alignment ?? 'N/A'}%
 - Dimension Breakdown:
 ${dimSummary || '  No dimension data'}
 
