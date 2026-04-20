@@ -39,6 +39,11 @@ class TrailConfigTest {
     }
 
     @Test
+    void rejectsNegativeStep() {
+        assertThrows(IllegalArgumentException.class, () -> new TrailConfig(1.0, -0.1, 0.5));
+    }
+
+    @Test
     void rejectsNegativeOffset() {
         assertThrows(IllegalArgumentException.class, () -> new TrailConfig(1.0, 0.5, -0.1));
     }
