@@ -1,5 +1,7 @@
 package com.cryptoradar.signal.service;
 
+import com.cryptoradar.core.TrailCalculator;
+import com.cryptoradar.core.TrailConfig;
 import com.cryptoradar.signal.model.CandleBar;
 import com.cryptoradar.signal.model.OutcomeStatus;
 import com.cryptoradar.signal.model.SignalOutcome;
@@ -12,6 +14,7 @@ import org.jboss.logging.Logger;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Every minute, walks forward through the latest 1m candles of each PENDING
@@ -153,36 +156,29 @@ public class OutcomeEvaluator {
         double risk = Math.abs(entry - outcome.getStopPrice());
         if (risk <= 0) return;
 
-        // Use the cumulative MFE (already refreshed by updateExcursions for this
-        // bar). Doing this — rather than reading bar.high() / bar.low() in
-        // isolation — matters for two cases:
-        //   1. Backfill: existing PENDING rows with historical peaks above
-        //      activation must ratchet the trail immediately on the first
-        //      evaluator tick after deploy, without waiting for a new peak.
-        //   2. Pull-backs: a bar whose high is below the lifetime peak must
-        //      still track the ratcheted level rather than reset to a lower rung.
+        // Use cumulative MFE so backfill (historical peak) and pull-backs (peak
+        // already past) both work on the first evaluator tick.
         double riskPct = risk / entry * 100.0;
         if (riskPct <= 0) return;
         double mfeR = outcome.getMaxFavorablePct() / riskPct;
 
-        double activationR = outcome.getTrailActivationR();
-        if (mfeR < activationR) return;
+        TrailConfig config = new TrailConfig(
+                outcome.getTrailActivationR(),
+                outcome.getTrailStepR(),
+                outcome.getTrailOffsetR());
 
-        double stepR = outcome.getTrailStepR();
-        double offsetR = outcome.getTrailOffsetR();
-        double rung = Math.floor((mfeR - activationR) / stepR);
-        double newTrailR = activationR + rung * stepR - offsetR;
+        Optional<Double> newTrailR = TrailCalculator.computeNewTrailR(
+                mfeR, config, outcome.getTrailHighestR());
+        if (newTrailR.isEmpty()) return;
 
-        if (newTrailR <= outcome.getTrailHighestR()) return;
-
-        outcome.setTrailHighestR(newTrailR);
-        double newStop = isLong ? entry + newTrailR * risk
-                                : entry - newTrailR * risk;
+        double newR = newTrailR.get();
+        outcome.setTrailHighestR(newR);
+        double newStop = isLong ? entry + newR * risk : entry - newR * risk;
         outcome.setDynamicStopPrice(newStop);
         if (outcome.getTrailTriggeredAt() == null) {
             outcome.setTrailTriggeredAt(bar.time());
             LOG.infof("TRAIL activated %s %s at rung %.2fR → stop=%.4f",
-                    outcome.getSymbol(), outcome.getDirection(), newTrailR, newStop);
+                    outcome.getSymbol(), outcome.getDirection(), newR, newStop);
         }
     }
 
