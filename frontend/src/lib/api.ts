@@ -24,13 +24,20 @@ async function sendJson<T>(
       body: body ? JSON.stringify(body) : undefined,
     });
     const text = await response.text();
-    const parsed = text ? JSON.parse(text) : null;
+    let parsed: unknown = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // non-JSON body; keep raw text for diagnostic use below, parsed stays null
+      }
+    }
     if (!response.ok) {
-      return {
-        data: null,
-        status: response.status,
-        error: (parsed && typeof parsed === 'object' && 'error' in parsed) ? String(parsed.error) : `HTTP ${response.status}`,
-      };
+      const errorMsg =
+        parsed && typeof parsed === 'object' && 'error' in parsed
+          ? String((parsed as { error: unknown }).error)
+          : text || `HTTP ${response.status}`;
+      return { data: null, status: response.status, error: errorMsg };
     }
     return { data: parsed as T, status: response.status, error: null };
   } catch (e) {

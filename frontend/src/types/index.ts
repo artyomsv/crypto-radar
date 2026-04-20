@@ -512,7 +512,7 @@ export interface WhyView {
   tradeId: number;
   signalId: string | null;
   symbol: string;
-  direction: string;
+  direction: 'LONG' | 'SHORT';
   strategy: string | null;
   openedAt: string;
   signalSnapshot: Record<string, unknown>;
