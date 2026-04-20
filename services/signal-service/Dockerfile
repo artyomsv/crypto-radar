@@ -1,17 +1,24 @@
-# Stage 1: Build
+# Stage 1: Install shared-trade-core into local Maven repo
+FROM maven:3.9-eclipse-temurin-21-alpine AS shared
+
+WORKDIR /build/shared-trade-core
+COPY shared-trade-core/pom.xml ./pom.xml
+COPY shared-trade-core/src ./src
+RUN mvn install -DskipTests -B
+
+# Stage 2: Build signal-service (reads shared module from the reused /root/.m2)
 FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 
-WORKDIR /build
+COPY --from=shared /root/.m2 /root/.m2
 
-# Copy dependency descriptor first for layer caching
-COPY pom.xml .
+WORKDIR /build
+COPY services/signal-service/pom.xml ./pom.xml
 RUN mvn dependency:go-offline -B
 
-# Copy source and build
-COPY src/ ./src/
+COPY services/signal-service/src/ ./src/
 RUN mvn package -DskipTests -Dquarkus.package.jar.type=uber-jar
 
-# Stage 2: Runtime
+# Stage 3: Runtime
 FROM eclipse-temurin:21-jre-alpine
 
 RUN addgroup -g 1001 appgroup && \

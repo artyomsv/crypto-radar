@@ -191,7 +191,9 @@ services:
       - cryptoradar-net
 
   signal-service:
-    build: ./services/signal-service
+    build:
+      context: .
+      dockerfile: services/signal-service/Dockerfile
     restart: unless-stopped
     ports:
       - "${SIGNAL_SERVICE_PORT:-31086}:8086"
