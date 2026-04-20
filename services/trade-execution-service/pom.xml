@@ -95,6 +95,12 @@
             <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
         </dependency>
 
+        <!-- Bean validation (@Valid, @NotBlank, @Pattern, @Min, @Positive) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-validator</artifactId>
+        </dependency>
+
         <!-- Tests -->
         <dependency>
             <groupId>io.quarkus</groupId>
