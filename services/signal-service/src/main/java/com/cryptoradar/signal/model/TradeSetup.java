@@ -1,5 +1,7 @@
 package com.cryptoradar.signal.model;
 
+import com.cryptoradar.core.TrailConfig;
+
 import java.time.Instant;
 import java.util.List;
 

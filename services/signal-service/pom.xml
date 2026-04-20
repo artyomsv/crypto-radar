@@ -29,6 +29,13 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- Shared trade-outcome primitives (trail math, R-unit helpers) -->
+        <dependency>
+            <groupId>com.cryptoradar</groupId>
+            <artifactId>shared-trade-core</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+
         <!-- RESTEasy Reactive -->
         <dependency>
             <groupId>io.quarkus</groupId>

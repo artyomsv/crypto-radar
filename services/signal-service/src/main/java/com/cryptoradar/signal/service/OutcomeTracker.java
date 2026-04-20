@@ -1,5 +1,6 @@
 package com.cryptoradar.signal.service;
 
+import com.cryptoradar.core.TrailConfig;
 import com.cryptoradar.signal.model.DimensionScore;
 import com.cryptoradar.signal.model.SignalOutcome;
 import com.cryptoradar.signal.model.TradeSetup;
@@ -128,7 +129,7 @@ public class OutcomeTracker {
      * onto the outcome. Leaves the entity-level defaults in place when no
      * config was supplied (legacy setups or the dimension-scoring path).
      */
-    private void applyTrailConfig(SignalOutcome outcome, com.cryptoradar.signal.model.TrailConfig config) {
+    private void applyTrailConfig(SignalOutcome outcome, TrailConfig config) {
         if (config == null) return;
         outcome.setTrailActivationR(config.activationR());
         outcome.setTrailStepR(config.stepR());
