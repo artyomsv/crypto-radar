@@ -5,13 +5,21 @@ import { ExchangeSetupModal } from './ExchangeSetupModal';
 import type { ExchangeAccount } from '@/types';
 
 export function ExchangeAccountsSection() {
-  const { accounts, loading, create } = useExecutionAccounts();
+  const { accounts, loading, error, create } = useExecutionAccounts();
   const [showSetup, setShowSetup] = useState(false);
 
   if (loading) {
     return (
       <div className="rounded-lg bg-[#141820] p-6 text-center text-xs text-gray-500">
         Loading exchanges…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-[#ef4444] bg-[#2d0e0e] p-4 text-center text-xs text-[#ef4444]">
+        Could not load exchange accounts: {error}
       </div>
     );
   }
@@ -31,6 +39,9 @@ export function ExchangeAccountsSection() {
         </button>
       )}
       {showSetup && (
+        // TODO: plumb from server — trade-execution-service reads execution.mainnet.enabled
+        // but doesn't expose it via REST yet. Backend rejects MAINNET creation regardless
+        // (PermissionValidator returns 400), so a false-by-default client gate is safe.
         <ExchangeSetupModal
           mainnetEnabled={false}
           onClose={() => setShowSetup(false)}

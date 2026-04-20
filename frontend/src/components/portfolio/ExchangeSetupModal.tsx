@@ -47,20 +47,24 @@ export function ExchangeSetupModal({ onClose, onSubmit, mainnetEnabled }: Props)
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
       onClick={onClose}
     >
-      <div
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSubmit();
+        }}
         className="w-[420px] rounded-lg border border-[#1c1f27] bg-[#141820] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <div className="text-sm font-semibold text-white">Add Bybit account</div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-white">
             <X size={16} />
           </button>
         </div>
 
         {!mainnetEnabled && (
           <div className="mb-3 rounded border border-[#f7a600] bg-[#2d1a0e] p-2 text-[10px] text-[#f7a600]">
-            ⚠ DEMO only until server-side mainnet flag is set
+            DEMO only until server-side mainnet flag is set
           </div>
         )}
 
@@ -144,20 +148,21 @@ export function ExchangeSetupModal({ onClose, onSubmit, mainnetEnabled }: Props)
 
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={onClose}
             className="flex-1 rounded bg-[#222] px-2 py-2 text-xs text-gray-300 hover:bg-[#2a2f38]"
           >
             Cancel
           </button>
           <button
-            onClick={handleSubmit}
+            type="submit"
             disabled={submitting}
             className="flex-1 rounded bg-[#4ade80] px-2 py-2 text-xs font-semibold text-black hover:bg-[#6ee498] disabled:opacity-50"
           >
             {submitting ? 'Validating…' : 'Validate + save'}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
