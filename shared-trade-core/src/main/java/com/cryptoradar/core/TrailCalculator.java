@@ -23,6 +23,15 @@ public final class TrailCalculator {
 
     private TrailCalculator() {}
 
+    /**
+     * @param mfeR            cumulative Maximum Favorable Excursion in R-units
+     * @param config          trail parameters (activationR, stepR, offsetR)
+     * @param currentHighestR the highest rung the trail has previously reached
+     *                        (0.0 if the trail has never advanced)
+     * @return {@code Optional.of(newTrailR)} when the trail should advance,
+     *         {@code Optional.empty()} when MFE is below activation or the
+     *         computed rung does not exceed {@code currentHighestR}
+     */
     public static Optional<Double> computeNewTrailR(double mfeR, TrailConfig config, double currentHighestR) {
         if (mfeR < config.activationR()) {
             return Optional.empty();
