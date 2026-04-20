@@ -42,11 +42,11 @@ public class CredentialCipher {
 
     public CredentialCipher(
             @ConfigProperty(name = "execution.master-key") String masterKeyBase64,
-            @ConfigProperty(name = "execution.master-key-prev", defaultValue = "") String prevKeyBase64) {
+            @ConfigProperty(name = "execution.master-key-prev") java.util.Optional<String> prevKeyBase64) {
         this.primaryKey = loadKey(masterKeyBase64, "execution.master-key");
-        this.previousKey = (prevKeyBase64 == null || prevKeyBase64.isBlank())
-                ? null
-                : loadKey(prevKeyBase64, "execution.master-key-prev");
+        this.previousKey = prevKeyBase64.filter(s -> !s.isBlank())
+                .map(s -> loadKey(s, "execution.master-key-prev"))
+                .orElse(null);
     }
 
     private static SecretKeySpec loadKey(String b64, String configName) {

@@ -45,11 +45,11 @@ public class BybitV5RestClient {
     @Inject ObjectMapper mapper;
     @Inject CredentialCipher cipher;
 
-    @ConfigProperty(name = "bybit.rest-base-override.DEMO", defaultValue = "")
-    String demoBaseOverride;
+    @ConfigProperty(name = "bybit.rest-base-override.DEMO")
+    java.util.Optional<String> demoBaseOverride;
 
-    @ConfigProperty(name = "bybit.rest-base-override.MAINNET", defaultValue = "")
-    String mainnetBaseOverride;
+    @ConfigProperty(name = "bybit.rest-base-override.MAINNET")
+    java.util.Optional<String> mainnetBaseOverride;
 
     /** Shape: result = { "list": [...] } for many Bybit list endpoints. */
     public record ListResult<T>(@com.fasterxml.jackson.annotation.JsonProperty("list") java.util.List<T> list) {}
@@ -139,14 +139,13 @@ public class BybitV5RestClient {
     // =====================================================================
 
     private String baseFor(String environment) {
-        String override = switch (environment) {
+        java.util.Optional<String> override = switch (environment) {
             case "DEMO" -> demoBaseOverride;
             case "MAINNET" -> mainnetBaseOverride;
-            default -> "";
+            default -> java.util.Optional.empty();
         };
-        return (override == null || override.isEmpty())
-                ? BybitV5Endpoints.restBaseFor(environment)
-                : override;
+        return override.filter(s -> !s.isBlank())
+                .orElseGet(() -> BybitV5Endpoints.restBaseFor(environment));
     }
 
     private JavaType simpleType(Class<?> resultType) {
