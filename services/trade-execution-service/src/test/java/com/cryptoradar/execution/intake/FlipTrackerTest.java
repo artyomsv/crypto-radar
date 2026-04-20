@@ -27,6 +27,12 @@ class FlipTrackerTest {
     }
 
     @Test
+    void twoConsecutiveStrongSellTriggersEnterShort() {
+        tracker.observe("BTCUSDT", "STRONG_SELL", 2, false, false);
+        assertEquals(ENTER_SHORT, tracker.observe("BTCUSDT", "STRONG_SELL", 2, false, false));
+    }
+
+    @Test
     void persistenceOneFiresImmediately() {
         assertEquals(ENTER_LONG, tracker.observe("BTCUSDT", "STRONG_BUY", 1, false, false));
     }
