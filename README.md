@@ -6,11 +6,14 @@ Real-time cryptocurrency monitoring and trading signal platform with microservic
 
 ## Features
 
-- **Live Market Dashboard** -- real-time prices, sparklines, and market overview for 14 cryptocurrencies
-- **Trading Signals** -- automated 6-dimension scoring engine (Technical, Whale, Derivatives, Sentiment, Order Book, Macro) with confidence-weighted signal generation
-- **Trade Setup Detectors** -- pluggable rule-based detectors (`TrendContinuationDetector`, `LiquiditySweepDetector`) that emit discrete trade setups alongside dimension scoring; new detectors auto-register as CDI beans, each measured independently by the outcome tracker
-- **Signal Outcome Tracking** -- every actionable signal and detector setup is persisted and evaluated against live 1m candles; `GET /api/signals/metrics?periodDays=30` returns win rate, average R-multiple, profit factor, and per-strategy / per-signal-type / per-symbol breakdowns so signal quality can be measured, not guessed
-- **Closed-Loop Feedback UI** -- visual feedback loop card on the Signals page showing fired→pending→closed→win-rate flow plus per-strategy comparison table
+- **Live Market Dashboard** -- real-time prices, sparklines, and market overview for 13 cryptocurrencies
+- **Trading Signals** -- automated 6-dimension scoring engine (Technical, Whale, Derivatives, Sentiment, Order Book, Macro) with alignment-weighted signal generation (formerly "confidence" — renamed because outcome analysis showed an inverse correlation with win rate)
+- **Market Regime Detection** -- BTC 50d SMA + 7d slope classifier produces `BULL` / `BEAR` / `CHOP` / `UNKNOWN`; feeds the signal engine to raise counter-trend thresholds (e.g., suppresses SELLs while regime is BULL)
+- **Trade Setup Detectors** -- pluggable rule-based detectors (`TrendContinuationDetector`, `LiquiditySweepDetector`) that emit discrete trade setups alongside dimension scoring; new detectors auto-register as CDI beans, each measured independently by the outcome tracker. Each detector can carry its own `TrailConfig` (activation R, step R, offset R) for per-strategy trailing-stop calibration
+- **Trailing-Stop Ladder** -- every tracked outcome ratchets a dynamic stop upward as MFE climbs: default config activates at +1R, steps 0.5R, offsets 0.5R behind peak (configurable per strategy). Closed trades record `final_exit_reason` (`TARGET` / `TRAIL_STOP` / `INITIAL_STOP` / `EXPIRED`) so the trail's contribution is attributable in metrics
+- **Signal Outcome Tracking** -- every actionable signal and detector setup is persisted as a TimescaleDB hypertable row and evaluated against live 1m candles. Each row captures entry/stop/target, MFE/MAE, time-to-MFE/MAE, realized R (net of round-trip fees), trail ladder state, and exit reason. `GET /api/signals/metrics?periodDays=30` returns aggregate win rate + avg R-multiple + profit factor, plus breakdowns `byStrategy` / `bySignalType` / `bySymbol` / `byExitReason` / `byAlignmentBucket` and the `currentRegime`
+- **Deployment Markers** -- engine-change cutover timestamps stored in `deployment_markers` and exposed via `GET /api/signals/deployments`, so outcome metrics can be sliced cleanly "before/after" a rollout
+- **Closed-Loop Feedback UI** -- visual feedback loop card on the Signals page showing fired→pending→closed→win-rate flow. Trade ledger surfaces per-trade exit reason as distinct badges (`TARGET` / `TRAIL` / `STOP` / `LOCK +NR` for open-with-armed-trail / `EXPIRED`)
 - **AI Analysis** -- integrated Google Gemini AI for on-demand trade evaluation with minimum 3:1 R:R constraint
 - **Whale Tracking** -- real-time large trade detection across 6 exchanges (Binance, Coinbase, Kraken, OKX, Bybit, Bitfinex) + Whale Alert on-chain monitoring
 - **Derivatives & Leverage** -- funding rates, open interest, long/short ratios, live liquidation streams, estimated liquidation level maps
@@ -57,9 +60,9 @@ API Gateway (Quarkus) :8080
 
 **Frontend:** React 19, TypeScript, Vite 6, Tailwind CSS, TradingView Lightweight Charts
 
-**Data:** TimescaleDB (hypertables), PostgreSQL, Redis pub/sub
+**Data:** TimescaleDB (hypertables with per-table compression at 7d), PostgreSQL, Redis pub/sub
 
-**Infrastructure:** Docker Compose, Nginx, multi-stage builds
+**Infrastructure:** Docker Compose + Nginx for local dev. Kustomize + CloudNativePG + Barman Cloud for k3s deployment (see `devops/README.md`)
 
 ## Quick Start
 

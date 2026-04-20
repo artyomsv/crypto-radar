@@ -82,6 +82,27 @@ The TimescaleDB extension is created via the cluster's `postInitTemplateSQL`
 SQL ConfigMap therefore does **not** contain a `CREATE EXTENSION timescaledb`
 line — that would fail because the application user lacks superuser rights.
 
+### Known drift vs. local docker-compose
+
+`db/init/signal-init.sql` has received several incremental additions since
+the overlay ConfigMaps were first generated:
+
+- Trail-stop columns + defaults (PR2)
+- `time_to_mfe_seconds`, `time_to_mae_seconds`, `fees_bps_round_trip` (PR5)
+- `confidence → alignment` column rename (PR6c)
+- `deployment_markers` table + seed rows
+
+The ConfigMap in `overlays/dev/marketdata-db-init-sql.yaml` covers only the
+`01-timescaledb` / `02-whale` / `03-derivatives` schemas — it does not yet
+include `signal-init.sql` or its subsequent migrations. For fresh k3s
+deployments, the signal-service expects to find the extended schema, so
+either mirror `signal-init.sql` into the ConfigMap (as `04-signal.sql`) or
+run it manually via `kubectl exec` on the CNPG primary before the first
+signal-service pod starts.
+
+Same caveat for `derivatives-init.sql`'s `next_funding_time` column — the
+ALTER is idempotent and safe to re-run against any TimescaleDB instance.
+
 ## Notes on the TimescaleDB image
 
 CNPG requires a postgres image that bundles the timescaledb extension binary
