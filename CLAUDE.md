@@ -10,6 +10,7 @@ Project memory for future Claude sessions. Start here before making changes.
 - **Infra**: Docker Compose for local; Kustomize + CloudNativePG + Barman Cloud for k3s (`devops/`)
 - **CI/local tools**: `mvnd` (Maven daemon) for fast iterative test runs
 - **Build chain**: `pom.xml` → Quarkus uber-jar → Dockerfile COPY into runtime image
+- **Shared Java module**: `shared-trade-core/` — pure-JAR Maven module, no framework deps. Holds `TrailCalculator`, `TrailConfig`, `RUnitMath`. Installed into local `.m2` via `mvn install`; consumed by `signal-service` (outcome evaluator's trail math) and the upcoming `trade-execution-service`.
 
 ## Services + host ports
 
