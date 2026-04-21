@@ -1,7 +1,10 @@
-import type { ExchangeAccount, UpdateAccountRequest } from '@/types';
+import { useState } from 'react';
+import type { ExchangeAccount, ExecutionPosition, UpdateAccountRequest } from '@/types';
 import { useExecutionStream } from '@/hooks/useExecutionStream';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { ExchangeCardHeader } from './ExchangeCardHeader';
 import { EquitySummary } from './EquitySummary';
+import { OpenPositionsTable } from './OpenPositionsTable';
 
 interface PatchResult {
   success: boolean;
@@ -15,6 +18,30 @@ interface Props {
 
 export function ExchangeCard({ account, onPatch }: Props) {
   const stream = useExecutionStream(account.id);
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+
+  useWebSocket({
+    onPrices: (prices: Array<{ symbol: string; price: number }>) => {
+      if (!Array.isArray(prices)) return;
+      setLivePrices((prev) => {
+        const next = { ...prev };
+        for (const p of prices) {
+          if (p.symbol && p.price) next[p.symbol] = p.price;
+        }
+        return next;
+      });
+    },
+  });
+
+  const handleRowMenu = (position: ExecutionPosition, anchor: HTMLElement) => {
+    // Task 6 will wire the popover; for now just log.
+    console.log('row menu — Task 6', position.id, anchor);
+  };
+
+  const handleWhy = (position: ExecutionPosition) => {
+    // Task 7 will open WhyModal.
+    console.log('why modal — Task 7', position.id);
+  };
 
   const handleAutoTrade = () => {
     // Task 8 will gate first-time enable with FirstTimeAutoTradeModal.
@@ -42,9 +69,12 @@ export function ExchangeCard({ account, onPatch }: Props) {
       />
       <EquitySummary wallet={stream.wallet} />
       <div className="mb-2 text-[11px] uppercase tracking-wide text-gray-500">Open positions</div>
-      <div className="rounded bg-[#141820] p-4 text-center text-[10px] text-gray-500">
-        (OpenPositionsTable renders here in Task 5)
-      </div>
+      <OpenPositionsTable
+        positions={stream.positions}
+        livePrices={livePrices}
+        onRowMenu={handleRowMenu}
+        onWhyClick={handleWhy}
+      />
       <div className="mt-4 mb-2 text-[11px] uppercase tracking-wide text-gray-500">Recent closed (last 24h)</div>
       <div className="rounded bg-[#141820] p-4 text-center text-[10px] text-gray-500">
         (RecentTradesList renders here in Task 10)
