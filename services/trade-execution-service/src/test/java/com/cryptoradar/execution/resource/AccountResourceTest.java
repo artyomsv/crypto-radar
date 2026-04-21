@@ -82,7 +82,7 @@ class AccountResourceTest {
                                 "apiKey", "demo-key",
                                 "readOnly", 0,
                                 "permissions", Map.of(
-                                        "Derivatives", List.of("Order", "Position"),
+                                        "ContractTrade", List.of("Order", "Position"),
                                         "Withdraw", List.of()
                                 )
                         ),
@@ -99,7 +99,7 @@ class AccountResourceTest {
                                 "apiKey", "bad-key",
                                 "readOnly", 0,
                                 "permissions", Map.of(
-                                        "Derivatives", List.of("Order", "Position"),
+                                        "ContractTrade", List.of("Order", "Position"),
                                         "Withdraw", List.of("Asset")
                                 )
                         ),

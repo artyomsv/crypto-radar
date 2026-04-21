@@ -27,12 +27,15 @@ public final class PermissionValidator {
       throw new IllegalStateException(
           "API key has withdraw permission — refused. Remove ALL 'Withdraw' permissions in Bybit UI and reissue the key.");
     }
-    List<String> derivatives = map.getOrDefault("Derivatives", List.of());
-    if (!derivatives.contains("Order")) {
-      throw new IllegalStateException("API key missing Derivatives:Order permission");
+    // Bybit V5 exposes perp-futures permissions under the "ContractTrade" key.
+    // (The "Derivatives" key here is for their Derivatives Trade product — different.)
+    // Verified against live /v5/user/query-api on api-demo.bybit.com.
+    List<String> contractTrade = map.getOrDefault("ContractTrade", List.of());
+    if (!contractTrade.contains("Order")) {
+      throw new IllegalStateException("API key missing ContractTrade:Order permission");
     }
-    if (!derivatives.contains("Position")) {
-      throw new IllegalStateException("API key missing Derivatives:Position permission");
+    if (!contractTrade.contains("Position")) {
+      throw new IllegalStateException("API key missing ContractTrade:Position permission");
     }
   }
 }

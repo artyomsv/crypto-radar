@@ -18,7 +18,7 @@ class PermissionValidatorTest {
     @Test
     void acceptsDerivativesOrderPositionWithoutWithdraw() {
         assertDoesNotThrow(() -> PermissionValidator.validate(perms(Map.of(
-                "Derivatives", List.of("Order", "Position"),
+                "ContractTrade", List.of("Order", "Position"),
                 "Wallet", List.of("AccountTransfer"),
                 "Withdraw", List.of()
         ))));
@@ -27,7 +27,7 @@ class PermissionValidatorTest {
     @Test
     void rejectsIfWithdrawPresent() {
         assertThrows(IllegalStateException.class, () -> PermissionValidator.validate(perms(Map.of(
-                "Derivatives", List.of("Order", "Position"),
+                "ContractTrade", List.of("Order", "Position"),
                 "Withdraw", List.of("Asset")
         ))));
     }
@@ -35,7 +35,7 @@ class PermissionValidatorTest {
     @Test
     void rejectsIfMissingDerivativesOrder() {
         assertThrows(IllegalStateException.class, () -> PermissionValidator.validate(perms(Map.of(
-                "Derivatives", List.of("Position"),
+                "ContractTrade", List.of("Position"),
                 "Withdraw", List.of()
         ))));
     }
@@ -43,7 +43,7 @@ class PermissionValidatorTest {
     @Test
     void rejectsIfMissingDerivativesPosition() {
         assertThrows(IllegalStateException.class, () -> PermissionValidator.validate(perms(Map.of(
-                "Derivatives", List.of("Order"),
+                "ContractTrade", List.of("Order"),
                 "Withdraw", List.of()
         ))));
     }

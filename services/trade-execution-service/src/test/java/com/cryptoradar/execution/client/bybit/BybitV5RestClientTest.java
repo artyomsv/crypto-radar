@@ -104,7 +104,7 @@ class BybitV5RestClientTest {
                                 "apiKey", "test-api-key",
                                 "readOnly", 0,
                                 "permissions", Map.of(
-                                        "Derivatives", List.of("Order", "Position"),
+                                        "ContractTrade", List.of("Order", "Position"),
                                         "Wallet", List.of("AccountTransfer"),
                                         "Withdraw", List.of()
                                 )
@@ -114,7 +114,7 @@ class BybitV5RestClientTest {
 
         BybitResponse<ApiKeyPermissionsV5> resp = client.queryApiKey("DEMO", apiKeyCipher, apiSecretCipher);
         assertTrue(resp.isOk());
-        assertTrue(resp.result().permissions().containsKey("Derivatives"));
+        assertTrue(resp.result().permissions().containsKey("ContractTrade"));
         assertTrue(resp.result().permissions().get("Withdraw").isEmpty());
     }
 
