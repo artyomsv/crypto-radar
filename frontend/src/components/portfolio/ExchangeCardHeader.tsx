@@ -34,6 +34,11 @@ export function ExchangeCardHeader({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {(connectionState === 'reconnecting' || connectionState === 'disconnected') && (
+          <span className="rounded bg-[#222] px-2 py-1 text-[9px] uppercase tracking-wide text-gray-400">
+            POLLING FALLBACK
+          </span>
+        )}
         <span className="text-[10px] text-gray-400">Auto-trade</span>
         <button
           type="button"

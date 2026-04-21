@@ -93,7 +93,12 @@ export function ExchangeCard({ account, onPatch }: Props) {
     console.log('settings panel — Task 12');
   };
 
-  const bodyClass = account.killSwitch ? 'opacity-[0.85] [filter:grayscale(0.3)]' : '';
+  const bodyClass = [
+    account.killSwitch ? 'opacity-[0.85] [filter:grayscale(0.3)]' : '',
+    stream.connectionState !== 'connected' && !account.killSwitch ? 'opacity-70' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   const cardBorder = account.killSwitch ? 'border-[#ef4444]' : 'border-[#1c1f27]';
 
   return (
