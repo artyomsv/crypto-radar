@@ -2,9 +2,11 @@ import { useState } from 'react';
 import type { ExchangeAccount, ExecutionPosition, UpdateAccountRequest } from '@/types';
 import { useExecutionStream } from '@/hooks/useExecutionStream';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { api } from '@/lib/api';
 import { ExchangeCardHeader } from './ExchangeCardHeader';
 import { EquitySummary } from './EquitySummary';
 import { OpenPositionsTable } from './OpenPositionsTable';
+import { PositionRowMenu } from './PositionRowMenu';
 
 interface PatchResult {
   success: boolean;
@@ -19,6 +21,7 @@ interface Props {
 export function ExchangeCard({ account, onPatch }: Props) {
   const stream = useExecutionStream(account.id);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  const [rowMenu, setRowMenu] = useState<{ position: ExecutionPosition; anchor: HTMLElement } | null>(null);
 
   useWebSocket({
     onPrices: (prices: Array<{ symbol: string; price: number }>) => {
@@ -34,13 +37,26 @@ export function ExchangeCard({ account, onPatch }: Props) {
   });
 
   const handleRowMenu = (position: ExecutionPosition, anchor: HTMLElement) => {
-    // Task 6 will wire the popover; for now just log.
-    console.log('row menu — Task 6', position.id, anchor);
+    setRowMenu({ position, anchor });
   };
 
   const handleWhy = (position: ExecutionPosition) => {
     // Task 7 will open WhyModal.
     console.log('why modal — Task 7', position.id);
+  };
+
+  const handleViewChart = (_position: ExecutionPosition) => {
+    // Wired in Task 13 (existing TradeChartModal scaffold) or filed as tech-debt.
+    console.log('chart modal — Task 13');
+  };
+
+  const handleCloseAtMarket = async (position: ExecutionPosition) => {
+    const result = await api.execution.closeTrade(account.id, position.id);
+    if (result.error) {
+      alert(`Close failed: ${result.error}`);
+      return;
+    }
+    await stream.refresh();
   };
 
   const handleAutoTrade = () => {
@@ -79,6 +95,16 @@ export function ExchangeCard({ account, onPatch }: Props) {
       <div className="rounded bg-[#141820] p-4 text-center text-[10px] text-gray-500">
         (RecentTradesList renders here in Task 10)
       </div>
+      {rowMenu && (
+        <PositionRowMenu
+          position={rowMenu.position}
+          anchor={rowMenu.anchor}
+          onClose={() => setRowMenu(null)}
+          onViewChart={() => handleViewChart(rowMenu.position)}
+          onViewWhy={() => handleWhy(rowMenu.position)}
+          onCloseAtMarket={() => handleCloseAtMarket(rowMenu.position)}
+        />
+      )}
     </div>
   );
 }
