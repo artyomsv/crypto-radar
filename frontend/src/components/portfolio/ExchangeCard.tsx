@@ -10,6 +10,7 @@ import { PositionRowMenu } from './PositionRowMenu';
 import { WhyModal } from './WhyModal';
 import { FirstTimeAutoTradeModal } from './FirstTimeAutoTradeModal';
 import { KillSwitchBanner } from './KillSwitchBanner';
+import { RecentTradesList } from './RecentTradesList';
 
 interface PatchResult {
   success: boolean;
@@ -123,9 +124,10 @@ export function ExchangeCard({ account, onPatch }: Props) {
           </div>
         )}
         <div className="mt-4 mb-2 text-[11px] uppercase tracking-wide text-gray-500">Recent closed (last 24h)</div>
-        <div className="rounded bg-[#141820] p-4 text-center text-[10px] text-gray-500">
-          (RecentTradesList renders here in Task 10)
-        </div>
+        <RecentTradesList
+          trades={stream.trades}
+          onShowAll={() => console.log('trade ledger — wired in Task 13')}
+        />
       </div>
       {rowMenu && (
         <PositionRowMenu
