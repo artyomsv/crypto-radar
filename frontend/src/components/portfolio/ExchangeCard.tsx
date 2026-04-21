@@ -8,6 +8,7 @@ import { EquitySummary } from './EquitySummary';
 import { OpenPositionsTable } from './OpenPositionsTable';
 import { PositionRowMenu } from './PositionRowMenu';
 import { WhyModal } from './WhyModal';
+import { FirstTimeAutoTradeModal } from './FirstTimeAutoTradeModal';
 
 interface PatchResult {
   success: boolean;
@@ -24,6 +25,7 @@ export function ExchangeCard({ account, onPatch }: Props) {
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [rowMenu, setRowMenu] = useState<{ position: ExecutionPosition; anchor: HTMLElement } | null>(null);
   const [whyFor, setWhyFor] = useState<ExecutionPosition | null>(null);
+  const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
 
   useWebSocket({
     onPrices: (prices: Array<{ symbol: string; price: number }>) => {
@@ -58,9 +60,26 @@ export function ExchangeCard({ account, onPatch }: Props) {
     await stream.refresh();
   };
 
+  const firstTimeKey = `execution.auto-trade-confirmed.${account.id}`;
+
   const handleAutoTrade = () => {
-    // Task 8 will gate first-time enable with FirstTimeAutoTradeModal.
-    onPatch(account.id, { autoTradeEnabled: !account.autoTradeEnabled });
+    if (account.autoTradeEnabled) {
+      // Disabling never needs confirmation.
+      onPatch(account.id, { autoTradeEnabled: false });
+      return;
+    }
+    const alreadyConfirmed = window.localStorage.getItem(firstTimeKey) === 'true';
+    if (alreadyConfirmed) {
+      onPatch(account.id, { autoTradeEnabled: true });
+      return;
+    }
+    setShowAutoTradeConfirm(true);
+  };
+
+  const confirmAutoTradeEnable = () => {
+    window.localStorage.setItem(firstTimeKey, 'true');
+    setShowAutoTradeConfirm(false);
+    onPatch(account.id, { autoTradeEnabled: true });
   };
 
   const handleKillSwitch = () => {
@@ -109,6 +128,13 @@ export function ExchangeCard({ account, onPatch }: Props) {
           accountId={account.id}
           position={whyFor}
           onClose={() => setWhyFor(null)}
+        />
+      )}
+      {showAutoTradeConfirm && (
+        <FirstTimeAutoTradeModal
+          account={account}
+          onConfirm={confirmAutoTradeEnable}
+          onCancel={() => setShowAutoTradeConfirm(false)}
         />
       )}
     </div>
