@@ -52,8 +52,14 @@ public class WebSocketBroadcaster {
         broadcast(message);
     }
 
+    private static final String CRYPTO_ENDPOINT_ID = CryptoWebSocket.class.getName();
+
     private void broadcast(String message) {
+        // Only broadcast crypto/price/signal/whale/derivatives events to CryptoWebSocket
+        // clients. OpenConnections is app-wide — without this filter, every frame leaks
+        // into /ws/execution and any other WebSocket endpoint.
         connections.forEach(connection -> {
+            if (!CRYPTO_ENDPOINT_ID.equals(connection.endpointId())) return;
             connection.sendText(message).subscribe().with(
                     v -> {},
                     error -> LOG.warnf("Failed to send to %s: %s", connection.id(), error.getMessage())

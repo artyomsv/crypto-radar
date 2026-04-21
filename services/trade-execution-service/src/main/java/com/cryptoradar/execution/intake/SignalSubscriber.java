@@ -102,15 +102,23 @@ public class SignalSubscriber {
     void setupSubscription(RedisConnection conn) {
         LOG.infof("SignalSubscriber subscribed to %s", CHANNEL);
         conn.handler(resp -> {
-            try {
-                if (resp == null || resp.size() < 3) return;
-                String kind = resp.get(0).toString();
-                if (!"message".equals(kind)) return;
-                String payload = resp.get(2).toString();
-                onMessage(payload);
-            } catch (RuntimeException e) {
-                LOG.errorf(e, "message handler error");
-            }
+            if (resp == null || resp.size() < 3) return;
+            String kind = resp.get(0).toString();
+            if (!"message".equals(kind)) return;
+            String payload = resp.get(2).toString();
+            // Redis pub/sub callbacks run on the Vert.x event-loop thread; @Transactional
+            // requires a worker thread. Dispatch to the blocking pool so onMessage can
+            // open a JTA tx cleanly.
+            vertx.executeBlocking(() -> {
+                try {
+                    onMessage(payload);
+                } catch (RuntimeException e) {
+                    LOG.errorf(e, "message handler error");
+                }
+                return null;
+            }).subscribe().with(
+                    v -> {},
+                    err -> LOG.errorf(err, "executeBlocking failed for signal message"));
         });
         conn.send(io.vertx.mutiny.redis.client.Request.cmd(io.vertx.mutiny.redis.client.Command.SUBSCRIBE).arg(CHANNEL))
                 .subscribe().with(
