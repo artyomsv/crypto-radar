@@ -7,6 +7,7 @@ import { ExchangeCardHeader } from './ExchangeCardHeader';
 import { EquitySummary } from './EquitySummary';
 import { OpenPositionsTable } from './OpenPositionsTable';
 import { PositionRowMenu } from './PositionRowMenu';
+import { WhyModal } from './WhyModal';
 
 interface PatchResult {
   success: boolean;
@@ -22,6 +23,7 @@ export function ExchangeCard({ account, onPatch }: Props) {
   const stream = useExecutionStream(account.id);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [rowMenu, setRowMenu] = useState<{ position: ExecutionPosition; anchor: HTMLElement } | null>(null);
+  const [whyFor, setWhyFor] = useState<ExecutionPosition | null>(null);
 
   useWebSocket({
     onPrices: (prices: Array<{ symbol: string; price: number }>) => {
@@ -40,10 +42,7 @@ export function ExchangeCard({ account, onPatch }: Props) {
     setRowMenu({ position, anchor });
   };
 
-  const handleWhy = (position: ExecutionPosition) => {
-    // Task 7 will open WhyModal.
-    console.log('why modal — Task 7', position.id);
-  };
+  const handleWhy = (position: ExecutionPosition) => setWhyFor(position);
 
   const handleViewChart = (_position: ExecutionPosition) => {
     // Wired in Task 13 (existing TradeChartModal scaffold) or filed as tech-debt.
@@ -103,6 +102,13 @@ export function ExchangeCard({ account, onPatch }: Props) {
           onViewChart={() => handleViewChart(rowMenu.position)}
           onViewWhy={() => handleWhy(rowMenu.position)}
           onCloseAtMarket={() => handleCloseAtMarket(rowMenu.position)}
+        />
+      )}
+      {whyFor && (
+        <WhyModal
+          accountId={account.id}
+          position={whyFor}
+          onClose={() => setWhyFor(null)}
         />
       )}
     </div>
