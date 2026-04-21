@@ -7,6 +7,7 @@ import com.cryptoradar.execution.repository.ExchangeAccountRepository;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
 import com.cryptoradar.execution.repository.ExecutionEventRepository;
 import com.cryptoradar.execution.security.CredentialCipher;
+import com.cryptoradar.execution.testutil.LiveDbGuard;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
@@ -16,6 +17,7 @@ import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,13 +50,18 @@ class OrderReconcilerTest {
                     Map.entry("bybit.rest-base-override.MAINNET", "http://localhost:38102"),
                     Map.entry("execution.master-key", keyB64),
                     Map.entry("execution.master-key-prev", keyB64),
-                    Map.entry("execution.mainnet.enabled", "false"),
-                    // Use the running TimescaleDB container that already has execution-init.sql applied.
-                    Map.entry("quarkus.datasource.jdbc.url", "jdbc:postgresql://localhost:31432/marketdata"),
-                    Map.entry("quarkus.datasource.username", "cryptoradar"),
-                    Map.entry("quarkus.datasource.password", "cryptoradar_ts_pass")
+                    Map.entry("execution.mainnet.enabled", "false")
+                    // DB config comes from src/test/resources/application.properties
+                    // which turns on Dev Services → throwaway Postgres container.
+                    // Never add a quarkus.datasource.jdbc.url override here;
+                    // LiveDbGuard fails the class if someone does.
             );
         }
+    }
+
+    @BeforeAll
+    static void guardAgainstLiveDb() {
+        LiveDbGuard.assertNotLiveDb();
     }
 
     static WireMockServer wireMock;

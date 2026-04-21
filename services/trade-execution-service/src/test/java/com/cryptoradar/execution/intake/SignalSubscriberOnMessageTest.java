@@ -3,11 +3,13 @@ package com.cryptoradar.execution.intake;
 import com.cryptoradar.execution.repository.ExchangeAccountRepository;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
 import com.cryptoradar.execution.repository.ExecutionEventRepository;
+import com.cryptoradar.execution.testutil.LiveDbGuard;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -41,11 +43,11 @@ class SignalSubscriberOnMessageTest {
                     Map.entry("execution.mainnet.enabled", "false"),
                     // Point Redis at a loopback port that nothing is listening on —
                     // we never exercise the subscribe path in this test.
-                    Map.entry("quarkus.redis.hosts", "redis://localhost:38199"),
-                    // Use the running TimescaleDB container that already has execution-init.sql applied.
-                    Map.entry("quarkus.datasource.jdbc.url", "jdbc:postgresql://localhost:31432/marketdata"),
-                    Map.entry("quarkus.datasource.username", "cryptoradar"),
-                    Map.entry("quarkus.datasource.password", "cryptoradar_ts_pass")
+                    Map.entry("quarkus.redis.hosts", "redis://localhost:38199")
+                    // DB config comes from src/test/resources/application.properties
+                    // which turns on Dev Services → throwaway Postgres container.
+                    // Never add a quarkus.datasource.jdbc.url override here;
+                    // LiveDbGuard fails the class if someone does.
             );
         }
     }
@@ -54,6 +56,11 @@ class SignalSubscriberOnMessageTest {
     @Inject ExchangeAccountRepository accountRepo;
     @Inject ExecutedTradeRepository tradeRepo;
     @Inject ExecutionEventRepository eventRepo;
+
+    @BeforeAll
+    static void guardAgainstLiveDb() {
+        LiveDbGuard.assertNotLiveDb();
+    }
 
     @BeforeEach
     @Transactional
