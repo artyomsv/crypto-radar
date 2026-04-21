@@ -444,26 +444,26 @@ public class ProxyResource {
     @Path("/execution/accounts")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createAccount(String body) {
-        return proxyPost(serviceClient.getExecutionUrl() + "/api/execution/accounts", body);
+        return propagate(serviceClient.postWithStatus(serviceClient.getExecutionUrl() + "/api/execution/accounts", body));
     }
 
     @GET
     @Path("/execution/accounts/{id}")
     public Response getAccount(@PathParam("id") Long id) {
-        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id));
+        return propagate(serviceClient.getWithStatus(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id));
     }
 
     @PATCH
     @Path("/execution/accounts/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response patchAccount(@PathParam("id") Long id, String body) {
-        return proxyPatch(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id, body);
+        return propagate(serviceClient.patchWithStatus(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id, body));
     }
 
     @DELETE
     @Path("/execution/accounts/{id}")
     public Response deleteAccount(@PathParam("id") Long id) {
-        return proxyDelete(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id);
+        return propagate(serviceClient.deleteWithStatus(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id));
     }
 
     @GET
@@ -503,20 +503,30 @@ public class ProxyResource {
     @Path("/execution/accounts/{id}/kill-switch")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response killSwitch(@PathParam("id") Long id, String body) {
-        return proxyPost(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/kill-switch", body);
+        return propagate(serviceClient.postWithStatus(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/kill-switch", body));
     }
 
     @POST
     @Path("/execution/accounts/{id}/close-all")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response closeAll(@PathParam("id") Long id, String body) {
-        return proxyPost(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/close-all", body);
+        return propagate(serviceClient.postWithStatus(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/close-all", body));
     }
 
     @POST
     @Path("/execution/accounts/{id}/trades/{tradeId}/close")
     public Response closeTrade(@PathParam("id") Long id, @PathParam("tradeId") Long tradeId) {
-        return proxyPost(serviceClient.getExecutionUrl()
-                + "/api/execution/accounts/" + id + "/trades/" + tradeId + "/close", "");
+        return propagate(serviceClient.postWithStatus(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/trades/" + tradeId + "/close", ""));
+    }
+
+    /**
+     * Forward an upstream (status, body) pair to the client intact. Used by
+     * execution-proxy routes where the caller needs to see real 4xx/5xx
+     * errors inline (e.g. Bybit key validation failures) rather than a
+     * swallowed 200-with-error-body from {@link #proxyResponse(String)}.
+     */
+    private Response propagate(com.cryptoradar.gateway.client.ServiceClient.RawResponse resp) {
+        return Response.status(resp.status()).entity(resp.body()).build();
     }
 }

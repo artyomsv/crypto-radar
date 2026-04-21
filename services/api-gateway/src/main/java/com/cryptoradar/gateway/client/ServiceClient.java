@@ -146,6 +146,51 @@ public class ServiceClient {
         return sendWithBody(url, "PATCH", body);
     }
 
+    /**
+     * Tuple of upstream status + body. Used by proxy routes that need to
+     * propagate 4xx/5xx faithfully instead of wrapping everything in 200.
+     */
+    public record RawResponse(int status, String body) {}
+
+    public RawResponse getWithStatus(String url) {
+        return sendWithStatus(url, "GET", null);
+    }
+
+    public RawResponse postWithStatus(String url, String body) {
+        return sendWithStatus(url, "POST", body);
+    }
+
+    public RawResponse patchWithStatus(String url, String body) {
+        return sendWithStatus(url, "PATCH", body);
+    }
+
+    public RawResponse deleteWithStatus(String url) {
+        return sendWithStatus(url, "DELETE", null);
+    }
+
+    private RawResponse sendWithStatus(String url, String method, String body) {
+        try {
+            HttpRequest.Builder b = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(10));
+            if (body != null) {
+                b.header("Content-Type", "application/json")
+                        .method(method, HttpRequest.BodyPublishers.ofString(body));
+            } else if ("GET".equals(method)) {
+                b.GET();
+            } else if ("DELETE".equals(method)) {
+                b.DELETE();
+            } else {
+                b.method(method, HttpRequest.BodyPublishers.noBody());
+            }
+            HttpResponse<String> response = httpClient.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            return new RawResponse(response.statusCode(), response.body());
+        } catch (Exception e) {
+            LOG.errorf("%s %s failed: %s", method, url, e.getMessage());
+            return new RawResponse(502, "{\"error\":\"Upstream service unreachable\"}");
+        }
+    }
+
     public String deleteRaw(String url) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
