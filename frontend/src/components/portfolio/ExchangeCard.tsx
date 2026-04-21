@@ -9,6 +9,7 @@ import { OpenPositionsTable } from './OpenPositionsTable';
 import { PositionRowMenu } from './PositionRowMenu';
 import { WhyModal } from './WhyModal';
 import { FirstTimeAutoTradeModal } from './FirstTimeAutoTradeModal';
+import { KillSwitchBanner } from './KillSwitchBanner';
 
 interface PatchResult {
   success: boolean;
@@ -91,27 +92,40 @@ export function ExchangeCard({ account, onPatch }: Props) {
     console.log('settings panel — Task 12');
   };
 
+  const bodyClass = account.killSwitch ? 'opacity-[0.85] [filter:grayscale(0.3)]' : '';
+  const cardBorder = account.killSwitch ? 'border-[#ef4444]' : 'border-[#1c1f27]';
+
   return (
-    <div className="rounded-lg border border-[#1c1f27] bg-[#141820] p-4">
-      <ExchangeCardHeader
-        account={account}
-        connectionState={stream.connectionState}
-        secondsSinceUpdate={stream.secondsSinceUpdate}
-        onAutoTradeToggle={handleAutoTrade}
-        onKillSwitchClick={handleKillSwitch}
-        onSettingsClick={handleSettings}
-      />
-      <EquitySummary wallet={stream.wallet} />
-      <div className="mb-2 text-[11px] uppercase tracking-wide text-gray-500">Open positions</div>
-      <OpenPositionsTable
-        positions={stream.positions}
-        livePrices={livePrices}
-        onRowMenu={handleRowMenu}
-        onWhyClick={handleWhy}
-      />
-      <div className="mt-4 mb-2 text-[11px] uppercase tracking-wide text-gray-500">Recent closed (last 24h)</div>
-      <div className="rounded bg-[#141820] p-4 text-center text-[10px] text-gray-500">
-        (RecentTradesList renders here in Task 10)
+    <div className={`rounded-lg border ${cardBorder} bg-[#141820] p-4`}>
+      {account.killSwitch && (
+        <KillSwitchBanner onDisarm={() => onPatch(account.id, { killSwitch: false })} />
+      )}
+      <div className={bodyClass}>
+        <ExchangeCardHeader
+          account={account}
+          connectionState={stream.connectionState}
+          secondsSinceUpdate={stream.secondsSinceUpdate}
+          onAutoTradeToggle={handleAutoTrade}
+          onKillSwitchClick={handleKillSwitch}
+          onSettingsClick={handleSettings}
+        />
+        <EquitySummary wallet={stream.wallet} />
+        <div className="mb-2 text-[11px] uppercase tracking-wide text-gray-500">Open positions</div>
+        <OpenPositionsTable
+          positions={stream.positions}
+          livePrices={livePrices}
+          onRowMenu={handleRowMenu}
+          onWhyClick={handleWhy}
+        />
+        {account.killSwitch && (
+          <div className="mt-3 rounded bg-[#0f1116] p-2 text-center text-[10px] text-gray-500">
+            positions still tracked — only NEW signals blocked
+          </div>
+        )}
+        <div className="mt-4 mb-2 text-[11px] uppercase tracking-wide text-gray-500">Recent closed (last 24h)</div>
+        <div className="rounded bg-[#141820] p-4 text-center text-[10px] text-gray-500">
+          (RecentTradesList renders here in Task 10)
+        </div>
       </div>
       {rowMenu && (
         <PositionRowMenu
