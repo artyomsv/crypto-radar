@@ -10,6 +10,7 @@ import { SignalDashboard } from './components/dashboard/SignalDashboard';
 import { Screener } from './components/dashboard/Screener';
 import { MultiChart } from './components/dashboard/MultiChart';
 import { PortfolioTracker } from './components/dashboard/PortfolioTracker';
+import { ExchangeAccountsSection } from './components/portfolio/ExchangeAccountsSection';
 import { AlertToast, useAlertNotifications } from './components/dashboard/AlertToast';
 import { useWebSocket } from './hooks/useWebSocket';
 
@@ -33,7 +34,15 @@ export default function App() {
           <Route path="/analytics" element={<AnalyticsDashboard />} />
           <Route path="/screener" element={<Screener />} />
           <Route path="/compare" element={<MultiChart />} />
-          <Route path="/portfolio" element={<PortfolioTracker />} />
+          <Route
+            path="/portfolio"
+            element={
+              <div className="flex flex-col gap-6">
+                <PortfolioTracker />
+                <ExchangeAccountsSection />
+              </div>
+            }
+          />
           <Route path="/config" element={<CryptoConfig />} />
         </Routes>
       </main>

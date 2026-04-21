@@ -88,6 +88,9 @@ Key files under `frontend/src/`:
 - `components/dashboard/TradeLedger.tsx` — outcomes ledger. Status column resolves to `TARGET` / `TRAIL` / `STOP` / `LOCK +NR` (open+armed) / `EXPIRED` / `OPEN` via `resolveStatus(outcome)`
 - `components/dashboard/TradeChartModal.tsx` — chart overlay of all outcomes for a symbol
 - `components/dashboard/AiAnalysisModal.tsx` — Gemini prompt context, renders returned analysis
+- `components/portfolio/` — `ExchangeAccountsSection` (stacked exchange cards below Manual), `ExchangeCard` (per-account header + equity + positions + recent), `ExchangeCardHeader`, `EquitySummary` (5-card strip), `OpenPositionsTable` (detector badges + trail indicator + ⋯ menu), `PositionRowMenu` (View chart / Why / Close at market), `WhyModal`, `ExchangeSetupModal` (single-step form), `AddExchangeButton` (dashed CTA empty state), `FirstTimeAutoTradeModal` (localStorage-gated per account), `KillSwitchBanner`, `SettingsPanel` (slide-in right with 7 PATCHable fields), `ConnectionIndicator` (green/amber-pulsing/red status dot + staleness)
+- `hooks/useExecutionStream.ts` — WS to `/ws/execution` + 15s REST polling fallback + staleness counter
+- `hooks/useExecutionAccounts.ts` — list/create/patch/delete wrappers over `/api/execution/accounts`
 - `lib/api.ts` — typed fetch wrappers for `/api/signals/*` endpoints
 
 ## Local dev commands
