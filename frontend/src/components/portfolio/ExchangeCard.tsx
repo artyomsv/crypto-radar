@@ -11,6 +11,7 @@ import { WhyModal } from './WhyModal';
 import { FirstTimeAutoTradeModal } from './FirstTimeAutoTradeModal';
 import { KillSwitchBanner } from './KillSwitchBanner';
 import { RecentTradesList } from './RecentTradesList';
+import { SettingsPanel } from './SettingsPanel';
 
 interface PatchResult {
   success: boolean;
@@ -28,6 +29,7 @@ export function ExchangeCard({ account, onPatch }: Props) {
   const [rowMenu, setRowMenu] = useState<{ position: ExecutionPosition; anchor: HTMLElement } | null>(null);
   const [whyFor, setWhyFor] = useState<ExecutionPosition | null>(null);
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useWebSocket({
     onPrices: (prices: Array<{ symbol: string; price: number }>) => {
@@ -88,10 +90,7 @@ export function ExchangeCard({ account, onPatch }: Props) {
     onPatch(account.id, { killSwitch: !account.killSwitch });
   };
 
-  const handleSettings = () => {
-    // Wired in Task 12.
-    console.log('settings panel — Task 12');
-  };
+  const handleSettings = () => setShowSettings(true);
 
   const bodyClass = [
     account.killSwitch ? 'opacity-[0.85] [filter:grayscale(0.3)]' : '',
@@ -102,7 +101,7 @@ export function ExchangeCard({ account, onPatch }: Props) {
   const cardBorder = account.killSwitch ? 'border-[#ef4444]' : 'border-[#1c1f27]';
 
   return (
-    <div className={`rounded-lg border ${cardBorder} bg-[#141820] p-4`}>
+    <div className={`relative rounded-lg border ${cardBorder} bg-[#141820] p-4`}>
       {account.killSwitch && (
         <KillSwitchBanner onDisarm={() => onPatch(account.id, { killSwitch: false })} />
       )}
@@ -156,6 +155,13 @@ export function ExchangeCard({ account, onPatch }: Props) {
           account={account}
           onConfirm={confirmAutoTradeEnable}
           onCancel={() => setShowAutoTradeConfirm(false)}
+        />
+      )}
+      {showSettings && (
+        <SettingsPanel
+          account={account}
+          onClose={() => setShowSettings(false)}
+          onSave={(diff) => onPatch(account.id, diff)}
         />
       )}
     </div>
