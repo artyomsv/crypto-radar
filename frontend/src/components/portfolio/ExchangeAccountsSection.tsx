@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useExecutionAccounts } from '@/hooks/useExecutionAccounts';
 import { AddExchangeButton } from './AddExchangeButton';
 import { ExchangeSetupModal } from './ExchangeSetupModal';
-import type { ExchangeAccount } from '@/types';
+import { ExchangeCard } from './ExchangeCard';
 
 export function ExchangeAccountsSection() {
-  const { accounts, loading, error, create } = useExecutionAccounts();
+  const { accounts, loading, error, create, patch } = useExecutionAccounts();
   const [showSetup, setShowSetup] = useState(false);
 
   if (loading) {
@@ -28,10 +28,11 @@ export function ExchangeAccountsSection() {
     <div className="flex flex-col gap-3">
       {accounts.length === 0 && <AddExchangeButton onClick={() => setShowSetup(true)} />}
       {accounts.map((account) => (
-        <ExchangeCardPlaceholder key={account.id} account={account} />
+        <ExchangeCard key={account.id} account={account} onPatch={patch} />
       ))}
       {accounts.length > 0 && (
         <button
+          type="button"
           onClick={() => setShowSetup(true)}
           className="rounded-lg border border-dashed border-[#333] bg-[#141820] py-3 text-xs text-gray-500 hover:border-[#1a73e8] hover:text-gray-300"
         >
@@ -48,21 +49,6 @@ export function ExchangeAccountsSection() {
           onSubmit={create}
         />
       )}
-    </div>
-  );
-}
-
-// Placeholder — replaced by real ExchangeCard in Task 4.
-function ExchangeCardPlaceholder({ account }: { account: ExchangeAccount }) {
-  return (
-    <div className="rounded-lg border border-[#1c1f27] bg-[#141820] p-4">
-      <div className="text-sm font-semibold text-white">
-        {account.exchange} ({account.environment})
-      </div>
-      <div className="text-[10px] text-gray-500">
-        id={account.id} · kill={String(account.killSwitch)} · auto={String(account.autoTradeEnabled)}
-      </div>
-      <div className="mt-2 text-[10px] text-gray-500">(ExchangeCard renders here in Task 4)</div>
     </div>
   );
 }
