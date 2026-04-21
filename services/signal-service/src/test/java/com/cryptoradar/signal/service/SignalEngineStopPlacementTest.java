@@ -20,12 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SignalEngineStopPlacementTest {
 
     private static final double ENTRY_PRICE = 100.0;
-    private static final double MIN_RISK_PCT = 0.005;
+    private static final double MIN_RISK_PCT = 0.015;
 
     private final SignalEngine engine = new SignalEngine();
 
     @Test
-    @DisplayName("min-risk floor widens near-zero stop to 0.5% of entry")
+    @DisplayName("min-risk floor widens near-zero stop to MIN_RISK_PCT of entry")
     void enforcesMinRiskDistanceOnBullishSignal() {
         // Construct bullish analytics where support ≈ price and ATR ≈ 0.
         // Prior behaviour: stop = price - atr*1.5 AND min(stop, support - atr*0.5).

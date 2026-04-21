@@ -83,10 +83,16 @@ public class OutcomeTracker {
      * emits a setup. Dedups per {@code (symbol, direction, strategy)} so
      * each detector maintains at most one open outcome for a given symbol
      * and direction at a time. Different strategies do NOT conflict.
+     *
+     * @return the {@code signalId} of the newly persisted outcome, or
+     *         {@code null} when the setup was deduped or invalid. The caller
+     *         uses the returned id to publish an {@code alert} envelope to
+     *         Redis AFTER this transaction commits — publishing before commit
+     *         would risk an alert without a corresponding DB row on rollback.
      */
     @Transactional
-    public void trackSetup(TradeSetup setup) {
-        if (setup == null || setup.direction() == null) return;
+    public String trackSetup(TradeSetup setup) {
+        if (setup == null || setup.direction() == null) return null;
 
         boolean alreadyOpen = repository
                 .findOpenByStrategy(setup.symbol(), setup.direction(), setup.strategy())
@@ -94,7 +100,7 @@ public class OutcomeTracker {
         if (alreadyOpen) {
             LOG.debugf("Skipping %s %s %s — open outcome already exists",
                     setup.symbol(), setup.direction(), setup.strategy());
-            return;
+            return null;
         }
 
         SignalOutcome outcome = buildOutcomeFromSetup(setup);
@@ -103,6 +109,7 @@ public class OutcomeTracker {
                 outcome.getStrategy(), outcome.getSymbol(), outcome.getDirection(),
                 outcome.getEntryPrice(), outcome.getStopPrice(),
                 outcome.getTargetPrice(), outcome.getRiskRewardRatio(), outcome.getAlignment());
+        return outcome.getSignalId();
     }
 
     private SignalOutcome buildOutcomeFromSetup(TradeSetup setup) {

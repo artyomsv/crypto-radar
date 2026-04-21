@@ -48,8 +48,8 @@ public class FlipTracker {
 
     private String signalToDirection(String signalLabel) {
         return switch (signalLabel) {
-            case "STRONG_BUY" -> "LONG";
-            case "STRONG_SELL" -> "SHORT";
+            case "BUY", "STRONG_BUY" -> "LONG";
+            case "SELL", "STRONG_SELL" -> "SHORT";
             default -> null;
         };
     }

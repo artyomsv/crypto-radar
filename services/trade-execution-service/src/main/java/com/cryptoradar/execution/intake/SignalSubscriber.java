@@ -52,7 +52,9 @@ public class SignalSubscriber {
     private static final String CHANNEL = "crypto:signals";
     private static final String TYPE_ALERT = "alert";
     private static final String TYPE_OVERVIEW = "overview";
+    private static final String LABEL_BUY = "BUY";
     private static final String LABEL_STRONG_BUY = "STRONG_BUY";
+    private static final String LABEL_SELL = "SELL";
     private static final String LABEL_STRONG_SELL = "STRONG_SELL";
     private static final String DIRECTION_LONG = "LONG";
     private static final String DIRECTION_SHORT = "SHORT";
@@ -138,11 +140,15 @@ public class SignalSubscriber {
             JsonNode data = envelope.path("data");
 
             if (TYPE_ALERT.equals(type)) {
-                handleSignal(data.path("signal"));
+                // Alerts are one-shot, high-conviction events (detector fires or
+                // NEUTRAL→actionable transitions). They bypass FlipTracker: the
+                // 2-tick persistence rule exists to filter flappy dimension-scoring
+                // overview ticks, which doesn't apply to discrete alerts.
+                handleAlert(data.path("signal"));
             } else if (TYPE_OVERVIEW.equals(type)) {
                 JsonNode signals = data.path("signals");
                 if (signals.isArray()) {
-                    signals.forEach(this::handleSignal);
+                    signals.forEach(this::handleOverviewSignal);
                 }
             }
         } catch (JsonProcessingException e) {
@@ -152,11 +158,11 @@ public class SignalSubscriber {
         }
     }
 
-    private void handleSignal(JsonNode signalNode) {
+    private void handleOverviewSignal(JsonNode signalNode) {
         String symbol = signalNode.path("symbol").asText();
         String label = signalNode.path("signal").asText();
         if (symbol.isEmpty() || label.isEmpty()) return;
-        if (!LABEL_STRONG_BUY.equals(label) && !LABEL_STRONG_SELL.equals(label)) return;
+        if (!isActionableLabel(label)) return;
 
         List<ExchangeAccount> accounts = accountRepo.listAll();
         if (accounts.isEmpty()) return;
@@ -164,6 +170,45 @@ public class SignalSubscriber {
         for (ExchangeAccount account : accounts) {
             dispatchForAccount(account, signalNode, symbol, label);
         }
+    }
+
+    private void handleAlert(JsonNode signalNode) {
+        String symbol = signalNode.path("symbol").asText();
+        String label = signalNode.path("signal").asText();
+        if (symbol.isEmpty() || label.isEmpty()) return;
+        if (!isActionableLabel(label)) return;
+
+        String direction = isLongLabel(label) ? DIRECTION_LONG : DIRECTION_SHORT;
+        String opposite = DIRECTION_LONG.equals(direction) ? DIRECTION_SHORT : DIRECTION_LONG;
+        List<ExchangeAccount> accounts = accountRepo.listAll();
+        if (accounts.isEmpty()) return;
+
+        for (ExchangeAccount account : accounts) {
+            // Close any opposite-direction open position first, then enter.
+            // Mirror of FlipTracker's CLOSE_*/ENTER_* branches but without the
+            // 2-tick persistence gate that applies to overview-ticks only.
+            boolean hasOpposite = false;
+            for (ExecutedTrade t : tradeRepo.findOpenForAccount(account.getId())) {
+                if (symbol.equals(t.getSymbol()) && opposite.equals(t.getDirection())) {
+                    hasOpposite = true;
+                    break;
+                }
+            }
+            if (hasOpposite) {
+                dispatchClose(account, symbol, opposite);
+                continue;
+            }
+            dispatchEnter(account, signalNode, symbol, direction);
+        }
+    }
+
+    private static boolean isActionableLabel(String label) {
+        return LABEL_BUY.equals(label) || LABEL_STRONG_BUY.equals(label)
+                || LABEL_SELL.equals(label) || LABEL_STRONG_SELL.equals(label);
+    }
+
+    private static boolean isLongLabel(String label) {
+        return LABEL_BUY.equals(label) || LABEL_STRONG_BUY.equals(label);
     }
 
     private void dispatchForAccount(ExchangeAccount account, JsonNode signalNode,

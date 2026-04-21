@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class LiquiditySweepDetectorTest {
 
-    private static final double MIN_RISK_PCT = 0.005;
+    private static final double MIN_RISK_PCT = 0.015;
 
     private final LiquiditySweepDetector detector = new LiquiditySweepDetector();
 
@@ -34,7 +34,7 @@ class LiquiditySweepDetectorTest {
     void stopWidenedToFloor() {
         // Sweep where swingLow sits essentially at entry. ATR is tuned just above
         // the regime guard (0.003) so filters pass, but the resulting ATR-derived
-        // stop is closer than 0.5% to entry → MIN_RISK_PCT should widen it.
+        // stop is closer than MIN_RISK_PCT to entry → floor should widen it.
         double entry = 100.0;
         CandleBar trigger = buildBullishSweepTrigger(
                 /* open  */ 99.95,

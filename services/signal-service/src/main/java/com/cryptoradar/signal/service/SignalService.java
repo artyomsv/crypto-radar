@@ -26,11 +26,26 @@ public class SignalService {
 
     private static final Logger LOG = Logger.getLogger(SignalService.class);
 
+    private static final String BUY = "BUY";
     private static final String STRONG_BUY = "STRONG_BUY";
+    private static final String SELL = "SELL";
     private static final String STRONG_SELL = "STRONG_SELL";
     private static final String NEUTRAL = "NEUTRAL";
 
+    /**
+     * Used to gate dimension-scoring alerts on NEUTRAL→actionable transitions.
+     * Only STRONG labels fire immediate alert publishes — BUY/SELL wait for the
+     * 2-tick FlipTracker gate in the consumer to avoid acting on flickers.
+     */
     private static final Set<String> ACTIONABLE_SIGNALS = Set.of(STRONG_BUY, STRONG_SELL);
+
+    /**
+     * Detector-originated setups publish to Redis on all actionable labels.
+     * Unlike dimension-scoring, detectors fire discrete one-shot events with
+     * explicit entry/stop/target — no flap risk to gate against.
+     */
+    private static final Set<String> SETUP_PUBLISH_LABELS =
+            Set.of(BUY, STRONG_BUY, SELL, STRONG_SELL);
 
     private final DataAggregator dataAggregator;
     private final SignalEngine signalEngine;
@@ -126,7 +141,14 @@ public class SignalService {
                 List<TradeSetup> setups = tradeSetupEngine.detectForSymbol(
                         symbol, rawData, signal.getDimensions());
                 for (TradeSetup setup : setups) {
-                    outcomeTracker.trackSetup(setup);
+                    String signalId = outcomeTracker.trackSetup(setup);
+                    // Publish detector BUY/STRONG_BUY/SELL/STRONG_SELL alerts
+                    // post-commit so trade-execution-service can react.
+                    // trackSetup returned null = deduped (already-open outcome)
+                    // → skip the alert to avoid spamming the execution pipeline.
+                    if (signalId != null && SETUP_PUBLISH_LABELS.contains(setup.signalType())) {
+                        redisPublisher.publishSetupAlert(setup, signalId);
+                    }
                 }
 
                 previousSignals.put(symbol, signal.getSignal());

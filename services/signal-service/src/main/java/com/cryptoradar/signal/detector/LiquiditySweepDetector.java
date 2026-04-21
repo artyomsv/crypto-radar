@@ -95,8 +95,12 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
      * wick-referenced stop would sit inside the bid-ask spread. 46 of 54 LS trades
      * in the 21-day window were LTC signals with avg risk 0.035% — phantom trades
      * that stopped out instantly.
+     *
+     * <p>Aligned with {@code SignalEngine.MIN_RISK_PCT} for fee-drag reasons:
+     * 0.11% round-trip taker fees vs a 0.5% stop = 22% drag per 1R. Widening to
+     * 1.5% cuts that to ~7% — the operating band we ship to execution.
      */
-    private static final double LS_MIN_RISK_PCT = 0.005;
+    private static final double LS_MIN_RISK_PCT = 0.015;
 
     /**
      * Trigger-bar volume must be at least this ratio of the prior 3 bars'

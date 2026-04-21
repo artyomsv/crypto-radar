@@ -13,6 +13,8 @@ import com.cryptoradar.execution.ws.ExecutionBroadcaster;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.arc.Arc;
+import io.quarkus.arc.ManagedContext;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -89,7 +91,29 @@ public class BybitV5WsClient {
     private final HttpClient http = HttpClient.newHttpClient();
 
     void onStart(@Observes StartupEvent ev) {
-        SCHEDULER.schedule(this::connectAll, STARTUP_DELAY_SECONDS, TimeUnit.SECONDS);
+        SCHEDULER.schedule(this::safeConnectAll, STARTUP_DELAY_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Entry point for the scheduler thread. Activates a CDI request context so
+     * Panache / Hibernate can see a managed {@code EntityManager} when
+     * {@link #connectAll()} queries the DB, and catches any exception the
+     * scheduler would otherwise swallow silently.
+     */
+    void safeConnectAll() {
+        ManagedContext reqContext = Arc.container().requestContext();
+        boolean activatedHere = false;
+        if (!reqContext.isActive()) {
+            reqContext.activate();
+            activatedHere = true;
+        }
+        try {
+            connectAll();
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "BybitV5WsClient connectAll failed — no Bybit WS frames will arrive");
+        } finally {
+            if (activatedHere) reqContext.terminate();
+        }
     }
 
     void connectAll() {

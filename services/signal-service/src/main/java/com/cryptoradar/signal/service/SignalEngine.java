@@ -48,8 +48,12 @@ public class SignalEngine {
      * stops that get wicked by normal intrabar noise (observed on LTC in low-ATR
      * regimes: ATR collapsed, swing-low support was essentially at entry, resulting
      * in stops 0.01% away and RR ratios above 1500).
+     *
+     * <p>Also governs fee drag: at a Bybit 0.11% round-trip taker fee, a 0.5%
+     * stop leaves ~22% of a 1R loss to fees alone. Widening to 1.5% cuts that
+     * drag to ~7%, which is the operating band we ship to execution.
      */
-    private static final double MIN_RISK_PCT = 0.005;
+    private static final double MIN_RISK_PCT = 0.015;
 
     /**
      * Minimum target/risk ratio for the suggested take-profit. Floor only —

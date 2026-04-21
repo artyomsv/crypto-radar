@@ -14,7 +14,11 @@ interface UseExecutionStreamResult {
   refresh: () => Promise<void>;
 }
 
-const POLL_INTERVAL_MS = 15_000;
+// Poll every 15s when WS is down, every 30s as a safety net when WS is "connected"
+// (frontend↔gateway WS being open does not guarantee Bybit private-stream frames
+// are flowing through; polling covers that gap).
+const POLL_INTERVAL_DISCONNECTED_MS = 15_000;
+const POLL_INTERVAL_CONNECTED_MS = 30_000;
 const STALENESS_TICK_MS = 1_000;
 const WS_RECONNECT_DELAY_MS = 5_000;
 
@@ -51,19 +55,16 @@ export function useExecutionStream(accountId: number | null): UseExecutionStream
     setLastUpdateAt(Date.now());
   }, [accountId]);
 
-  // REST polling fallback — runs only while WS is not connected
+  // REST polling — fast when WS is down, slow safety net when "connected".
+  // WS being open at the gateway does not guarantee Bybit private-stream frames
+  // are actually flowing upstream; a slow poll ensures numbers eventually sync.
   useEffect(() => {
     if (accountId == null) return;
-    if (connectionState === 'connected') {
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-      return;
-    }
-    // Kick an immediate refresh, then poll on interval
+    const interval = connectionState === 'connected'
+      ? POLL_INTERVAL_CONNECTED_MS
+      : POLL_INTERVAL_DISCONNECTED_MS;
     refresh();
-    pollTimerRef.current = setInterval(refresh, POLL_INTERVAL_MS);
+    pollTimerRef.current = setInterval(refresh, interval);
     return () => {
       if (pollTimerRef.current) {
         clearInterval(pollTimerRef.current);

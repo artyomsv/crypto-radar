@@ -1,6 +1,7 @@
 package com.cryptoradar.signal.event;
 
 import com.cryptoradar.signal.model.SignalOverview;
+import com.cryptoradar.signal.model.TradeSetup;
 import com.cryptoradar.signal.model.TradingSignal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.redis.datasource.ReactiveRedisDataSource;
@@ -33,6 +34,30 @@ public class RedisEventPublisher {
 
     public void publishAlert(TradingSignal signal) {
         publish(Map.of("type", "alert", "data", signal));
+    }
+
+    /**
+     * Publishes a detector-originated trade setup as an {@code alert} envelope
+     * so {@code trade-execution-service} can react to it. Detector setups are
+     * persisted to {@code signal_outcomes} but were previously orphaned from
+     * Redis — only dimension-scoring overviews were published. This closes
+     * that gap.
+     *
+     * <p>Payload shape matches the {@code SignalSubscriber.handleSignal}
+     * contract on the consumer side: {@code symbol}, {@code signal},
+     * {@code strategy}, {@code signalId}, {@code entryPrice}, {@code stopPrice},
+     * {@code targetPrice}.
+     */
+    public void publishSetupAlert(TradeSetup setup, String signalId) {
+        Map<String, Object> signal = Map.of(
+                "symbol", setup.symbol(),
+                "signal", setup.signalType(),
+                "strategy", setup.strategy(),
+                "signalId", signalId,
+                "entryPrice", setup.entryPrice(),
+                "stopPrice", setup.stopPrice(),
+                "targetPrice", setup.targetPrice());
+        publish(Map.of("type", "alert", "data", Map.of("signal", signal)));
     }
 
     private void publish(Map<String, Object> message) {
