@@ -79,6 +79,8 @@ public class SignalSubscriber {
     @Inject ExchangeAccountRepository accountRepo;
     @Inject ExecutedTradeRepository tradeRepo;
     @Inject ExecutionEventRepository eventRepo;
+    @Inject SymbolPerformanceGate symbolGate;
+    @Inject DetectorConfluenceCheck confluenceCheck;
 
     @ConfigProperty(name = "quarkus.redis.hosts", defaultValue = "redis://localhost:6379")
     String redisHosts;
@@ -260,9 +262,26 @@ public class SignalSubscriber {
 
     private void dispatchEnter(ExchangeAccount account, JsonNode signalNode,
                                 String symbol, String direction) {
+        if (symbolGate.isSuppressed(symbol)) {
+            SymbolPerformanceGate.CachedDecision decision = symbolGate.lastDecisionFor(symbol);
+            LOG.infof("SYMBOL_SUPPRESSED %s %s — total-R %.2f over last %d closed outcomes below threshold",
+                    symbol, direction,
+                    decision != null ? decision.totalR() : 0.0,
+                    decision != null ? decision.sampleSize() : 0);
+            return;
+        }
+
+        String strategy = signalNode.path("strategy").asText(DEFAULT_STRATEGY);
+        if (confluenceCheck.requiresConfluence(strategy, direction)
+                && !confluenceCheck.hasConfluence(symbol, direction)) {
+            LOG.infof("CONFLUENCE_REQUIRED %s %s %s — no open dimension-scoring outcome in window",
+                    symbol, direction, strategy);
+            return;
+        }
+
         SignalCandidate candidate = new SignalCandidate(
                 symbol, direction,
-                signalNode.path("strategy").asText(DEFAULT_STRATEGY),
+                strategy,
                 signalNode.path("signalId").asText(null),
                 Instant.now());
 
