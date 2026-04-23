@@ -40,7 +40,7 @@ public class OutcomeTracker {
     private static final String DIM_WHALE = "Whale";
     private static final String DIM_DERIVATIVES = "Derivatives";
     private static final String DIM_SENTIMENT = "Sentiment";
-    private static final String DIM_ORDER_BOOK = "OrderBook";
+    private static final String DIM_ORDER_BOOK = "Order Book";
     private static final String DIM_MACRO = "Macro";
 
     private final SignalOutcomeRepository repository;

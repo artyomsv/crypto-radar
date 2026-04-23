@@ -241,7 +241,7 @@ public class LiquiditySweepDetector implements TradeSetupDetector {
     private int computeAlignment(MarketContext context, CandleBar trigger, boolean isLong) {
         double derivScore = ContextValues.dimensionScore(context.dimensionScores(), "Derivatives");
         double whaleScore = ContextValues.dimensionScore(context.dimensionScores(), "Whale");
-        double orderBookScore = ContextValues.dimensionScore(context.dimensionScores(), "OrderBook");
+        double orderBookScore = ContextValues.dimensionScore(context.dimensionScores(), "Order Book");
 
         int score = 50;
         double directed = isLong ? 1.0 : -1.0;

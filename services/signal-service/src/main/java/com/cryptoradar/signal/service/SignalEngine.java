@@ -303,23 +303,27 @@ public class SignalEngine {
             }
         }
 
-        // Long/short ratio — contrarian
-        Double longPct = asDouble(derivativesData.get("longPct"));
-        if (longPct != null) {
-            if (longPct > 70) {
+        // Long/short ratio — contrarian. Upstream returns a fraction in [0,1]
+        // (Bybit LongShortRatio API's buyRatio), despite the misleading
+        // `longPct` field name. Normalize to a 0-100 percent here so the
+        // thresholds read naturally.
+        Double longFraction = asDouble(derivativesData.get("longPct"));
+        if (longFraction != null) {
+            double longPercent = longFraction > 1.0 ? longFraction : longFraction * 100.0;
+            if (longPercent > 70) {
                 score -= 35;
-                reasons.add(String.format("%.0f%% long — extremely crowded (bearish)", longPct));
-            } else if (longPct > 60) {
+                reasons.add(String.format("%.0f%% long — extremely crowded (bearish)", longPercent));
+            } else if (longPercent > 60) {
                 score -= 20;
-                reasons.add(String.format("%.0f%% long — crowded longs (bearish)", longPct));
-            } else if (longPct < 30) {
+                reasons.add(String.format("%.0f%% long — crowded longs (bearish)", longPercent));
+            } else if (longPercent < 30) {
                 score += 35;
-                reasons.add(String.format("%.0f%% long — extremely crowded shorts (bullish)", longPct));
-            } else if (longPct < 40) {
+                reasons.add(String.format("%.0f%% long — extremely crowded shorts (bullish)", longPercent));
+            } else if (longPercent < 40) {
                 score += 20;
-                reasons.add(String.format("%.0f%% long — crowded shorts (bullish)", longPct));
+                reasons.add(String.format("%.0f%% long — crowded shorts (bullish)", longPercent));
             } else {
-                reasons.add(String.format("%.0f%% long — balanced positioning", longPct));
+                reasons.add(String.format("%.0f%% long — balanced positioning", longPercent));
             }
         }
 
