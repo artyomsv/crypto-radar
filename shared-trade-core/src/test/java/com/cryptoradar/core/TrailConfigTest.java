@@ -16,6 +16,43 @@ class TrailConfigTest {
     }
 
     @Test
+    void defaultIncludesVectorFWiderOffset() {
+        // Vector F — at MFE ≥ 2.5R the trail offset widens from 0.5R to 1.0R.
+        TrailConfig config = TrailConfig.DEFAULT;
+        assertEquals(2.5, config.widerOffsetActivationR());
+        assertEquals(1.0, config.widerOffsetR());
+    }
+
+    @Test
+    void legacyThreeArgConstructorDisablesWiderOffset() {
+        // Existing callers using (activation, step, offset) keep single-rung
+        // behaviour — wider offset fields default to zero (disabled).
+        TrailConfig config = new TrailConfig(1.0, 0.5, 0.5);
+        assertEquals(0.0, config.widerOffsetActivationR());
+        assertEquals(0.0, config.widerOffsetR());
+    }
+
+    @Test
+    void rejectsWiderOffsetActivationBelowBaseActivation() {
+        // widerOffsetActivationR MUST be ≥ activationR when set, otherwise the
+        // two rungs interleave in a confusing way.
+        assertThrows(IllegalArgumentException.class,
+                () -> new TrailConfig(2.0, 0.5, 0.5, 1.0, 1.0));
+    }
+
+    @Test
+    void rejectsNegativeWiderOffsetActivation() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new TrailConfig(1.0, 0.5, 0.5, -0.1, 1.0));
+    }
+
+    @Test
+    void rejectsNegativeWiderOffset() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new TrailConfig(1.0, 0.5, 0.5, 2.5, -0.1));
+    }
+
+    @Test
     void customValuesArePreserved() {
         TrailConfig config = new TrailConfig(2.0, 1.0, 0.25);
         assertEquals(2.0, config.activationR());

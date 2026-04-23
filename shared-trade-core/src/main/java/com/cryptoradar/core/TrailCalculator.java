@@ -37,10 +37,28 @@ public final class TrailCalculator {
             return Optional.empty();
         }
         double rung = Math.floor((mfeR - config.activationR()) / config.stepR());
-        double newTrailR = config.activationR() + rung * config.stepR() - config.offsetR();
+        double effectiveOffsetR = resolveOffset(mfeR, config);
+        double newTrailR = config.activationR() + rung * config.stepR() - effectiveOffsetR;
         if (newTrailR <= currentHighestR) {
             return Optional.empty();
         }
         return Optional.of(newTrailR);
+    }
+
+    /**
+     * Vector F — trail offset widens in the right tail. Below the
+     * {@code widerOffsetActivationR} threshold the trail uses the tight
+     * {@code offsetR}; once MFE crosses, the looser {@code widerOffsetR}
+     * applies so late runners have more room before the trail takes them.
+     * When {@code widerOffsetActivationR <= 0} the second rung is disabled
+     * and this collapses to the single-offset ladder.
+     */
+    private static double resolveOffset(double mfeR, TrailConfig config) {
+        if (config.widerOffsetActivationR() <= 0) {
+            return config.offsetR();
+        }
+        return mfeR >= config.widerOffsetActivationR()
+                ? config.widerOffsetR()
+                : config.offsetR();
     }
 }

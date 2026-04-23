@@ -9,6 +9,7 @@ import com.cryptoradar.signal.repository.SignalOutcomeRepository;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
@@ -37,9 +38,25 @@ public class OutcomeEvaluator {
     private static final String EXIT_INITIAL_STOP = "INITIAL_STOP";
     private static final String EXIT_TRAIL_STOP = "TRAIL_STOP";
     private static final String EXIT_EXPIRED = "EXPIRED";
+    private static final String EXIT_STAGNATION = "STAGNATION";
 
     private final SignalOutcomeRepository repository;
     private final CandleClient candleClient;
+
+    // Vector E — stagnation exit. Phase 2 data: 19 of 60 INITIAL_STOP losers
+    // reached <0.2% MFE. Those trades drifted sideways for hours before
+    // finally hitting the full -1R stop. Close them early at ~-0.3R instead.
+    @ConfigProperty(name = "signal.stagnation-exit.enabled", defaultValue = "true")
+    boolean stagnationExitEnabled;
+
+    @ConfigProperty(name = "signal.stagnation-exit.min-age-minutes", defaultValue = "45")
+    int stagnationMinAgeMinutes;
+
+    @ConfigProperty(name = "signal.stagnation-exit.mfe-threshold-pct", defaultValue = "0.2")
+    double stagnationMfeThresholdPct;
+
+    @ConfigProperty(name = "signal.stagnation-exit.mae-floor-pct", defaultValue = "-0.3")
+    double stagnationMaeFloorPct;
 
     public OutcomeEvaluator(SignalOutcomeRepository repository, CandleClient candleClient) {
         this.repository = repository;
@@ -80,8 +97,32 @@ public class OutcomeEvaluator {
             }
         }
 
-        outcome.setLastEvaluatedAt(bars.get(bars.size() - 1).time());
+        CandleBar lastBar = bars.get(bars.size() - 1);
+        outcome.setLastEvaluatedAt(lastBar.time());
+        if (stagnationExitIfEligible(outcome, lastBar)) return true;
         return expireIfStale(outcome, bars);
+    }
+
+    /**
+     * Vector E — closes a trade that has sat in a narrow MFE/MAE band for
+     * longer than the configured window. Fires when:
+     * <ul>
+     *   <li>elapsed wall-clock from fire ≥ {@code min-age-minutes}</li>
+     *   <li>cumulative MFE is still below {@code mfe-threshold-pct}</li>
+     *   <li>cumulative MAE has not dipped past {@code mae-floor-pct}</li>
+     * </ul>
+     * Exits at the last bar's close price with {@code final_exit_reason =
+     * "STAGNATION"}. Realized R is ~-0.3 instead of the -1.0 a full stop
+     * would produce.
+     */
+    boolean stagnationExitIfEligible(SignalOutcome outcome, CandleBar lastBar) {
+        if (!stagnationExitEnabled) return false;
+        Duration age = Duration.between(outcome.getFiredAt(), lastBar.time());
+        if (age.toMinutes() < stagnationMinAgeMinutes) return false;
+        if (outcome.getMaxFavorablePct() >= stagnationMfeThresholdPct) return false;
+        if (outcome.getMaxAdversePct() <= stagnationMaeFloorPct) return false;
+        closeOutcome(outcome, OutcomeStatus.HIT_STOP, lastBar.time(), lastBar.close(), EXIT_STAGNATION);
+        return true;
     }
 
     private Instant resolveScanStart(SignalOutcome outcome) {
@@ -224,11 +265,17 @@ public class OutcomeEvaluator {
 
     private void closeOutcome(SignalOutcome outcome, OutcomeStatus status,
                               Instant closedAt, double closedPrice) {
+        closeOutcome(outcome, status, closedAt, closedPrice, null);
+    }
+
+    private void closeOutcome(SignalOutcome outcome, OutcomeStatus status,
+                              Instant closedAt, double closedPrice, String reasonOverride) {
         outcome.setStatus(status);
         outcome.setClosedAt(closedAt);
         outcome.setClosedPrice(closedPrice);
         outcome.setLastEvaluatedAt(closedAt);
-        outcome.setFinalExitReason(exitReason(outcome, status));
+        outcome.setFinalExitReason(
+                reasonOverride != null ? reasonOverride : exitReason(outcome, status));
 
         boolean isLong = DIRECTION_LONG.equals(outcome.getDirection());
         double pnlPct = pctMove(outcome.getEntryPrice(), closedPrice, isLong);
