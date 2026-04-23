@@ -83,6 +83,12 @@ public class SignalSubscriber {
     @ConfigProperty(name = "quarkus.redis.hosts", defaultValue = "redis://localhost:6379")
     String redisHosts;
 
+    // Vector D — phase-2 data shows alignment 40-55 lost 8.87R across 19 trades.
+    // Floor dispatch at 70 to exclude that bucket. Detector-originated alerts
+    // lack an alignment field and bypass this filter (see isOverviewEligible).
+    @ConfigProperty(name = "execution.alignment.floor", defaultValue = "70")
+    int alignmentFloor;
+
     void onStart(@Observes StartupEvent event) {
         // Defer connection so CDI + DB init finish first; Redis may not be reachable in tests.
         SCHEDULER.schedule(this::connect, CONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
@@ -163,6 +169,11 @@ public class SignalSubscriber {
         String label = signalNode.path("signal").asText();
         if (symbol.isEmpty() || label.isEmpty()) return;
         if (!isActionableLabel(label)) return;
+        if (isBelowAlignmentFloor(signalNode)) {
+            LOG.debugf("ALIGNMENT_FLOOR skip %s %s alignment=%d floor=%d",
+                    symbol, label, signalNode.path("alignment").asInt(-1), alignmentFloor);
+            return;
+        }
 
         List<ExchangeAccount> accounts = accountRepo.listAll();
         if (accounts.isEmpty()) return;
@@ -170,6 +181,16 @@ public class SignalSubscriber {
         for (ExchangeAccount account : accounts) {
             dispatchForAccount(account, signalNode, symbol, label);
         }
+    }
+
+    // Vector D gate. Returns true when the overview signal carries an
+    // alignment int below the configured floor. Returns false when the
+    // field is absent (detector-originated alerts never have it) so this
+    // method is safe to call on any node; the caller scopes by envelope.
+    boolean isBelowAlignmentFloor(JsonNode signalNode) {
+        JsonNode alignmentNode = signalNode.get("alignment");
+        if (alignmentNode == null || !alignmentNode.isNumber()) return false;
+        return alignmentNode.asInt() < alignmentFloor;
     }
 
     private void handleAlert(JsonNode signalNode) {
