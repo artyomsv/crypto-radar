@@ -11,7 +11,7 @@ Project memory for future Claude sessions. Start here before making changes.
 - **CI/local tools**: `mvnd` (Maven daemon) for fast iterative test runs
 - **Build chain**: `pom.xml` → Quarkus uber-jar → Dockerfile COPY into runtime image
 - **Shared Java module**: `shared-trade-core/` — pure-JAR Maven module, no framework deps. Holds `TrailCalculator`, `TrailConfig`, `RUnitMath`. Installed into local `.m2` via `mvn install`; consumed by `signal-service` (outcome evaluator's trail math) and the upcoming `trade-execution-service`.
-- **Trade execution**: `trade-execution-service/` — Quarkus 3.17 service that mirrors signals to real Bybit V5 USDT-perpetual orders. Depends on `shared-trade-core`. Encrypts API credentials (AES-GCM), validates permissions (rejects withdraw-enabled keys), maintains stops natively on Bybit. Tables: `exchange_accounts`, `executed_trades`, `execution_events` (see `db/init/execution-init.sql`).
+- **Trade execution**: `trade-execution-service/` — Quarkus 3.17 service that mirrors signals to real Bybit V5 USDT-perpetual orders. Depends on `shared-trade-core`. Encrypts API credentials (AES-GCM), validates permissions (rejects withdraw-enabled keys), maintains stops natively on Bybit. Tables: `exchange_accounts`, `executed_trades`, `execution_events` (see `db/init/execution-init.sql`). Shares the TimescaleDB database with signal-service — `SymbolPerformanceGate` and `DetectorConfluenceCheck` issue read-only native queries against `signal_outcomes`.
 
 ## Services + host ports
 
@@ -38,7 +38,7 @@ Files of note (under `services/signal-service/src/main/java/com/cryptoradar/sign
 
 - **`service/SignalEngine.java`** — 6-dimension scorer. Computes alignment (0-95, formerly "confidence" — renamed because outcome analysis showed an inverse correlation with win rate). `determineSignalLabel(score, alignment, regime)` applies regime-adjusted thresholds: BULL raises SELL bar, BEAR raises BUY bar, CHOP/UNKNOWN use PR3 transitional defaults.
 - **`service/MarketRegimeService.java`** — classifies BTC as BULL / BEAR / CHOP / UNKNOWN from 60× 1d candles, 50-day SMA + 7-day slope, 2% band. Refresh every 15 min via `@Scheduled`, primes on `StartupEvent`. Regime feeds SignalEngine and surfaces in `SignalOverview.marketRegime`.
-- **`service/OutcomeEvaluator.java`** — `@Scheduled(every="60s")`, walks 1m candles per `PENDING` `signal_outcomes` row. Records MFE/MAE (with timestamps), ratchets a trailing stop (per-row config, default 1R activation / 0.5R step / 0.5R offset), detects target/trail/initial-stop hits, sets `final_exit_reason`, computes realized R net of round-trip fees. Target-first-when-trail-active rule: if both target and trail-stop inside one bar, trail-side optimistic because trail was prior-bar-ratcheted.
+- **`service/OutcomeEvaluator.java`** — `@Scheduled(every="60s")`, walks 1m candles per `PENDING` `signal_outcomes` row. Records MFE/MAE (with timestamps), ratchets a trailing stop (per-row config, default 1R activation / 0.5R step / 0.5R offset, widens to 1.0R offset at MFE ≥ 2.5R via `TrailConfig.widerOffsetActivationR`), detects target/trail/initial-stop hits, sets `final_exit_reason`, computes realized R net of round-trip fees. Also runs a stagnation check after the bar loop: if age ≥ 45 min AND MFE < 0.2% AND MAE > −0.3%, closes the outcome with `final_exit_reason='STAGNATION'` at the last bar's close. Target-first-when-trail-active rule: if both target and trail-stop inside one bar, trail-side optimistic because trail was prior-bar-ratcheted.
 - **`service/OutcomeTracker.java`** — persists outcomes on signal transitions or detector setup fires. Dedups per `(symbol, direction, strategy)`.
 - **`detector/` package** — pluggable `TradeSetupDetector` interface. Current: `LiquiditySweepDetector`, `TrendContinuationDetector`. Each can carry its own `TrailConfig` via `TradeSetup`.
 - **`repository/SignalOutcomeRepository.java`** — Panache repo. Queries used: `findPending()`, `findOpenByStrategy(symbol, direction, strategy)`, `findFiredSince(Instant)`, `findRecent(limit)`, `findRecentBySymbol(symbol, limit)`.
@@ -78,6 +78,7 @@ Append-only `(deployed_at PRIMARY KEY, version, description)`. Consumers join on
 | 2026-04-19 20:00 UTC | `v1-initial-fixes` — bias removal, stop-distance guard, LS filter tightening, MIN_RR 5→2 |
 | 2026-04-19 23:30 UTC | `v2-trail-system` — trailing stop ladder, final_exit_reason, time_to_mfe/mae, fees |
 | 2026-04-20 01:00 UTC | `v3-full-rollout` — regime detection, LS volume, confidence→alignment, metrics slices |
+| 2026-04-24 00:00 UTC | `v4-data-driven-vectors` — G.1 derivatives unit fix, G.2 news sentiment feed, G.3 orderbook name fix, Vectors A/B/D execution gates, Vector E stagnation exit (exchange side default-off), Vector F trail second-rung at 2.5R |
 
 ## Frontend
 
@@ -115,8 +116,9 @@ docker exec projectr-x-timescaledb-1 psql -U cryptoradar -d marketdata -c "SELEC
 ## Conventions (project-specific)
 
 - **Money & R-multiples**: realized R is **net of fees** (see `OutcomeEvaluator.feesInRUnits`). `realized_pnl_pct` stays gross. Both stored per-row.
-- **Stops and targets**: minimum risk distance `MIN_RISK_PCT = 0.005` (0.5% of entry) enforced on BOTH `SignalEngine.populateTradeLevels` AND `LiquiditySweepDetector.buildSetup`. `MIN_RR = 2.0` floor on target (resistance-based targets take precedence when they're farther).
-- **Trail policy**: defaults `(activationR=1.0, stepR=0.5, offsetR=0.5)` on every outcome via entity defaults. Per-strategy override flows through `TradeSetup.trailConfig`.
+- **Stops and targets**: minimum risk distance `MIN_RISK_PCT = 0.015` (1.5% of entry, widened from 0.5% in v4 to cut Bybit 0.11% round-trip fee drag) enforced on BOTH `SignalEngine.populateTradeLevels` AND `LiquiditySweepDetector.buildSetup`. `MIN_RR = 2.0` floor on target (resistance-based targets take precedence when they're farther).
+- **Trail policy (v4)**: `TrailConfig.DEFAULT = (activationR=1.0, stepR=0.5, offsetR=0.5, widerOffsetActivationR=2.5, widerOffsetR=1.0)` — two-rung ladder. Trail activates at MFE≥1R with tight 0.5R offset; once MFE≥2.5R the offset widens to 1.0R so right-tail runners have more room before the trail takes them. Legacy 3-arg constructor still works and disables the second rung. Per-strategy override flows through `TradeSetup.trailConfig`.
+- **Dimension names**: the scorer emits `"Order Book"` (with space), not `"OrderBook"`. Any lookup against `MarketContext.dimensionScores()` or the `OutcomeTracker` dimension switch must use the spaced form — typo caused `orderbook_score` to stay NULL in all historical outcomes pre-v4.
 - **Outcome tracking dedup**: by `(symbol, direction, strategy)`. Multiple detectors can hold open outcomes for the same symbol+direction simultaneously — different trade ideas, measured independently.
 - **Engine thresholds** in `SignalEngine.determineSignalLabel`:
   - CHOP / UNKNOWN: `strongBuy≥55, buy≥25, strongSell≤-40, sell≤-15` (PR3 transitional — SELL side looser than BUY side until bias-fixes are validated on ≥2 weeks of fresh data)
@@ -147,12 +149,24 @@ Live in `techdebt/` (see `~/.claude/rules/tech-debt-tracking.md` for format). Hi
 - `2-2-missing-unit-tests-signal-engine-gemini-service`
 - `2-2-silent-delisting-detection-gap` (XMRUSDT-style stale-kline risk)
 
-## Current engine baseline (as of 2026-04-20)
+## Current engine baseline (as of 2026-04-24, v4 shipped)
 
-- 44 signal-service unit tests passing across `SignalEngineBiasTest`, `SignalEngineStopPlacementTest`, `SignalEngineRegimeTest`, `OutcomeEvaluatorTrailingTest`, `OutcomeEvaluatorTimingAndFeesTest`, `MarketRegimeServiceTest`, `LiquiditySweepDetectorTest`
+- 55 signal-service tests, 97 trade-execution-service tests, 38 shared-trade-core tests passing
 - Regime classified `BULL` at deploy time
-- Metrics snapshot (periodDays=7): winRate **24.4%**, avgR **+0.45**, totalR **+38.3R**, profitFactor **1.64**
+- Phase 2 outcome slice (2026-04-20 → 2026-04-23, pre-v4): winRate 45.9%, avgR **−0.135**, totalR −14.95 — inverted Derivatives scorer held SELL signals mathematically unreachable, zero SHORT outcomes ever fired
+- Post-v4 immediate effect: LTC Derivatives swung from stuck `+35` to honest `−35`; three symbols (ETH, XRP, LTC) sit within 3–10 pts of their first-ever SELL signal
 - Symbol list: 13 pairs (`XMRUSDT` deliberately dropped — Binance delisted 2024-02-20, API still served frozen klines)
+
+## Execution gates (trade-execution-service, added in v4)
+
+All live in `services/trade-execution-service/src/main/java/com/cryptoradar/execution/intake/` or `.../lifecycle/`. Each is configurable via env vars and has a kill-switch for instant rollback.
+
+- **`SignalSubscriber.isBelowAlignmentFloor`** — rejects overview-envelope signals with `alignment < execution.alignment.floor` (default 70). Detector alerts lack alignment and bypass. Phase-2 rationale: the 40–55 alignment bucket lost 8.87R across 19 trades.
+- **`SymbolPerformanceGate`** — reads last N closed outcomes per symbol from `signal_outcomes`; suppresses dispatch when cumulative R ≤ threshold. Defaults: `lookback=10`, `threshold-r=-3.0`, `cache-ttl=30s`. Self-healing as the rolling window ages out.
+- **`DetectorConfluenceCheck`** — trend-continuation LONG entries require an open `dimension-scoring` LONG in the same symbol within `execution.confluence.window-minutes` (default 15). SHORTs and other detectors unaffected.
+- **`StagnationMonitor`** (lifecycle, `@Scheduled`) — exchange-side companion to the OutcomeEvaluator stagnation exit. Reads MFE/MAE from `signal_outcomes` via the trade's `signal_id` and calls `OrderPlacer.close(..., ExitReason.STAGNATION)` when stagnant. **Default disabled** (`execution.stagnation-monitor.enabled=false`). Flip to `true` only after tracking-side STAGNATION reasons have been observed for 24–48h.
+
+All four gates fail-open on query errors — a stuck read cannot block legitimate trades (or, for the monitor, force-close live positions).
 
 ## Further reading
 
