@@ -7,5 +7,6 @@ public enum ExitReason {
     EXPIRED,
     FLIP_CLOSE,
     MANUAL,
-    KILL
+    KILL,
+    STAGNATION
 }
