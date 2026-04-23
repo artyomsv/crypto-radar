@@ -85,14 +85,26 @@ public class NewsService {
 
     public Map<String, Object> getSentimentBySymbol(String symbol) {
         Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
+        // Articles are tagged with base tickers (BTC, ETH) from provider metadata,
+        // but callers pass trading pairs (BTCUSDT). Strip the quote suffix before
+        // matching. Also use word-boundary LIKE to avoid matching "BTC" inside a
+        // larger token if the column ever contains names like "BTCASH".
         String upperSymbol = symbol.toUpperCase();
+        String baseSymbol = stripQuoteSuffix(upperSymbol);
 
         @SuppressWarnings("unchecked")
         List<NewsArticle> recentArticles = entityManager.createQuery(
-                        "SELECT n FROM NewsArticle n WHERE n.relatedSymbolsRaw LIKE :symbol ESCAPE '\\' " +
-                                "AND n.publishedAt >= :since ORDER BY n.publishedAt DESC"
+                        "SELECT n FROM NewsArticle n WHERE ("
+                                + "  n.relatedSymbolsRaw = :exact"
+                                + "  OR n.relatedSymbolsRaw LIKE :leading ESCAPE '\\'"
+                                + "  OR n.relatedSymbolsRaw LIKE :trailing ESCAPE '\\'"
+                                + "  OR n.relatedSymbolsRaw LIKE :middle ESCAPE '\\'"
+                                + ") AND n.publishedAt >= :since ORDER BY n.publishedAt DESC"
                 )
-                .setParameter("symbol", "%" + upperSymbol.replace("%", "\\%").replace("_", "\\_") + "%")
+                .setParameter("exact", baseSymbol)
+                .setParameter("leading", baseSymbol + ",%")
+                .setParameter("trailing", "%," + baseSymbol)
+                .setParameter("middle", "%," + baseSymbol + ",%")
                 .setParameter("since", sevenDaysAgo)
                 .getResultList();
 
@@ -139,14 +151,32 @@ public class NewsService {
         return result;
     }
 
+    // Trading-pair suffixes the signal engine queries with (BTCUSDT, ETHBUSD etc.).
+    // News articles are tagged with the base ticker (BTC, ETH) from provider
+    // categories, so these suffixes must come off before matching.
+    private static final List<String> QUOTE_SUFFIXES = List.of(
+            "USDT", "USDC", "BUSD", "TUSD", "DAI", "USD");
+
+    static String stripQuoteSuffix(String upperSymbol) {
+        if (upperSymbol == null) return null;
+        for (String suffix : QUOTE_SUFFIXES) {
+            if (upperSymbol.endsWith(suffix) && upperSymbol.length() > suffix.length()) {
+                return upperSymbol.substring(0, upperSymbol.length() - suffix.length());
+            }
+        }
+        return upperSymbol;
+    }
+
     @SuppressWarnings("unchecked")
     public List<DailySentiment> getDailySentiment(String symbol, int days) {
-        String upperSymbol = symbol.toUpperCase();
+        // Same suffix handling as getSentimentBySymbol — callers pass
+        // trading pairs, daily rows are keyed by base ticker.
+        String baseSymbol = stripQuoteSuffix(symbol.toUpperCase());
         return entityManager.createQuery(
                         "SELECT d FROM DailySentiment d WHERE d.symbol = :symbol " +
                                 "AND d.date >= :since ORDER BY d.date DESC"
                 )
-                .setParameter("symbol", upperSymbol)
+                .setParameter("symbol", baseSymbol)
                 .setParameter("since", java.time.LocalDate.now().minusDays(days))
                 .getResultList();
     }
