@@ -35,7 +35,13 @@ import java.util.TreeMap;
 public class BybitV5RestClient {
 
     private static final Logger LOG = Logger.getLogger(BybitV5RestClient.class);
-    private static final String RECV_WINDOW = "5000";
+    // Was 5000ms. Bumped to 30s after a clock-skew incident: the Docker
+    // Desktop WSL VM clock drifts after the laptop sleeps, and 7-8s of skew
+    // exceeds the 5s window — every signed call gets rejected with
+    // retCode=10002 until Windows w32tm resyncs. 30s tolerates ordinary drift
+    // without weakening signature security (timestamp is still part of the
+    // HMAC payload, replayability bounded by recv_window not enabled here).
+    private static final String RECV_WINDOW = "30000";
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     private final HttpClient http = HttpClient.newBuilder()

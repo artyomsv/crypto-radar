@@ -10,9 +10,10 @@ import com.cryptoradar.execution.model.ExecutionEvent;
 import com.cryptoradar.execution.model.ExecutionEventType;
 import com.cryptoradar.execution.model.ExitReason;
 import com.cryptoradar.execution.model.TradeStatus;
+import com.cryptoradar.execution.notify.ExecutionEventService;
+import com.cryptoradar.execution.observability.SlippageLogger;
 import com.cryptoradar.execution.repository.ExchangeAccountRepository;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
-import com.cryptoradar.execution.repository.ExecutionEventRepository;
 import io.quarkus.runtime.StartupEvent;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -42,14 +43,14 @@ public class OrderReconciler {
 
     private final ExecutedTradeRepository tradeRepo;
     private final ExchangeAccountRepository accountRepo;
-    private final ExecutionEventRepository eventRepo;
+    private final ExecutionEventService events;
     private final BybitV5RestClient bybit;
 
     public OrderReconciler(ExecutedTradeRepository tradeRepo, ExchangeAccountRepository accountRepo,
-                           ExecutionEventRepository eventRepo, BybitV5RestClient bybit) {
+                           ExecutionEventService events, BybitV5RestClient bybit) {
         this.tradeRepo = tradeRepo;
         this.accountRepo = accountRepo;
-        this.eventRepo = eventRepo;
+        this.events = events;
         this.bybit = bybit;
     }
 
@@ -111,51 +112,348 @@ public class OrderReconciler {
         }
     }
 
-    private void closeFromReconcile(ExchangeAccount account, ExecutedTrade trade) {
+    /**
+     * Close a trade by querying Bybit's closed-pnl history for the symbol and
+     * populating realized PnL, fees, exit price, exit reason, and (if missing)
+     * entry price + R-multiple. Idempotent: callers may invoke this on a row
+     * already CLOSED to backfill missing fields.
+     *
+     * <p>Package-private so {@link com.cryptoradar.execution.client.bybit.BybitV5WsClient}
+     * can reuse the same logic when its position-update stream sees size→0,
+     * keeping the close path single-sourced. Returns {@code true} when at
+     * least one field was filled, {@code false} otherwise (no Bybit match,
+     * fetch error, or row was already complete).
+     */
+    public boolean closeFromReconcile(ExchangeAccount account, ExecutedTrade trade) {
         BybitResponse<BybitV5RestClient.ListResult<ClosedPnlV5>> pnlResp;
         try {
             pnlResp = bybit.getClosedPnl(account.getEnvironment(),
                     account.getApiKeyEncrypted(), account.getApiSecretEncrypted(),
-                    trade.getSymbol(), 10);
+                    trade.getSymbol(), 50);
         } catch (RuntimeException e) {
             LOG.warnf(e, "closedPnl fetch failed for trade %d", trade.getId());
-            return;
+            return false;
         }
-        if (!pnlResp.isOk() || pnlResp.result() == null || pnlResp.result().list().isEmpty()) return;
+        if (!pnlResp.isOk() || pnlResp.result() == null || pnlResp.result().list().isEmpty()) {
+            return false;
+        }
 
-        // Most recent matching close; Bybit returns in descending createdTime order.
-        ClosedPnlV5 match = pnlResp.result().list().get(0);
+        ClosedPnlV5 match = pickMatchingClose(pnlResp.result().list(), trade);
+        if (match == null) return false;
 
-        trade.setStatus(TradeStatus.CLOSED);
-        trade.setClosedAt(Instant.now());
-        trade.setRealizedPnlUsdt(safeBd(match.closedPnl()));
-        // Bybit may omit openFee/closeFee on liquidation or partial-fill edge cases —
-        // coalesce nulls to zero so the addition doesn't NPE.
-        BigDecimal openFee = safeBd(match.openFee());
-        BigDecimal closeFee = safeBd(match.closeFee());
-        trade.setFeesUsdt(
-                (openFee == null ? BigDecimal.ZERO : openFee)
-                        .add(closeFee == null ? BigDecimal.ZERO : closeFee));
-        trade.setExitPrice(safeBd(match.orderPrice()));
-        trade.setExitReason(trade.getExitReason() != null ? trade.getExitReason() : ExitReason.TARGET);
+        boolean filled = false;
 
-        if (trade.getEntryPrice() != null && trade.getStopPrice() != null) {
-            BigDecimal riskDist = trade.getEntryPrice().subtract(trade.getStopPrice()).abs();
-            if (riskDist.signum() > 0 && trade.getExitPrice() != null) {
-                BigDecimal pnlDist = "LONG".equals(trade.getDirection())
-                        ? trade.getExitPrice().subtract(trade.getEntryPrice())
-                        : trade.getEntryPrice().subtract(trade.getExitPrice());
-                trade.setRealizedRMultiple(pnlDist.divide(riskDist, 4, RoundingMode.HALF_UP));
+        if (trade.getStatus() != TradeStatus.CLOSED) {
+            trade.setStatus(TradeStatus.CLOSED);
+            trade.setClosedAt(Instant.now());
+            filled = true;
+        }
+        if (trade.getRealizedPnlUsdt() == null) {
+            trade.setRealizedPnlUsdt(safeBd(match.closedPnl()));
+            filled = true;
+        }
+        if (trade.getFeesUsdt() == null) {
+            // Bybit may omit openFee/closeFee on liquidation or partial-fill edge
+            // cases — coalesce nulls to zero so the addition doesn't NPE.
+            BigDecimal openFee = safeBd(match.openFee());
+            BigDecimal closeFee = safeBd(match.closeFee());
+            trade.setFeesUsdt(
+                    (openFee == null ? BigDecimal.ZERO : openFee)
+                            .add(closeFee == null ? BigDecimal.ZERO : closeFee));
+            filled = true;
+        }
+        // Prefer avgExitPrice over orderPrice — orderPrice is the trigger price
+        // of a single fill while avgExitPrice is the position-level average.
+        if (trade.getExitPrice() == null) {
+            BigDecimal exit = safeBd(match.avgExitPrice());
+            if (exit == null) exit = safeBd(match.orderPrice());
+            trade.setExitPrice(exit);
+            if (exit != null) filled = true;
+        }
+        // Backfill entry price from the position-level avgEntryPrice when WS
+        // missed the execution event. Reconciler is the only path that can
+        // recover this if the WS stream dropped before first fill landed.
+        if (trade.getEntryPrice() == null) {
+            BigDecimal entry = safeBd(match.avgEntryPrice());
+            if (entry != null) {
+                trade.setEntryPrice(entry);
+                filled = true;
+            }
+        }
+        if (trade.getExitReason() == null) {
+            trade.setExitReason(inferExitReason(trade, match));
+            filled = true;
+        }
+        // Slippage observability: log actual avgExitPrice vs the intended level
+        // for whichever exit reason the inference produced. Pure observation,
+        // no behavior change.
+        logExitSlippage(trade, match);
+        if (trade.getRealizedRMultiple() == null) {
+            BigDecimal r = computeRMultiple(trade);
+            if (r != null) {
+                trade.setRealizedRMultiple(r);
+                filled = true;
             }
         }
 
-        ExecutionEvent ev = new ExecutionEvent();
-        ev.setExchangeAccountId(account.getId());
-        ev.setEventType(ExecutionEventType.RECONCILE_CLOSED_EXTERNALLY);
-        ev.setSignalId(trade.getSignalId());
-        ev.setExecutedTradeId(trade.getId());
-        ev.setMetadata(Map.of("closedPnl", match.closedPnl(), "orderPrice", match.orderPrice()));
-        eventRepo.persist(ev);
+        if (filled) {
+            ExecutionEvent ev = new ExecutionEvent();
+            ev.setExchangeAccountId(account.getId());
+            ev.setExecutedTradeId(trade.getId());
+            ev.setEventType(ExecutionEventType.RECONCILE_CLOSED_EXTERNALLY);
+            ev.setSignalId(trade.getSignalId());
+            ev.setMetadata(Map.of(
+                    "closedPnl", String.valueOf(match.closedPnl()),
+                    "orderPrice", String.valueOf(match.orderPrice()),
+                    "avgEntryPrice", String.valueOf(match.avgEntryPrice()),
+                    "avgExitPrice", String.valueOf(match.avgExitPrice()),
+                    "inferredExitReason", String.valueOf(trade.getExitReason())));
+            events.record(ev);
+        }
+        return filled;
+    }
+
+    /**
+     * Pick the closed-pnl entry that most likely corresponds to this trade.
+     * Filters by close-side direction AND a time window around the trade's
+     * open/close window — without the time bound, repeat trades on the same
+     * symbol would steal each other's payload (caused mis-backfills with
+     * stop_price on the wrong side of entry_price).
+     *
+     * <p>The acceptable window is from {@code openedAt - 1h} (catch fills
+     * just before the row was persisted) through {@code closedAt + 24h}, or
+     * "now" if the trade is still open at call time.
+     */
+    private static ClosedPnlV5 pickMatchingClose(List<ClosedPnlV5> closes, ExecutedTrade trade) {
+        if (closes.isEmpty()) return null;
+        String openSide = "LONG".equals(trade.getDirection()) ? "Buy" : "Sell";
+        String closeSide = "Buy".equals(openSide) ? "Sell" : "Buy";
+
+        Instant lowerBound = trade.getOpenedAt() == null ? null
+                : trade.getOpenedAt().minusSeconds(MATCH_WINDOW_BEFORE_OPEN_SEC);
+        Instant upperBound = trade.getClosedAt() != null
+                ? trade.getClosedAt().plusSeconds(MATCH_WINDOW_AFTER_CLOSE_SEC)
+                : Instant.now().plusSeconds(MATCH_WINDOW_AFTER_CLOSE_SEC);
+
+        for (ClosedPnlV5 c : closes) {
+            if (!closeSide.equals(c.side())) continue;
+            Instant created = parseEpochMillis(c.createdTime());
+            if (lowerBound != null && created != null && created.isBefore(lowerBound)) continue;
+            if (created != null && created.isAfter(upperBound)) continue;
+            return c;
+        }
+        // No row matched within the window — refuse to guess. The caller
+        // treats null as "no match", which is safer than attributing another
+        // trade's PnL to this row.
+        return null;
+    }
+
+    private static Instant parseEpochMillis(String s) {
+        if (s == null || s.isEmpty()) return null;
+        try {
+            return Instant.ofEpochMilli(Long.parseLong(s));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static final long MATCH_WINDOW_BEFORE_OPEN_SEC = 3_600;          //  1h
+    private static final long MATCH_WINDOW_AFTER_CLOSE_SEC = 24 * 3_600;     // 24h
+
+    /**
+     * Infer an {@link ExitReason} when the trade was closed externally on
+     * Bybit (no in-process exit signal). Strategy:
+     * <ol>
+     *   <li>If we have entry+stop+target+exit price: compare exit price to
+     *       the stop and target levels (with 0.1% tolerance for slippage).
+     *       Trail-active flag distinguishes INITIAL_STOP vs TRAIL_STOP.</li>
+     *   <li>Otherwise fall back to PnL sign + trail-active flag.</li>
+     * </ol>
+     * Defaults to {@code MANUAL} when neither path produces an answer —
+     * better to mark "unknown" than to silently mislabel as TARGET, which
+     * was the bug that misclassified 26 stop hits as wins.
+     */
+    static ExitReason inferExitReason(ExecutedTrade trade, ClosedPnlV5 match) {
+        boolean trailActive = trade.getTrailTriggeredAt() != null;
+        BigDecimal exit = safeBd(match.avgExitPrice());
+        if (exit == null) exit = safeBd(match.orderPrice());
+        BigDecimal target = trade.getTargetPrice();
+        BigDecimal stop = trade.getStopPrice();
+
+        BigDecimal closedPnl = safeBd(match.closedPnl());
+        if (exit != null && target != null && stop != null && exit.signum() > 0) {
+            BigDecimal tol = exit.multiply(SLIPPAGE_TOLERANCE);
+            boolean isLong = "LONG".equals(trade.getDirection());
+            if (isLong) {
+                if (exit.compareTo(target.subtract(tol)) >= 0) return ExitReason.TARGET;
+                if (exit.compareTo(stop.add(tol)) <= 0) {
+                    return trailActive ? ExitReason.TRAIL_STOP : ExitReason.INITIAL_STOP;
+                }
+            } else {
+                if (exit.compareTo(target.add(tol)) <= 0) return ExitReason.TARGET;
+                if (exit.compareTo(stop.subtract(tol)) >= 0) {
+                    return trailActive ? ExitReason.TRAIL_STOP : ExitReason.INITIAL_STOP;
+                }
+            }
+            // Exit between the two levels — slippage from a stop or target
+            // hit is the dominant cause in volatile crypto markets (price
+            // gaps through the level and the market order fills somewhere
+            // back inside). Use PnL sign + trail-active to disambiguate.
+            // Reserve MANUAL only for the genuinely ambiguous case where
+            // PnL is missing too.
+            if (trailActive) return ExitReason.TRAIL_STOP;
+            if (closedPnl != null) {
+                return closedPnl.signum() > 0 ? ExitReason.TARGET : ExitReason.INITIAL_STOP;
+            }
+            return ExitReason.MANUAL;
+        }
+
+        if (closedPnl != null) {
+            if (closedPnl.signum() > 0) return trailActive ? ExitReason.TRAIL_STOP : ExitReason.TARGET;
+            return trailActive ? ExitReason.TRAIL_STOP : ExitReason.INITIAL_STOP;
+        }
+        return ExitReason.MANUAL;
+    }
+
+    /**
+     * Compute R-multiple from entry/stop/exit. Rejects nonsense risk geometry
+     * to guard against backfilled rows whose stored {@code stopPrice} ended up
+     * on the wrong side of {@code entryPrice} (e.g., LONG with stop above
+     * entry). Such rows would otherwise produce extreme values like -245R
+     * that pollute aggregate metrics.
+     */
+    private static BigDecimal computeRMultiple(ExecutedTrade trade) {
+        if (trade.getEntryPrice() == null || trade.getStopPrice() == null
+                || trade.getExitPrice() == null) return null;
+
+        BigDecimal entry = trade.getEntryPrice();
+        BigDecimal stop = trade.getStopPrice();
+        boolean isLong = "LONG".equals(trade.getDirection());
+
+        // Stop must be on the protective side of entry: below for LONG, above
+        // for SHORT. Otherwise the row's risk geometry is corrupt.
+        if (isLong && stop.compareTo(entry) >= 0) return null;
+        if (!isLong && stop.compareTo(entry) <= 0) return null;
+
+        BigDecimal riskDist = entry.subtract(stop).abs();
+        if (riskDist.signum() <= 0) return null;
+        // Guard against vanishingly small risk distances (< 0.1% of entry)
+        // which produce unreliable R values from minor stop-placement noise.
+        BigDecimal minRisk = entry.abs().multiply(MIN_RISK_FRACTION_FOR_R);
+        if (riskDist.compareTo(minRisk) < 0) return null;
+
+        BigDecimal pnlDist = isLong
+                ? trade.getExitPrice().subtract(entry)
+                : entry.subtract(trade.getExitPrice());
+        return pnlDist.divide(riskDist, 4, RoundingMode.HALF_UP);
+    }
+
+    private static final BigDecimal MIN_RISK_FRACTION_FOR_R = new BigDecimal("0.001");
+
+    private static final BigDecimal SLIPPAGE_TOLERANCE = new BigDecimal("0.001");
+
+    /**
+     * Re-classify exit_reason on rows where the recorded reason contradicts
+     * the PnL sign — i.e., the legacy default-to-TARGET bug. Uses local data
+     * only (entry/stop/target/exit price + pnl + trail flag); no Bybit call.
+     * Returns the number of rows whose exit_reason was changed.
+     */
+    @Transactional
+    public int repairMislabeledExitReasons(Long accountId, int limit) {
+        if (accountRepo.findById(accountId) == null) return 0;
+        List<ExecutedTrade> rows = tradeRepo.findMislabeledExits(accountId, limit);
+        int changed = 0;
+        for (ExecutedTrade trade : rows) {
+            ExitReason inferred = inferFromLocalData(trade);
+            if (inferred != null && inferred != trade.getExitReason()) {
+                ExitReason previous = trade.getExitReason();
+                trade.setExitReason(inferred);
+                changed++;
+                ExecutionEvent ev = new ExecutionEvent();
+                ev.setExchangeAccountId(accountId);
+                ev.setExecutedTradeId(trade.getId());
+                ev.setEventType(ExecutionEventType.RECONCILE_CLOSED_EXTERNALLY);
+                ev.setSignalId(trade.getSignalId());
+                ev.setMetadata(Map.of(
+                        "repair", "exit_reason_reclassified",
+                        "previous", String.valueOf(previous),
+                        "inferred", String.valueOf(inferred)));
+                events.record(ev);
+            }
+        }
+        if (changed > 0) {
+            LOG.infof("repairMislabeledExitReasons account=%d changed=%d/%d",
+                    accountId, changed, rows.size());
+        }
+        return changed;
+    }
+
+    /**
+     * Local-only reclassifier that mirrors {@link #inferExitReason}'s logic
+     * but reads from the trade row instead of a {@link ClosedPnlV5} response.
+     * Returns null when the row lacks enough data to decide.
+     */
+    private static ExitReason inferFromLocalData(ExecutedTrade trade) {
+        boolean trailActive = trade.getTrailTriggeredAt() != null;
+        BigDecimal exit = trade.getExitPrice();
+        BigDecimal target = trade.getTargetPrice();
+        BigDecimal stop = trade.getStopPrice();
+
+        BigDecimal pnl = trade.getRealizedPnlUsdt();
+        if (exit != null && target != null && stop != null && exit.signum() > 0) {
+            BigDecimal tol = exit.multiply(SLIPPAGE_TOLERANCE);
+            boolean isLong = "LONG".equals(trade.getDirection());
+            if (isLong) {
+                if (exit.compareTo(target.subtract(tol)) >= 0) return ExitReason.TARGET;
+                if (exit.compareTo(stop.add(tol)) <= 0) {
+                    return trailActive ? ExitReason.TRAIL_STOP : ExitReason.INITIAL_STOP;
+                }
+            } else {
+                if (exit.compareTo(target.add(tol)) <= 0) return ExitReason.TARGET;
+                if (exit.compareTo(stop.subtract(tol)) >= 0) {
+                    return trailActive ? ExitReason.TRAIL_STOP : ExitReason.INITIAL_STOP;
+                }
+            }
+            // Between levels with no trail → resolve via PnL sign (likely
+            // stop or target with slippage exceeding the tolerance band).
+            if (trailActive) return ExitReason.TRAIL_STOP;
+            if (pnl != null) {
+                return pnl.signum() > 0 ? ExitReason.TARGET : ExitReason.INITIAL_STOP;
+            }
+            return null;
+        }
+
+        if (pnl != null) {
+            if (pnl.signum() > 0) return trailActive ? ExitReason.TRAIL_STOP : ExitReason.TARGET;
+            return trailActive ? ExitReason.TRAIL_STOP : ExitReason.INITIAL_STOP;
+        }
+        return null;
+    }
+
+    /**
+     * Re-fetch Bybit closed-pnl for every CLOSED row on the account that has
+     * NULL pnl/exit_reason/entry_price. One-shot repair for trades that were
+     * marked closed by the WS path before the close-payload was available
+     * (the WS race that caused the "—" rows in the trade ledger).
+     *
+     * <p>Bybit's closed-pnl endpoint only goes back ~30 days; older rows
+     * cannot be recovered. Returns the count of trades whose data was
+     * meaningfully updated.
+     */
+    @Transactional
+    public int backfillIncompleteCloses(Long accountId, int limit) {
+        ExchangeAccount account = accountRepo.findById(accountId);
+        if (account == null) return 0;
+        List<ExecutedTrade> incomplete = tradeRepo.findIncompleteCloses(accountId, limit);
+        int recovered = 0;
+        for (ExecutedTrade trade : incomplete) {
+            if (closeFromReconcile(account, trade)) recovered++;
+        }
+        if (recovered > 0) {
+            LOG.infof("backfillIncompleteCloses account=%d recovered=%d/%d",
+                    accountId, recovered, incomplete.size());
+        }
+        return recovered;
     }
 
     private void createOrphan(ExchangeAccount account, PositionV5 pos, String direction) {
@@ -177,7 +475,31 @@ public class OrderReconciler {
         ev.setEventType(ExecutionEventType.RECONCILE_ORPHAN_DETECTED);
         ev.setExecutedTradeId(orphan.getId());
         ev.setMetadata(Map.of("symbol", pos.symbol(), "side", pos.side()));
-        eventRepo.persist(ev);
+        events.record(ev);
+    }
+
+    /**
+     * Picks the intended exit level the reconciler thinks was hit (target /
+     * trail stop / initial stop) and logs the basis-point gap between that
+     * level and Bybit's avgExitPrice. Trail trades use {@code dynamicStopPrice}
+     * since the ratcheted stop is the level the engine actually defended,
+     * not the original {@code stopPrice}.
+     */
+    private static void logExitSlippage(ExecutedTrade trade, ClosedPnlV5 match) {
+        ExitReason reason = trade.getExitReason();
+        if (reason == null) return;
+        BigDecimal intended = switch (reason) {
+            case TARGET -> trade.getTargetPrice();
+            case TRAIL_STOP -> trade.getDynamicStopPrice() != null
+                    ? trade.getDynamicStopPrice() : trade.getStopPrice();
+            case INITIAL_STOP -> trade.getStopPrice();
+            default -> null;
+        };
+        if (intended == null) return;
+        BigDecimal actual = safeBd(match.avgExitPrice());
+        if (actual == null) actual = safeBd(match.orderPrice());
+        if (actual == null) return;
+        SlippageLogger.logExit(trade, reason, intended, actual);
     }
 
     private static boolean hasOpenSize(PositionV5 pos) {

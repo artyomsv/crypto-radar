@@ -37,6 +37,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -223,38 +224,44 @@ public class MarketDataResource {
     public List<Map<String, Object>> getConfiguredCryptos() {
         List<Map<String, Object>> results = new ArrayList<>();
         try (Connection conn = dataSource.getConnection()) {
-            // Batch: candle stats per symbol+interval
+            // A single scan of the candles hypertable yields per-(symbol,interval)
+            // count/min/max. Per-symbol totals, oldest, and newest are derived
+            // from these rows in Java — avoiding three more full scans of a 4M-row
+            // hypertable (each ~0.5-2.4s) that returned data this query already has.
             Map<String, List<Map<String, Object>>> candleStatsMap = new HashMap<>();
+            Map<String, Long> totalCandlesMap = new HashMap<>();
+            Map<String, Instant> oldestCandleMap = new HashMap<>();
+            Map<String, Instant> newestCandleMap = new HashMap<>();
             try (PreparedStatement stmt = conn.prepareStatement(
                     "SELECT symbol, interval, COUNT(*) as cnt, MIN(time) as oldest, MAX(time) as newest " +
                             "FROM candles GROUP BY symbol, interval ORDER BY cnt DESC");
                  ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     String sym = rs.getString("symbol");
+                    long cnt = rs.getLong("cnt");
                     Timestamp oldest = rs.getTimestamp("oldest");
                     Timestamp newest = rs.getTimestamp("newest");
                     candleStatsMap.computeIfAbsent(sym, k -> new ArrayList<>()).add(Map.of(
                             "interval", rs.getString("interval"),
-                            "count", rs.getLong("cnt"),
+                            "count", cnt,
                             "oldest", oldest != null ? oldest.toInstant().toString() : "",
                             "newest", newest != null ? newest.toInstant().toString() : ""
                     ));
+                    totalCandlesMap.merge(sym, cnt, Long::sum);
+                    if (oldest != null) {
+                        oldestCandleMap.merge(sym, oldest.toInstant(), (a, b) -> a.isBefore(b) ? a : b);
+                    }
+                    if (newest != null) {
+                        newestCandleMap.merge(sym, newest.toInstant(), (a, b) -> a.isAfter(b) ? a : b);
+                    }
                 }
             }
 
-            // Batch: total candles, price snapshots, whale transactions per symbol
-            Map<String, Long> totalCandlesMap = loadCountsBySymbol(conn,
-                    "SELECT symbol, COUNT(*) as total FROM candles GROUP BY symbol");
+            // Counts for the other two tables — one scan each (separate tables).
             Map<String, Long> priceSnapshotsMap = loadCountsBySymbol(conn,
                     "SELECT symbol, COUNT(*) as total FROM price_snapshots GROUP BY symbol");
             Map<String, Long> whaleTradesMap = loadCountsBySymbol(conn,
                     "SELECT symbol, COUNT(*) as total FROM whale_transactions GROUP BY symbol");
-
-            // Batch: oldest/newest candle per symbol
-            Map<String, String> oldestCandleMap = loadTimestampsBySymbol(conn,
-                    "SELECT symbol, MIN(time) as ts FROM candles GROUP BY symbol");
-            Map<String, String> newestCandleMap = loadTimestampsBySymbol(conn,
-                    "SELECT symbol, MAX(time) as ts FROM candles GROUP BY symbol");
 
             // Get assets and assemble results
             try (PreparedStatement stmt = conn.prepareStatement(
@@ -271,8 +278,10 @@ public class MarketDataResource {
                     entry.put("totalCandles", totalCandlesMap.getOrDefault(symbol, 0L));
                     entry.put("priceSnapshots", priceSnapshotsMap.getOrDefault(symbol, 0L));
                     entry.put("whaleTrades", whaleTradesMap.getOrDefault(symbol, 0L));
-                    entry.put("oldestCandle", oldestCandleMap.get(symbol));
-                    entry.put("newestCandle", newestCandleMap.get(symbol));
+                    Instant oldest = oldestCandleMap.get(symbol);
+                    Instant newest = newestCandleMap.get(symbol);
+                    entry.put("oldestCandle", oldest != null ? oldest.toString() : null);
+                    entry.put("newestCandle", newest != null ? newest.toString() : null);
                     results.add(entry);
                 }
             }
@@ -292,22 +301,6 @@ public class MarketDataResource {
             }
         } catch (Exception e) {
             LOG.warnf("Failed to load counts [%s]: %s", sql, e.getMessage());
-        }
-        return map;
-    }
-
-    private Map<String, String> loadTimestampsBySymbol(Connection conn, String sql) {
-        Map<String, String> map = new HashMap<>();
-        try (PreparedStatement stmt = conn.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
-            while (rs.next()) {
-                Timestamp ts = rs.getTimestamp("ts");
-                if (ts != null) {
-                    map.put(rs.getString("symbol"), ts.toInstant().toString());
-                }
-            }
-        } catch (Exception e) {
-            LOG.warnf("Failed to load timestamps [%s]: %s", sql, e.getMessage());
         }
         return map;
     }

@@ -1,5 +1,5 @@
 import { API_BASE } from './utils';
-import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleDistribution, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal, PerformanceReport, SignalOutcomeView, ExchangeAccount, WalletSnapshot, ExecutionPosition, ExecutionTrade, ExecutionEvent, WhyView, CreateAccountRequest, UpdateAccountRequest } from '@/types';
+import type { DashboardData, CryptoDetail, WhaleTransaction, WhaleMarketOverview, WhaleDistribution, WhaleFlowSummary, DerivativesOverview, FundingRate, LiquidationEvent, PriceAlert, CorrelationMatrix, VolatilityMetric, OrderBookDepth, PortfolioPosition, MacroOverview, SignalOverview, TradingSignal, PerformanceReport, SignalOutcomeView, ExchangeAccount, WalletSnapshot, ExecutionPosition, ExecutionTrade, ExecutionEvent, WhyView, CreateAccountRequest, UpdateAccountRequest, TradeHistoryPage, SignalConfig, SignalConfigVersion, BacktestRun, BacktestRunDetail, ExecutionSettings, TelegramTestResult, OptionChainRow, OptionOpportunity, RealizedVolReading, EnrichedOptionOpportunity, HitRateBucket } from '@/types';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
@@ -227,6 +227,10 @@ export const api = {
     getPositions: (id: number) => fetchJson<ExecutionPosition[]>(`/api/execution/accounts/${id}/positions`),
     getTrades: (id: number, limit = 50) =>
       fetchJson<ExecutionTrade[]>(`/api/execution/accounts/${id}/trades?limit=${limit}`),
+    getTradeHistory: (id: number, page = 0, pageSize = 25) =>
+      fetchJson<TradeHistoryPage>(
+        `/api/execution/accounts/${id}/trades/history?page=${page}&pageSize=${pageSize}`,
+      ),
     getEvents: (id: number, limit = 100) =>
       fetchJson<ExecutionEvent[]>(`/api/execution/accounts/${id}/events?limit=${limit}`),
     getWhy: (accountId: number, tradeId: number) =>
@@ -237,5 +241,104 @@ export const api = {
       sendJson<{ closedCount: number }>(`/api/execution/accounts/${id}/close-all`, 'POST', { confirm }),
     closeTrade: (accountId: number, tradeId: number) =>
       sendJson<ExecutionTrade>(`/api/execution/accounts/${accountId}/trades/${tradeId}/close`, 'POST'),
+  },
+
+  // Signal config + backtest
+  getSignalConfig: () => fetchJson<SignalConfigVersion>('/api/signals/config'),
+  listSignalConfigVersions: (limit = 50, offset = 0) =>
+    fetchJson<SignalConfigVersion[]>(`/api/signals/config/versions?limit=${limit}&offset=${offset}`),
+  getSignalConfigVersion: (id: number) =>
+    fetchJson<SignalConfigVersion>(`/api/signals/config/versions/${id}`),
+  saveSignalConfigVersion: async (
+    config: SignalConfig,
+    description: string,
+    parentVersionId?: number,
+  ): Promise<SignalConfigVersion> => {
+    const res = await fetch(`${API_BASE}/api/signals/config/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config, description, parentVersionId }),
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error?: string };
+      throw new Error(err.error ?? `HTTP ${res.status}`);
+    }
+    return (await res.json()) as SignalConfigVersion;
+  },
+  activateSignalConfigVersion: async (id: number): Promise<SignalConfigVersion> => {
+    const res = await fetch(`${API_BASE}/api/signals/config/versions/${id}/activate`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as SignalConfigVersion;
+  },
+  runBacktest: async (
+    configVersionId: number,
+    periodStart: string,
+    periodEnd: string,
+    tier = 1,
+    alignmentFloor: number | null = null,
+  ): Promise<BacktestRun> => {
+    const body: Record<string, unknown> = { configVersionId, periodStart, periodEnd, tier };
+    if (alignmentFloor !== null) body.alignmentFloor = alignmentFloor;
+    const res = await fetch(`${API_BASE}/api/signals/backtest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as BacktestRun;
+  },
+  listBacktestRuns: (configVersionId?: number, limit = 50) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (configVersionId !== undefined) params.set('configVersionId', String(configVersionId));
+    return fetchJson<BacktestRun[]>(`/api/signals/backtest/runs?${params}`);
+  },
+  getBacktestRun: (id: number) =>
+    fetchJson<BacktestRunDetail>(`/api/signals/backtest/runs/${id}`),
+
+  // Options watchlist
+  getOptionsChain: (underlying: string) =>
+    fetchJson<OptionChainRow[]>(`/api/options/chain/${underlying}`),
+  getOptionsOpportunities: (limit = 50, openOnly = false) =>
+    fetchJson<OptionOpportunity[]>(`/api/options/opportunities?limit=${limit}&openOnly=${openOnly}`),
+  getOptionsOpportunitiesEnriched: (limit = 50, openOnly = false, includeStale = false) =>
+    fetchJson<EnrichedOptionOpportunity[]>(
+      `/api/options/opportunities/enriched?limit=${limit}&openOnly=${openOnly}&includeStale=${includeStale}`,
+    ),
+  getOptionsOpportunity: (id: number) =>
+    fetchJson<OptionOpportunity>(`/api/options/opportunities/${id}`),
+  getOptionsRealizedVol: (underlying: string, days = 14) =>
+    fetchJson<RealizedVolReading>(`/api/options/realized-vol/${underlying}?days=${days}`),
+  getOptionsHitRate: () =>
+    fetchJson<HitRateBucket[]>('/api/options/stats/hit-rate'),
+
+  // Execution gates (runtime-tunable on trade-execution-service)
+  getExecutionSettings: () => fetchJson<ExecutionSettings>('/api/execution/settings'),
+  updateExecutionSettings: async (next: ExecutionSettings): Promise<ExecutionSettings> => {
+    const res = await fetch(`${API_BASE}/api/execution/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error?: string };
+      throw new Error(err.error ?? `HTTP ${res.status}`);
+    }
+    return (await res.json()) as ExecutionSettings;
+  },
+  testTelegramNotification: async (
+    botToken: string | null,
+    chatId: string | null,
+  ): Promise<TelegramTestResult> => {
+    const res = await fetch(`${API_BASE}/api/execution/settings/telegram/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ botToken, chatId }),
+    });
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}` };
+    }
+    return (await res.json()) as TelegramTestResult;
   },
 };

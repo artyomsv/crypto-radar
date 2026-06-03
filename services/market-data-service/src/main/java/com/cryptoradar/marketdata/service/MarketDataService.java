@@ -5,12 +5,15 @@ import com.cryptoradar.marketdata.event.RedisEventPublisher;
 import com.cryptoradar.marketdata.model.Candle;
 import com.cryptoradar.marketdata.model.CryptoAsset;
 import com.cryptoradar.marketdata.model.PriceSnapshot;
+import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.util.Collections;
 import java.util.List;
 
@@ -24,6 +27,9 @@ public class MarketDataService {
 
     @Inject
     EntityManager entityManager;
+
+    @Inject
+    AgroalDataSource dataSource;
 
     @Inject
     RedisEventPublisher redisEventPublisher;
@@ -123,11 +129,24 @@ public class MarketDataService {
 
     @SuppressWarnings("unchecked")
     public List<PriceSnapshot> getLatestPrices() {
+        // DISTINCT ON across the full price_snapshots hypertable forced full
+        // decompression of every chunk (compressed columnar batches cannot be
+        // index-scanned by TimescaleDB even when an index exists). A lateral
+        // join from crypto_assets turns this into ~14 per-symbol point lookups
+        // using the (symbol, time DESC) index: measured 0.6ms vs 1500ms.
         try {
             return entityManager.createNativeQuery("""
-                SELECT DISTINCT ON (symbol) time, symbol, price, price_change_24h, price_change_pct_24h, volume_24h, market_cap
-                FROM price_snapshots
-                ORDER BY symbol, time DESC
+                SELECT latest.time, latest.symbol, latest.price,
+                       latest.price_change_24h, latest.price_change_pct_24h,
+                       latest.volume_24h, latest.market_cap
+                FROM crypto_assets a
+                CROSS JOIN LATERAL (
+                    SELECT * FROM price_snapshots
+                    WHERE symbol = a.symbol
+                    ORDER BY time DESC
+                    LIMIT 1
+                ) latest
+                WHERE a.is_active = true
                 """, PriceSnapshot.class)
                     .getResultList();
         } catch (Exception e) {
@@ -170,25 +189,27 @@ public class MarketDataService {
                 close = EXCLUDED.close, volume = EXCLUDED.volume,
                 quote_volume = EXCLUDED.quote_volume, trade_count = EXCLUDED.trade_count
             """;
-        try {
-            // Use raw JDBC for batch — EntityManager doesn't support batch natively
-            var conn = entityManager.unwrap(java.sql.Connection.class);
-            try (var stmt = conn.prepareStatement(sql)) {
-                for (Candle candle : candles) {
-                    stmt.setObject(1, java.sql.Timestamp.from(candle.getTime()));
-                    stmt.setString(2, candle.getSymbol());
-                    stmt.setString(3, candle.getInterval());
-                    stmt.setDouble(4, candle.getOpen());
-                    stmt.setDouble(5, candle.getHigh());
-                    stmt.setDouble(6, candle.getLow());
-                    stmt.setDouble(7, candle.getClose());
-                    stmt.setDouble(8, candle.getVolume());
-                    stmt.setDouble(9, candle.getQuoteVolume());
-                    stmt.setInt(10, candle.getTradeCount());
-                    stmt.addBatch();
-                }
-                stmt.executeBatch();
+        // Hibernate's EntityManager cannot unwrap to java.sql.Connection in
+        // Quarkus 3 / Hibernate 6 — only the proprietary Session interface is
+        // unwrappable. AgroalDataSource is the supported path for raw JDBC
+        // batch operations. Previously this fell through to per-row inserts
+        // on every batch (~1000 WARN/30min in prod logs).
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            for (Candle candle : candles) {
+                stmt.setObject(1, java.sql.Timestamp.from(candle.getTime()));
+                stmt.setString(2, candle.getSymbol());
+                stmt.setString(3, candle.getInterval());
+                stmt.setDouble(4, candle.getOpen());
+                stmt.setDouble(5, candle.getHigh());
+                stmt.setDouble(6, candle.getLow());
+                stmt.setDouble(7, candle.getClose());
+                stmt.setDouble(8, candle.getVolume());
+                stmt.setDouble(9, candle.getQuoteVolume());
+                stmt.setInt(10, candle.getTradeCount());
+                stmt.addBatch();
             }
+            stmt.executeBatch();
         } catch (Exception e) {
             LOG.warnf("Batch upsert failed, falling back to individual inserts: %s", e.getMessage());
             for (Candle candle : candles) {

@@ -2,6 +2,8 @@ package com.cryptoradar.signal.service;
 
 import com.cryptoradar.core.TrailCalculator;
 import com.cryptoradar.core.TrailConfig;
+import com.cryptoradar.signal.config.ConfigService;
+import com.cryptoradar.signal.config.SignalConfig;
 import com.cryptoradar.signal.model.CandleBar;
 import com.cryptoradar.signal.model.OutcomeStatus;
 import com.cryptoradar.signal.model.SignalOutcome;
@@ -42,6 +44,7 @@ public class OutcomeEvaluator {
 
     private final SignalOutcomeRepository repository;
     private final CandleClient candleClient;
+    private final ConfigService configService;
 
     // Vector E — stagnation exit. Phase 2 data: 19 of 60 INITIAL_STOP losers
     // reached <0.2% MFE. Those trades drifted sideways for hours before
@@ -58,9 +61,11 @@ public class OutcomeEvaluator {
     @ConfigProperty(name = "signal.stagnation-exit.mae-floor-pct", defaultValue = "-0.3")
     double stagnationMaeFloorPct;
 
-    public OutcomeEvaluator(SignalOutcomeRepository repository, CandleClient candleClient) {
+    public OutcomeEvaluator(SignalOutcomeRepository repository, CandleClient candleClient,
+                            ConfigService configService) {
         this.repository = repository;
         this.candleClient = candleClient;
+        this.configService = configService;
     }
 
     @Scheduled(every = "60s", delayed = "30s")
@@ -202,10 +207,24 @@ public class OutcomeEvaluator {
         if (riskPct <= 0) return;
         double mfeR = outcome.getMaxFavorablePct() / riskPct;
 
+        // Per-row activation/step/offset can be overridden by detector setups
+        // (see OutcomeTracker.applyTrailConfig). The wider-offset rung is a
+        // global engine knob — read from active config so it tracks UI edits
+        // without per-row backfill.
+        // Unit tests construct the evaluator with a null configService — keep
+        // the lookup defensive so they don't all need a stub. Also defends
+        // against pre-migration rows where the trail group could be null
+        // until the jsonb_set backfill ran.
+        SignalConfig active = configService != null ? configService.getActive() : null;
+        SignalConfig.Trail activeTrail = active != null ? active.trail() : null;
+        double widerActivation = activeTrail != null ? activeTrail.widerOffsetActivationR() : 0.0;
+        double widerOffset = activeTrail != null ? activeTrail.widerOffsetR() : 0.0;
         TrailConfig config = new TrailConfig(
                 outcome.getTrailActivationR(),
                 outcome.getTrailStepR(),
-                outcome.getTrailOffsetR());
+                outcome.getTrailOffsetR(),
+                widerActivation,
+                widerOffset);
 
         TrailCalculator.computeNewTrailR(mfeR, config, outcome.getTrailHighestR())
                 .ifPresent(newR -> {

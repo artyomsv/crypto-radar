@@ -27,7 +27,7 @@ class OutcomeEvaluatorTrailingTest {
     private static final double INITIAL_STOP_LONG = 99.0;   // risk = 1.0 in price units
     private static final double TARGET_LONG = 105.0;        // RR = 5
 
-    private final OutcomeEvaluator evaluator = new OutcomeEvaluator(null, null);
+    private final OutcomeEvaluator evaluator = new OutcomeEvaluator(null, null, null);
 
     // --- LONG ladder progression ---
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ExchangeAccount, ExecutionPosition, UpdateAccountRequest } from '@/types';
+import type { ExchangeAccount, ExecutionPosition, ExecutionTrade, UpdateAccountRequest } from '@/types';
 import { useExecutionStream } from '@/hooks/useExecutionStream';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/lib/api';
@@ -12,6 +12,8 @@ import { FirstTimeAutoTradeModal } from './FirstTimeAutoTradeModal';
 import { KillSwitchBanner } from './KillSwitchBanner';
 import { RecentTradesList } from './RecentTradesList';
 import { SettingsPanel } from './SettingsPanel';
+import { TradeLedgerModal } from './TradeLedgerModal';
+import { TradeChartModal } from '@/components/dashboard/TradeChartModal';
 
 interface PatchResult {
   success: boolean;
@@ -30,6 +32,8 @@ export function ExchangeCard({ account, onPatch }: Props) {
   const [whyFor, setWhyFor] = useState<ExecutionPosition | null>(null);
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLedger, setShowLedger] = useState(false);
+  const [chartTarget, setChartTarget] = useState<{ symbol: string; signalId: string } | null>(null);
 
   useWebSocket({
     onPrices: (prices: Array<{ symbol: string; price: number }>) => {
@@ -50,9 +54,12 @@ export function ExchangeCard({ account, onPatch }: Props) {
 
   const handleWhy = (position: ExecutionPosition) => setWhyFor(position);
 
-  const handleViewChart = (_position: ExecutionPosition) => {
-    // Wired in Task 13 (existing TradeChartModal scaffold) or filed as tech-debt.
-    console.log('chart modal — Task 13');
+  const handleViewChart = (position: ExecutionPosition) => {
+    setChartTarget({ symbol: position.symbol, signalId: position.signalId ?? '' });
+  };
+
+  const handleViewChartForTrade = (trade: ExecutionTrade) => {
+    setChartTarget({ symbol: trade.symbol, signalId: trade.signalId ?? '' });
   };
 
   const handleCloseAtMarket = async (position: ExecutionPosition) => {
@@ -130,7 +137,7 @@ export function ExchangeCard({ account, onPatch }: Props) {
         <div className="mt-4 mb-2 text-[11px] uppercase tracking-wide text-gray-500">Recent closed (last 24h)</div>
         <RecentTradesList
           trades={stream.trades}
-          onShowAll={() => console.log('trade ledger — wired in Task 13')}
+          onShowAll={() => setShowLedger(true)}
         />
       </div>
       {rowMenu && (
@@ -162,6 +169,21 @@ export function ExchangeCard({ account, onPatch }: Props) {
           account={account}
           onClose={() => setShowSettings(false)}
           onSave={(diff) => onPatch(account.id, diff)}
+        />
+      )}
+      {showLedger && (
+        <TradeLedgerModal
+          accountId={account.id}
+          onClose={() => setShowLedger(false)}
+          onShowChart={handleViewChartForTrade}
+        />
+      )}
+      {chartTarget && (
+        <TradeChartModal
+          symbol={chartTarget.symbol}
+          highlightedSignalId={chartTarget.signalId}
+          onClose={() => setChartTarget(null)}
+          singleOutcomeOnly
         />
       )}
     </div>

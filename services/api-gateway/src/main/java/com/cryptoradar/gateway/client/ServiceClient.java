@@ -39,6 +39,9 @@ public class ServiceClient {
     @ConfigProperty(name = "execution.url")
     String executionUrl;
 
+    @ConfigProperty(name = "options-service.url", defaultValue = "http://localhost:8088")
+    String optionsServiceUrl;
+
     private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -164,6 +167,10 @@ public class ServiceClient {
         return sendWithStatus(url, "PATCH", body);
     }
 
+    public RawResponse putWithStatus(String url, String body) {
+        return sendWithStatus(url, "PUT", body);
+    }
+
     public RawResponse deleteWithStatus(String url) {
         return sendWithStatus(url, "DELETE", null);
     }
@@ -245,6 +252,10 @@ public class ServiceClient {
 
     public String getExecutionUrl() {
         return executionUrl;
+    }
+
+    public String getOptionsUrl() {
+        return optionsServiceUrl;
     }
 
     public JsonNode getWhaleTransactions(String symbol, int limit) {

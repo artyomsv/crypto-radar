@@ -46,8 +46,15 @@ public class MarketDataScheduler {
         LOG.infof("=== Backfill starting for %d symbols x %d intervals ===",
                 symbols.size(), ALL_INTERVALS.size());
 
-        // Prioritize: 1h and 1d first (most important for analysis), then others
-        List<String> priorityOrder = List.of("1h", "1d", "4h", "15m", "5m", "1m");
+        // ALL intervals must appear here. Anything omitted has zero historical
+        // backfill and relies solely on the forward-fetch @Scheduled methods,
+        // which only grab the last 3 candles each cycle (e.g. 2h scheduler =
+        // 6h coverage). Outages longer than that leave permanent gaps.
+        // Order = priority: analysis-critical timeframes go first so they
+        // populate before the rate-limit budget runs thin.
+        List<String> priorityOrder = List.of(
+                "1h", "1d", "4h", "15m", "5m", "1m",
+                "30m", "2h", "8h", "12h", "1w");
 
         for (String interval : priorityOrder) {
             for (String symbol : symbols) {
@@ -154,6 +161,19 @@ public class MarketDataScheduler {
     @Scheduled(every = "4h", identity = "candles-1w")
     void fetch1wCandles() {
         fetchLatestCandles("1w", 3);
+    }
+
+    /**
+     * Daily self-healing sweep. The forward-fetch schedulers above only grab
+     * the last 3 candles per cycle, so any outage longer than their cycle
+     * window leaves permanent gaps unless the smart {@link BackfillService}
+     * runs again. Without this, gaps only get filled on service restart.
+     * Runs at 04:00 UTC — quietest window for Binance and the trading book.
+     */
+    @Scheduled(cron = "0 0 4 * * ?", identity = "candles-daily-backfill-sweep")
+    void dailyBackfillSweep() {
+        LOG.info("[Backfill] Daily sweep starting — gap detection across all intervals");
+        runBackfill();
     }
 
     private void fetchLatestCandles(String interval, int limit) {

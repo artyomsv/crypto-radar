@@ -43,12 +43,7 @@ public class MarketDataClient {
                 LOG.warnf("market-data HTTP %d for %s", resp.statusCode(), symbol);
                 return null;
             }
-            JsonNode root = mapper.readTree(resp.body());
-            JsonNode price = root.path(symbol).path("price");
-            if (price.isMissingNode() || price.isNull()) {
-                return null;
-            }
-            return new BigDecimal(price.asText());
+            return parsePrice(resp.body(), symbol);
         } catch (IOException e) {
             LOG.warnf(e, "market-data fetch failed for %s", symbol);
             return null;
@@ -57,6 +52,34 @@ public class MarketDataClient {
             LOG.warnf(e, "market-data fetch interrupted for %s", symbol);
             return null;
         } catch (RuntimeException e) {
+            LOG.warnf(e, "market-data parse failed for %s", symbol);
+            return null;
+        }
+    }
+
+    /**
+     * Parse the price for {@code symbol} out of a market-data response body.
+     * The endpoint returns an ARRAY of {@code {symbol, price, ...}} objects
+     * (not a symbol-keyed object as the legacy code assumed). The legacy
+     * shape mismatch silently returned null for every lookup, leaving the
+     * v2/v3/v4 trail system inert in production — every closed trade
+     * resolved as TARGET-or-INITIAL_STOP regardless of MFE.
+     */
+    BigDecimal parsePrice(String body, String symbol) {
+        try {
+            JsonNode root = mapper.readTree(body);
+            if (!root.isArray()) {
+                LOG.warnf("market-data shape unexpected for %s: %s", symbol, root.getNodeType());
+                return null;
+            }
+            for (JsonNode entry : root) {
+                if (!symbol.equals(entry.path("symbol").asText(null))) continue;
+                JsonNode price = entry.path("price");
+                if (price.isMissingNode() || price.isNull()) return null;
+                return new BigDecimal(price.asText());
+            }
+            return null;
+        } catch (IOException | RuntimeException e) {
             LOG.warnf(e, "market-data parse failed for %s", symbol);
             return null;
         }

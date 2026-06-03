@@ -1,5 +1,6 @@
 package com.cryptoradar.signal.service;
 
+import com.cryptoradar.signal.config.SignalConfig;
 import com.cryptoradar.signal.model.MarketRegime;
 
 import org.junit.jupiter.api.DisplayName;
@@ -20,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
  */
 class SignalEngineRegimeTest {
 
-    private final SignalEngine engine = new SignalEngine();
+    private final SignalEngine engine = new SignalEngine(new FakeConfigService(SignalConfig.defaults()));
 
     @Test
     @DisplayName("CHOP regime uses default asymmetric thresholds")

@@ -99,3 +99,37 @@ CREATE TABLE IF NOT EXISTS execution_events (
 
 CREATE INDEX IF NOT EXISTS idx_execution_events_account ON execution_events(exchange_account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_execution_events_type    ON execution_events(event_type, created_at DESC);
+
+-- ============================================================================
+-- Execution gates — runtime-tunable knobs that previously lived only as env
+-- vars. Single-row table (CHECK id=1) so callers can always SELECT * without
+-- a WHERE clause. Hot-reloaded by ExecutionSettingsService.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS execution_settings (
+    id                              BIGINT           PRIMARY KEY DEFAULT 1,
+    alignment_floor                 INT              NOT NULL DEFAULT 70,
+    symbol_gate_enabled             BOOLEAN          NOT NULL DEFAULT TRUE,
+    symbol_gate_lookback            INT              NOT NULL DEFAULT 10,
+    symbol_gate_threshold_r         DOUBLE PRECISION NOT NULL DEFAULT -3.0,
+    symbol_gate_cache_ttl_sec       INT              NOT NULL DEFAULT 30,
+    confluence_trend_required       BOOLEAN          NOT NULL DEFAULT TRUE,
+    confluence_window_minutes       INT              NOT NULL DEFAULT 15,
+    daily_pnl_equity_cache_ttl_sec  INT              NOT NULL DEFAULT 60,
+    telegram_enabled                BOOLEAN          NOT NULL DEFAULT FALSE,
+    telegram_bot_token_enc          TEXT,
+    telegram_chat_id                TEXT,
+    telegram_notified_events        TEXT,
+    telegram_notify_options         BOOLEAN          NOT NULL DEFAULT FALSE,
+    updated_at                      TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+    CONSTRAINT one_execution_settings_row CHECK (id = 1)
+);
+
+INSERT INTO execution_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Idempotent column adds for DBs created before the Telegram-notification feature.
+ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS telegram_enabled         BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS telegram_bot_token_enc   TEXT;
+ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS telegram_chat_id         TEXT;
+ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS telegram_notified_events TEXT;
+ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS telegram_notify_options  BOOLEAN NOT NULL DEFAULT FALSE;

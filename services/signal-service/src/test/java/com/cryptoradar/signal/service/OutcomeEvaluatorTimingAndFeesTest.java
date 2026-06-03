@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  */
 class OutcomeEvaluatorTimingAndFeesTest {
 
-    private final OutcomeEvaluator evaluator = new OutcomeEvaluator(null, null);
+    private final OutcomeEvaluator evaluator = new OutcomeEvaluator(null, null, null);
 
     // --- Timing ---
 

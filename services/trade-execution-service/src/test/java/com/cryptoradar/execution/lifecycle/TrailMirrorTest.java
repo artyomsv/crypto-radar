@@ -7,9 +7,9 @@ import com.cryptoradar.execution.client.bybit.dto.TradingStopRequest;
 import com.cryptoradar.execution.model.ExchangeAccount;
 import com.cryptoradar.execution.model.ExecutedTrade;
 import com.cryptoradar.execution.model.TradeStatus;
+import com.cryptoradar.execution.notify.ExecutionEventService;
 import com.cryptoradar.execution.repository.ExchangeAccountRepository;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
-import com.cryptoradar.execution.repository.ExecutionEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,7 +29,7 @@ class TrailMirrorTest {
 
     ExecutedTradeRepository tradeRepo;
     ExchangeAccountRepository accountRepo;
-    ExecutionEventRepository eventRepo;
+    ExecutionEventService events;
     BybitV5RestClient bybit;
     MarketDataClient marketData;
     TrailMirror mirror;
@@ -40,10 +40,10 @@ class TrailMirrorTest {
     void setup() {
         tradeRepo = mock(ExecutedTradeRepository.class);
         accountRepo = mock(ExchangeAccountRepository.class);
-        eventRepo = mock(ExecutionEventRepository.class);
+        events = mock(ExecutionEventService.class);
         bybit = mock(BybitV5RestClient.class);
         marketData = mock(MarketDataClient.class);
-        mirror = new TrailMirror(tradeRepo, accountRepo, eventRepo, bybit, marketData);
+        mirror = new TrailMirror(tradeRepo, accountRepo, events, bybit, marketData);
 
         account = new ExchangeAccount();
         account.setExchange("BYBIT");

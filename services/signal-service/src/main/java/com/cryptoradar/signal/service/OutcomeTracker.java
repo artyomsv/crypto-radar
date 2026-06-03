@@ -1,6 +1,8 @@
 package com.cryptoradar.signal.service;
 
 import com.cryptoradar.core.TrailConfig;
+import com.cryptoradar.signal.config.ConfigService;
+import com.cryptoradar.signal.config.SignalConfig;
 import com.cryptoradar.signal.model.DimensionScore;
 import com.cryptoradar.signal.model.SignalOutcome;
 import com.cryptoradar.signal.model.TradeSetup;
@@ -44,9 +46,11 @@ public class OutcomeTracker {
     private static final String DIM_MACRO = "Macro";
 
     private final SignalOutcomeRepository repository;
+    private final ConfigService configService;
 
-    public OutcomeTracker(SignalOutcomeRepository repository) {
+    public OutcomeTracker(SignalOutcomeRepository repository, ConfigService configService) {
         this.repository = repository;
+        this.configService = configService;
     }
 
     /**
@@ -133,14 +137,24 @@ public class OutcomeTracker {
 
     /**
      * Copies per-strategy trail parameters from the detector-supplied config
-     * onto the outcome. Leaves the entity-level defaults in place when no
-     * config was supplied (legacy setups or the dimension-scoring path).
+     * onto the outcome. When the setup provides none, falls back to the
+     * engine-wide trail group from active SignalConfig so dimension-scoring
+     * outcomes track UI edits without per-row backfill.
      */
     private void applyTrailConfig(SignalOutcome outcome, TrailConfig config) {
-        if (config == null) return;
-        outcome.setTrailActivationR(config.activationR());
-        outcome.setTrailStepR(config.stepR());
-        outcome.setTrailOffsetR(config.offsetR());
+        if (config != null) {
+            outcome.setTrailActivationR(config.activationR());
+            outcome.setTrailStepR(config.stepR());
+            outcome.setTrailOffsetR(config.offsetR());
+            return;
+        }
+        SignalConfig active = configService.getActive();
+        if (active == null) return;
+        SignalConfig.Trail trail = active.trail();
+        if (trail == null) return;
+        outcome.setTrailActivationR(trail.activationR());
+        outcome.setTrailStepR(trail.stepR());
+        outcome.setTrailOffsetR(trail.offsetR());
     }
 
     private String formatReasons(TradeSetup setup) {

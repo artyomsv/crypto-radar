@@ -302,6 +302,46 @@ public class ProxyResource {
         return proxyResponse(serviceClient.getRaw(serviceClient.getDerivativesServiceUrl() + "/api/derivatives/liquidation-map/" + symbol));
     }
 
+    // --- Signal config proxies ---
+
+    @GET
+    @Path("/signals/config")
+    public Response getActiveSignalConfig() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getSignalServiceUrl() + "/api/signals/config"));
+    }
+
+    @GET
+    @Path("/signals/config/versions")
+    public Response listSignalConfigVersions(
+            @QueryParam("limit") @DefaultValue("50") int limit,
+            @QueryParam("offset") @DefaultValue("0") int offset) {
+        String url = serviceClient.getSignalServiceUrl()
+                + "/api/signals/config/versions?limit=" + limit + "&offset=" + offset;
+        return proxyResponse(serviceClient.getRaw(url));
+    }
+
+    @GET
+    @Path("/signals/config/versions/{id}")
+    public Response getSignalConfigVersion(@PathParam("id") long id) {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getSignalServiceUrl() + "/api/signals/config/versions/" + id));
+    }
+
+    @POST
+    @Path("/signals/config/versions")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createSignalConfigVersion(String body) {
+        return propagate(serviceClient.postWithStatus(
+                serviceClient.getSignalServiceUrl() + "/api/signals/config/versions", body));
+    }
+
+    @POST
+    @Path("/signals/config/versions/{id}/activate")
+    public Response activateSignalConfigVersion(@PathParam("id") long id) {
+        return propagate(serviceClient.postWithStatus(
+                serviceClient.getSignalServiceUrl() + "/api/signals/config/versions/" + id + "/activate", ""));
+    }
+
     // --- Signal proxies ---
 
     @GET
@@ -431,6 +471,37 @@ public class ProxyResource {
     }
 
     // =====================================================================
+    // Backtest proxies
+    // =====================================================================
+
+    @POST
+    @Path("/signals/backtest")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response runBacktest(String body) {
+        return proxyPost(serviceClient.getSignalServiceUrl() + "/api/signals/backtest", body);
+    }
+
+    @GET
+    @Path("/signals/backtest/runs")
+    public Response listBacktestRuns(
+            @QueryParam("configVersionId") Long configVersionId,
+            @QueryParam("limit") @DefaultValue("50") int limit) {
+        StringBuilder url = new StringBuilder(serviceClient.getSignalServiceUrl())
+                .append("/api/signals/backtest/runs?limit=").append(limit);
+        if (configVersionId != null) {
+            url.append("&configVersionId=").append(configVersionId);
+        }
+        return proxyResponse(serviceClient.getRaw(url.toString()));
+    }
+
+    @GET
+    @Path("/signals/backtest/runs/{id}")
+    public Response getBacktestRunDetail(@PathParam("id") long id) {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getSignalServiceUrl() + "/api/signals/backtest/runs/" + id));
+    }
+
+    // =====================================================================
     // Execution Service proxies
     // =====================================================================
 
@@ -486,6 +557,31 @@ public class ProxyResource {
     }
 
     @GET
+    @Path("/execution/accounts/{id}/trades/history")
+    public Response tradeHistory(@PathParam("id") Long id,
+                                  @QueryParam("page") @DefaultValue("0") int page,
+                                  @QueryParam("pageSize") @DefaultValue("25") int pageSize) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/trades/history?page=" + page + "&pageSize=" + pageSize));
+    }
+
+    @POST
+    @Path("/execution/accounts/{id}/admin/backfill-closes")
+    public Response backfillCloses(@PathParam("id") Long id,
+                                    @QueryParam("limit") @DefaultValue("50") int limit) {
+        return propagate(serviceClient.postWithStatus(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/admin/backfill-closes?limit=" + limit, ""));
+    }
+
+    @POST
+    @Path("/execution/accounts/{id}/admin/repair-exit-reasons")
+    public Response repairExitReasons(@PathParam("id") Long id,
+                                       @QueryParam("limit") @DefaultValue("100") int limit) {
+        return propagate(serviceClient.postWithStatus(serviceClient.getExecutionUrl()
+                + "/api/execution/accounts/" + id + "/admin/repair-exit-reasons?limit=" + limit, ""));
+    }
+
+    @GET
     @Path("/execution/accounts/{id}/events")
     public Response events(@PathParam("id") Long id, @QueryParam("limit") @DefaultValue("100") int limit) {
         return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl()
@@ -504,6 +600,28 @@ public class ProxyResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response killSwitch(@PathParam("id") Long id, String body) {
         return propagate(serviceClient.postWithStatus(serviceClient.getExecutionUrl() + "/api/execution/accounts/" + id + "/kill-switch", body));
+    }
+
+    @GET
+    @Path("/execution/settings")
+    public Response getExecutionSettings() {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl() + "/api/execution/settings"));
+    }
+
+    @PUT
+    @Path("/execution/settings")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response updateExecutionSettings(String body) {
+        return propagate(serviceClient.putWithStatus(serviceClient.getExecutionUrl() + "/api/execution/settings", body));
+    }
+
+    @POST
+    @Path("/execution/settings/telegram/test")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response testTelegram(String body) {
+        return propagate(serviceClient.postWithStatus(
+                serviceClient.getExecutionUrl() + "/api/execution/settings/telegram/test",
+                body == null ? "" : body));
     }
 
     @POST
@@ -528,5 +646,59 @@ public class ProxyResource {
      */
     private Response propagate(com.cryptoradar.gateway.client.ServiceClient.RawResponse resp) {
         return Response.status(resp.status()).entity(resp.body()).build();
+    }
+
+    // =================================================================
+    // Options service proxy routes
+    // =================================================================
+
+    @GET
+    @Path("/options/chain/{underlying}")
+    public Response optionsChain(@PathParam("underlying") String underlying) {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getOptionsUrl() + "/api/options/chain/" + underlying));
+    }
+
+    @GET
+    @Path("/options/opportunities")
+    public Response optionsOpportunities(
+            @QueryParam("limit") @DefaultValue("50") int limit,
+            @QueryParam("openOnly") @DefaultValue("false") boolean openOnly) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getOptionsUrl()
+                + "/api/options/opportunities?limit=" + limit + "&openOnly=" + openOnly));
+    }
+
+    @GET
+    @Path("/options/opportunities/enriched")
+    public Response optionsOpportunitiesEnriched(
+            @QueryParam("limit") @DefaultValue("50") int limit,
+            @QueryParam("openOnly") @DefaultValue("false") boolean openOnly,
+            @QueryParam("includeStale") @DefaultValue("false") boolean includeStale) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getOptionsUrl()
+                + "/api/options/opportunities/enriched?limit=" + limit
+                + "&openOnly=" + openOnly
+                + "&includeStale=" + includeStale));
+    }
+
+    @GET
+    @Path("/options/stats/hit-rate")
+    public Response optionsHitRate() {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getOptionsUrl() + "/api/options/stats/hit-rate"));
+    }
+
+    @GET
+    @Path("/options/opportunities/{id}")
+    public Response optionsOpportunity(@PathParam("id") long id) {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getOptionsUrl() + "/api/options/opportunities/" + id));
+    }
+
+    @GET
+    @Path("/options/realized-vol/{underlying}")
+    public Response optionsRealizedVol(@PathParam("underlying") String underlying,
+                                        @QueryParam("days") @DefaultValue("14") int days) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getOptionsUrl()
+                + "/api/options/realized-vol/" + underlying + "?days=" + days));
     }
 }

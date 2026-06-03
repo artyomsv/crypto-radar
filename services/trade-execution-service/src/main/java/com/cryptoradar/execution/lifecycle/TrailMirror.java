@@ -10,9 +10,9 @@ import com.cryptoradar.execution.model.ExchangeAccount;
 import com.cryptoradar.execution.model.ExecutedTrade;
 import com.cryptoradar.execution.model.ExecutionEvent;
 import com.cryptoradar.execution.model.ExecutionEventType;
+import com.cryptoradar.execution.notify.ExecutionEventService;
 import com.cryptoradar.execution.repository.ExchangeAccountRepository;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
-import com.cryptoradar.execution.repository.ExecutionEventRepository;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
@@ -41,16 +41,16 @@ public class TrailMirror {
 
     private final ExecutedTradeRepository tradeRepo;
     private final ExchangeAccountRepository accountRepo;
-    private final ExecutionEventRepository eventRepo;
+    private final ExecutionEventService events;
     private final BybitV5RestClient bybit;
     private final MarketDataClient marketData;
 
     public TrailMirror(ExecutedTradeRepository tradeRepo, ExchangeAccountRepository accountRepo,
-                       ExecutionEventRepository eventRepo, BybitV5RestClient bybit,
+                       ExecutionEventService events, BybitV5RestClient bybit,
                        MarketDataClient marketData) {
         this.tradeRepo = tradeRepo;
         this.accountRepo = accountRepo;
-        this.eventRepo = eventRepo;
+        this.events = events;
         this.bybit = bybit;
         this.marketData = marketData;
     }
@@ -137,6 +137,6 @@ public class TrailMirror {
         ev.setExecutedTradeId(trade.getId());
         ev.setSignalId(trade.getSignalId());
         ev.setMetadata(Map.of("newTrailR", newRungR, "newStop", newStopPrice.toPlainString()));
-        eventRepo.persist(ev);
+        events.record(ev);
     }
 }

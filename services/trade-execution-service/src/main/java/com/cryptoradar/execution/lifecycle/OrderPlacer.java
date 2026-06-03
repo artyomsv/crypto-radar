@@ -12,8 +12,8 @@ import com.cryptoradar.execution.model.ExecutionEvent;
 import com.cryptoradar.execution.model.ExecutionEventType;
 import com.cryptoradar.execution.model.ExitReason;
 import com.cryptoradar.execution.model.TradeStatus;
+import com.cryptoradar.execution.notify.ExecutionEventService;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
-import com.cryptoradar.execution.repository.ExecutionEventRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
@@ -38,14 +38,14 @@ public class OrderPlacer {
     private final BybitV5RestClient bybit;
     private final InstrumentRegistry instruments;
     private final ExecutedTradeRepository tradeRepo;
-    private final ExecutionEventRepository eventRepo;
+    private final ExecutionEventService events;
 
     public OrderPlacer(BybitV5RestClient bybit, InstrumentRegistry instruments,
-                       ExecutedTradeRepository tradeRepo, ExecutionEventRepository eventRepo) {
+                       ExecutedTradeRepository tradeRepo, ExecutionEventService events) {
         this.bybit = bybit;
         this.instruments = instruments;
         this.tradeRepo = tradeRepo;
-        this.eventRepo = eventRepo;
+        this.events = events;
     }
 
     public record PlacementRequest(String symbol, String direction, String strategy,
@@ -81,6 +81,10 @@ public class OrderPlacer {
         trade.setDirection(req.direction());
         trade.setStrategy(req.strategy());
         trade.setStatus(TradeStatus.PENDING_PLACE);
+        // Persist the intended entry up front. WS execution event refines this
+        // to the real fill price; without it, R-multiple math breaks if the
+        // execution event is missed (Bybit private WS keepalive bug).
+        trade.setEntryPrice(req.entryPrice());
         trade.setStopPrice(req.stopPrice());
         trade.setTargetPrice(req.targetPrice());
         trade.setDynamicStopPrice(req.stopPrice());
@@ -188,6 +192,6 @@ public class OrderPlacer {
         ev.setSignalId(trade.getSignalId());
         ev.setExecutedTradeId(trade.getId());
         ev.setMetadata(metadata);
-        eventRepo.persist(ev);
+        events.record(ev);
     }
 }

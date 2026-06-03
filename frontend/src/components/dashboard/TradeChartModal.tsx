@@ -24,6 +24,7 @@ interface TradeChartModalProps {
   symbol: string;
   highlightedSignalId: string;
   onClose: () => void;
+  singleOutcomeOnly?: boolean;
 }
 
 interface CandleRow {
@@ -127,7 +128,7 @@ function Legend() {
   );
 }
 
-export function TradeChartModal({ symbol, highlightedSignalId, onClose }: TradeChartModalProps) {
+export function TradeChartModal({ symbol, highlightedSignalId, onClose, singleOutcomeOnly = false }: TradeChartModalProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [outcomes, setOutcomes] = useState<SignalOutcomeView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -202,7 +203,10 @@ export function TradeChartModal({ symbol, highlightedSignalId, onClose }: TradeC
         .sort((a, b) => (a.time as unknown as number) - (b.time as unknown as number));
       candleSeries.setData(candleData);
 
-      const markers = fetchedOutcomes
+      const markerSource = singleOutcomeOnly
+        ? fetchedOutcomes.filter((o) => o.signalId === highlightedSignalId)
+        : fetchedOutcomes;
+      const markers = markerSource
         .flatMap((o) => buildMarkersForOutcome(o, o.signalId === highlightedSignalId))
         .sort((a, b) => (a.time as unknown as number) - (b.time as unknown as number));
       candleSeries.setMarkers(markers);
@@ -232,7 +236,7 @@ export function TradeChartModal({ symbol, highlightedSignalId, onClose }: TradeC
 
     init();
     return () => { cancelled = true; chartRemover?.(); };
-  }, [symbol, highlightedSignalId]);
+  }, [symbol, highlightedSignalId, singleOutcomeOnly]);
 
   return (
     <div

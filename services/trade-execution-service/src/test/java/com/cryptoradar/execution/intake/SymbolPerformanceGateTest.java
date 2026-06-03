@@ -13,19 +13,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Vector A — unit tests for gate logic. Exercises threshold decision,
  * fail-open on query failure, cache hits across calls, and the
  * {@code enabled} kill-switch without spinning up Quarkus or a DB.
- * JDBC wiring is validated separately by live smoke (Docker rebuild).
+ * Gate now reads its tunables from {@link ExecutionSettingsService}; tests
+ * inject a stub snapshot.
  */
 class SymbolPerformanceGateTest {
 
     private StubGate gate;
+    private MutableSnapshotHolder settingsRef;
 
     @BeforeEach
     void setUp() {
+        settingsRef = new MutableSnapshotHolder();
         gate = new StubGate();
-        gate.enabled = true;
-        gate.lookback = 10;
-        gate.thresholdR = -3.0;
-        gate.cacheTtlSeconds = 60;
+        // Anonymous subclass keeps Quarkus Arc from discovering it as a
+        // candidate bean (named test-class subclasses caused ambiguous
+        // injection failures in @QuarkusTest integration suites).
+        gate.executionSettings = new ExecutionSettingsService(null, null) {
+            @Override
+            public Snapshot snapshot() {
+                return settingsRef.snap;
+            }
+        };
+    }
+
+    private static final class MutableSnapshotHolder {
+        ExecutionSettingsService.Snapshot snap = ExecutionSettingsService.Snapshot.defaults();
     }
 
     @Test
@@ -54,7 +66,7 @@ class SymbolPerformanceGateTest {
 
     @Test
     void disabledGateNeverSuppresses() {
-        gate.enabled = false;
+        settingsRef.snap = snapshot(false, 10, -3.0, 60);
         gate.stubbedTotalR = -99.0;
         assertFalse(gate.isSuppressed("LTCUSDT"));
     }
@@ -81,7 +93,7 @@ class SymbolPerformanceGateTest {
 
     @Test
     void cacheExpiryTriggersReevaluation() {
-        gate.cacheTtlSeconds = 0;
+        settingsRef.snap = snapshot(true, 10, -3.0, 0);
         gate.stubbedTotalR = -6.49;
         assertTrue(gate.isSuppressed("LTCUSDT"));
         gate.stubbedTotalR = 2.0;
@@ -98,6 +110,13 @@ class SymbolPerformanceGateTest {
         assertEquals(10, decision.sampleSize());
     }
 
+    private static ExecutionSettingsService.Snapshot snapshot(
+            boolean enabled, int lookback, double thresholdR, int cacheTtlSec) {
+        return new ExecutionSettingsService.Snapshot(
+                70, enabled, lookback, thresholdR, cacheTtlSec, true, 15, 60,
+                false, null, ExecutionSettingsService.DEFAULT_NOTIFIED_EVENTS, false, null, false);
+    }
+
     /**
      * Subclass overrides {@code queryTotalR} to return a stubbed value,
      * bypassing the JDBC path. Pure unit tests without Quarkus or a DB.
@@ -107,7 +126,7 @@ class SymbolPerformanceGateTest {
         final AtomicInteger queryCount = new AtomicInteger();
 
         @Override
-        Double queryTotalR(String symbol) {
+        Double queryTotalR(String symbol, int lookback) {
             queryCount.incrementAndGet();
             return stubbedTotalR;
         }

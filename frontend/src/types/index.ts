@@ -499,6 +499,13 @@ export interface ExecutionTrade {
   closedAt: string | null;
 }
 
+export interface TradeHistoryPage {
+  items: ExecutionTrade[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface ExecutionEvent {
   id: number;
   eventType: string;
@@ -537,4 +544,357 @@ export interface UpdateAccountRequest {
   signalAgeSeconds?: number;
   positionMaxAgeHours?: number;
   flipPersistenceTicks?: number;
+}
+
+// =============================================================================
+// Signal config — runtime-tunable scoring parameters
+// =============================================================================
+
+export interface SignalWeights {
+  technical: number;
+  whale: number;
+  orderBook: number;
+  derivatives: number;
+  sentiment: number;
+  macro: number;
+}
+
+export interface TradeLevelsConfig {
+  minRiskPct: number;
+  minRr: number;
+  atrStopMultiple: number;
+  supportStopAtrBuffer: number;
+}
+
+export interface RsiConfig {
+  oversoldExtreme: number;
+  oversoldApproaching: number;
+  overboughtApproaching: number;
+  overboughtExtreme: number;
+  scoreOversoldExtreme: number;
+  scoreOversoldApproaching: number;
+  scoreOverboughtApproaching: number;
+  scoreOverboughtExtreme: number;
+}
+
+export interface MacdConfig {
+  scoreBullish: number;
+  scoreBearish: number;
+}
+
+export interface Sma200Config {
+  scoreAbove: number;
+  scoreBelow: number;
+}
+
+export interface BollingerConfig {
+  lowerPosition: number;
+  upperPosition: number;
+  scoreLower: number;
+  scoreUpper: number;
+}
+
+export interface VolumeConfirmationConfig {
+  scoreDecreasing: number;
+  scoreIncreasing: number;
+}
+
+export interface SupportResistanceConfig {
+  lowerPosition: number;
+  upperPosition: number;
+  scoreNearSupport: number;
+  scoreNearResistance: number;
+}
+
+export interface WhaleConfig {
+  minSampleSize: number;
+  amplifyThreshold: number;
+  amplifyFactor: number;
+}
+
+export interface DerivativesFundingConfig {
+  neutralThreshold: number;
+  moderateThreshold: number;
+  extremeThreshold: number;
+  scoreModerate: number;
+  scoreStrong: number;
+  scoreExtreme: number;
+}
+
+export interface LongShortRatioConfig {
+  extremelyCrowdedShortsPct: number;
+  crowdedShortsPct: number;
+  crowdedLongsPct: number;
+  extremelyCrowdedLongsPct: number;
+  scoreModerate: number;
+  scoreExtreme: number;
+}
+
+export interface FearGreedConfig {
+  extremeFearMax: number;
+  fearMax: number;
+  greedMin: number;
+  extremeGreedMin: number;
+  scoreModerate: number;
+  scoreExtreme: number;
+}
+
+export interface NewsSentimentConfig {
+  scoreMultiplier: number;
+}
+
+export interface OrderBookConfig {
+  highLiquidationRatio: number;
+  moderateLiquidationRatio: number;
+  scoreHighVolatility: number;
+}
+
+export interface MacroBtcDominanceConfig {
+  threshold: number;
+  scoreBtcWhenHigh: number;
+  scoreAltWhenHigh: number;
+  scoreBtcWhenLow: number;
+  scoreAltWhenLow: number;
+}
+
+export interface AlignmentConfig {
+  minScoreForNonZero: number;
+  contradictionScoreThreshold: number;
+  contradictionPenaltyMultiplier: number;
+  twoContradictionPenalty: number;
+  oneContradictionPenalty: number;
+  outputScale: number;
+  minOutput: number;
+  maxOutput: number;
+}
+
+export interface RegimeThresholdsConfig {
+  strongBuyMinScore: number;
+  buyMinScore: number;
+  strongSellMaxScore: number;
+  sellMaxScore: number;
+  strongAlignmentMin: number;
+  alignmentMin: number;
+}
+
+export interface BullOverridesConfig {
+  strongSellMaxScore: number;
+  sellMaxScore: number;
+}
+
+export interface BearOverridesConfig {
+  strongBuyMinScore: number;
+  buyMinScore: number;
+}
+
+export interface SignalLabelsConfig {
+  chop: RegimeThresholdsConfig;
+  bull: BullOverridesConfig;
+  bear: BearOverridesConfig;
+}
+
+export interface TrailConfig {
+  activationR: number;
+  stepR: number;
+  offsetR: number;
+  widerOffsetActivationR: number;
+  widerOffsetR: number;
+}
+
+export interface ExecutionSettings {
+  alignmentFloor: number;
+  symbolGateEnabled: boolean;
+  symbolGateLookback: number;
+  symbolGateThresholdR: number;
+  symbolGateCacheTtlSec: number;
+  confluenceTrendRequired: boolean;
+  confluenceWindowMinutes: number;
+  dailyPnlEquityCacheTtlSec: number;
+  telegramEnabled: boolean;
+  telegramChatId: string | null;
+  telegramNotifiedEvents: string[];
+  telegramNotifyOptions: boolean;
+  // Read-only: server reports whether a bot token is stored, never the token.
+  telegramConfigured: boolean;
+  // Write-only: set to send a new token on PUT; server always returns null.
+  telegramBotToken: string | null;
+}
+
+export interface TelegramTestResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface SignalConfig {
+  weights: SignalWeights;
+  tradeLevels: TradeLevelsConfig;
+  rsi: RsiConfig;
+  macd: MacdConfig;
+  sma200: Sma200Config;
+  bollinger: BollingerConfig;
+  volumeConfirmation: VolumeConfirmationConfig;
+  supportResistance: SupportResistanceConfig;
+  whale: WhaleConfig;
+  derivativesFunding: DerivativesFundingConfig;
+  longShortRatio: LongShortRatioConfig;
+  fearGreed: FearGreedConfig;
+  newsSentiment: NewsSentimentConfig;
+  orderBook: OrderBookConfig;
+  macroBtcDominance: MacroBtcDominanceConfig;
+  alignment: AlignmentConfig;
+  signalLabels: SignalLabelsConfig;
+  trail: TrailConfig;
+}
+
+export interface SignalConfigVersion {
+  id: number;
+  version: number;
+  config: SignalConfig;
+  description: string;
+  parentVersionId: number | null;
+  isActive: boolean;
+  createdAt: string;
+  createdBy: string;
+}
+
+// =============================================================================
+// Options watchlist (Bybit strangle/straddle entry signals)
+// =============================================================================
+
+export interface OptionChainRow {
+  time: string;
+  symbol: string;
+  underlying: string;
+  expiry: string;
+  strike: number;
+  optionType: 'C' | 'P';
+  bid: number | null;
+  ask: number | null;
+  mark: number | null;
+  impliedVol: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  openInterest: number | null;
+  volume24h: number | null;
+  underlyingPx: number | null;
+}
+
+export interface OptionOpportunity {
+  id: number;
+  detectedAt: string;
+  underlying: string;
+  expiry: string;
+  strikeCall: number;
+  strikePut: number;
+  callSymbol: string;
+  putSymbol: string;
+  stranglePremium: number;
+  impliedVolAtm: number | null;
+  realizedVol7d: number | null;
+  realizedVol14d: number | null;
+  ivRvSpread: number | null;
+  signalOverlay: number | null;
+  confidence: number;
+  metadata: Record<string, unknown> | null;
+  realizedMovePct: number | null;
+  outcomePnlPct: number | null;
+  outcomeResolvedAt: string | null;
+}
+
+export interface RealizedVolReading {
+  underlying: string;
+  lookbackDays: number;
+  annualizedPct: number;
+}
+
+export interface OptionLeg {
+  time: string;
+  symbol: string;
+  optionType: 'C' | 'P';
+  strike: number;
+  bid: number | null;
+  ask: number | null;
+  mark: number | null;
+  impliedVol: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  openInterest: number | null;
+  volume24h: number | null;
+}
+
+export interface EnrichedOptionOpportunity extends OptionOpportunity {
+  callLeg: OptionLeg | null;
+  putLeg: OptionLeg | null;
+  netDelta: number | null;
+  netGamma: number | null;
+  netTheta: number | null;
+  netVega: number | null;
+  totalOpenInterest: number | null;
+  totalVolume24h: number | null;
+  // Live re-scored fields (recomputed by enricher at request time).
+  // When live diverges from entry, the original "buy cheap vol" thesis has drifted.
+  livePremium: number | null;
+  liveImpliedVolAtm: number | null;
+  liveIvRvSpread: number | null;
+  liveSignalOverlay: number | null;
+  liveConfidence: number | null;
+  liveUnderlyingPx: number | null;
+  isStale: boolean;
+  staleReason: string | null;
+}
+
+export interface HitRateBucket {
+  underlying: string;
+  confidenceBucket: string;
+  sampleSize: number;
+  winRate: number | null;
+  avgPnlPct: number | null;
+}
+
+// =============================================================================
+// Backtest results
+// =============================================================================
+
+export interface BacktestRun {
+  id: number;
+  configVersionId: number;
+  periodStart: string;
+  periodEnd: string;
+  tier: number;
+  tradeCount: number;
+  winCount: number;
+  lossCount: number;
+  totalR: number;
+  avgR: number;
+  avgWinnerR: number | null;
+  avgLoserR: number | null;
+  originalTradeCount: number;
+  originalTotalR: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  durationMs: number;
+}
+
+export interface BacktestTrade {
+  id: number;
+  backtestRunId: number;
+  outcomeSignalId: string;
+  outcomeFiredAt: string;
+  symbol: string;
+  direction: string;
+  originalSignal: string;
+  originalAlignment: number;
+  backtestSignal: string;
+  backtestAlignment: number;
+  realizedRMultiple: number | null;
+  backtestWouldIssue: boolean;
+  contributedR: number;
+}
+
+export interface BacktestRunDetail extends BacktestRun {
+  trades: BacktestTrade[];
 }

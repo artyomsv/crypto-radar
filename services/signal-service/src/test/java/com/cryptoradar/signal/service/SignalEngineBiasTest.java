@@ -1,5 +1,6 @@
 package com.cryptoradar.signal.service;
 
+import com.cryptoradar.signal.config.SignalConfig;
 import com.cryptoradar.signal.model.TradingSignal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ class SignalEngineBiasTest {
 
     private static final double PRICE = 50000.0;
 
-    private final SignalEngine engine = new SignalEngine();
+    private final SignalEngine engine = new SignalEngine(new FakeConfigService(SignalConfig.defaults()));
 
     @Test
     @DisplayName("bearish inputs produce SELL signal (SELL threshold headroom)")

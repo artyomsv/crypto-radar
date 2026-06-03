@@ -17,7 +17,13 @@ class SignalSubscriberAlignmentFloorTest {
 
     private SignalSubscriber withFloor(int floor) {
         SignalSubscriber s = new SignalSubscriber();
-        s.alignmentFloor = floor;
+        s.executionSettings = new ExecutionSettingsService(null, null) {
+            @Override
+            public Snapshot snapshot() {
+                return new Snapshot(floor, true, 10, -3.0, 30, true, 15, 60,
+                        false, null, ExecutionSettingsService.DEFAULT_NOTIFIED_EVENTS, false, null, false);
+            }
+        };
         return s;
     }
 

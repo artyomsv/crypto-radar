@@ -7,7 +7,9 @@ import com.cryptoradar.execution.model.ExecutionEventType;
 import com.cryptoradar.execution.model.TradeStatus;
 import com.cryptoradar.execution.repository.ExchangeAccountRepository;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
-import com.cryptoradar.execution.repository.ExecutionEventRepository;
+import com.cryptoradar.execution.notify.ExecutionEventService;
+import com.cryptoradar.execution.lifecycle.OrderReconciler;
+import com.cryptoradar.execution.observability.SlippageLogger;
 import com.cryptoradar.execution.security.CredentialCipher;
 import com.cryptoradar.execution.ws.ExecutionBroadcaster;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -37,6 +39,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -67,7 +70,25 @@ public class BybitV5WsClient {
     private static final long INITIAL_BACKOFF_MS = 1_000L;
     private static final long MAX_BACKOFF_MS = 30_000L;
     private static final long STARTUP_DELAY_SECONDS = 15L;
+    /**
+     * Backoff between {@link #safeConnectAll()} retries when the initial DB
+     * read fails (typical cause: TimescaleDB still booting). 30s is shorter
+     * than Bybit's WS keep-alive window so the live trader recovers fast
+     * after a host restart.
+     */
+    private static final long CONNECT_RETRY_SECONDS = 30L;
     private static final long RECONNECT_DELAY_SECONDS = 2L;
+
+    /**
+     * Bybit V5 idle-times out a private connection after ~30s without a frame
+     * exchange. Sending an application-level ping every 20s keeps the
+     * connection alive so position / execution / wallet frames don't get lost
+     * in reconnect gaps. Package-private so tests can shrink the interval.
+     */
+    static final String PING_FRAME = "{\"op\":\"ping\"}";
+    static final String PONG_FRAME = "{\"op\":\"pong\"}";
+    static final String OP_PING = "ping";
+    static final String OP_PONG = "pong";
 
     private static final String TOPIC_POSITION = "position";
     private static final String TOPIC_EXECUTION = "execution";
@@ -85,10 +106,19 @@ public class BybitV5WsClient {
     @Inject CredentialCipher cipher;
     @Inject ExchangeAccountRepository accountRepo;
     @Inject ExecutedTradeRepository tradeRepo;
-    @Inject ExecutionEventRepository eventRepo;
+    @Inject ExecutionEventService events;
     @Inject ExecutionBroadcaster broadcaster;
+    @Inject OrderReconciler reconciler;
 
     private final HttpClient http = HttpClient.newHttpClient();
+
+    /**
+     * Outbound ping cadence in milliseconds. Package-private and mutable so
+     * unit tests can shrink it without booting Quarkus or introducing an
+     * external config property. Default 20s matches Bybit's documented
+     * keep-alive contract.
+     */
+    long pingIntervalMillis = TimeUnit.SECONDS.toMillis(20L);
 
     void onStart(@Observes StartupEvent ev) {
         SCHEDULER.schedule(this::safeConnectAll, STARTUP_DELAY_SECONDS, TimeUnit.SECONDS);
@@ -110,7 +140,14 @@ public class BybitV5WsClient {
         try {
             connectAll();
         } catch (RuntimeException e) {
-            LOG.errorf(e, "BybitV5WsClient connectAll failed — no Bybit WS frames will arrive");
+            // Most common cause: DB cold-start race on container boot —
+            // accountRepo.listAll() throws before Hibernate is ready.
+            // Without rescheduling, the WS subsystem stays dead permanently
+            // (live-trader observed silent for 3.5h after a 2026-05-26 boot
+            // race). Retry until connectAll succeeds at least once.
+            LOG.errorf(e, "BybitV5WsClient connectAll failed — retrying in %ds",
+                    CONNECT_RETRY_SECONDS);
+            SCHEDULER.schedule(this::safeConnectAll, CONNECT_RETRY_SECONDS, TimeUnit.SECONDS);
         } finally {
             if (activatedHere) reqContext.terminate();
         }
@@ -174,6 +211,37 @@ public class BybitV5WsClient {
         }
     }
 
+    /**
+     * Inspect a raw frame and handle it as keepalive if applicable.
+     *
+     * <ul>
+     *   <li>{@code op:"ping"} from server → reply with {@code op:"pong"}.</li>
+     *   <li>{@code op:"pong"} from server (response to our ping) → drop
+     *       silently; the frontend doesn't need to see keepalive noise.</li>
+     * </ul>
+     *
+     * @return {@code true} if the frame was a keepalive and is fully handled
+     *         (caller should NOT continue to {@link #handleMessage}); {@code
+     *         false} otherwise.
+     */
+    boolean tryHandleKeepalive(WebSocket ws, String raw) {
+        JsonNode root;
+        try {
+            root = mapper.readTree(raw);
+        } catch (JsonProcessingException e) {
+            return false;
+        }
+        String op = root.path("op").asText(null);
+        if (OP_PING.equals(op)) {
+            ws.sendText(PONG_FRAME, true);
+            return true;
+        }
+        if (OP_PONG.equals(op)) {
+            return true;
+        }
+        return false;
+    }
+
     private void dispatchTopic(ExchangeAccount account, String topic, JsonNode item) {
         switch (topic) {
             case TOPIC_POSITION -> handlePosition(account, item);
@@ -196,16 +264,26 @@ public class BybitV5WsClient {
         for (ExecutedTrade t : openTrades) {
             if (!symbol.equals(t.getSymbol())) continue;
             if (t.getStatus() == TradeStatus.CLOSED) continue;
-            t.setStatus(TradeStatus.CLOSED);
-            t.setClosedAt(Instant.now());
-            t.setLastSyncAt(Instant.now());
-            tradeRepo.persist(t);
-            eventRepo.persist(makeEvent(
+            // Delegate to the reconciler so PnL, fees, exit price/reason and
+            // R-multiple all get populated in one place. closeFromReconcile
+            // queries Bybit's closed-pnl endpoint inline. If that fails (rate
+            // limit, network, or no matching close yet), fall back to a bare
+            // CLOSED mark — the periodic reconciler / admin backfill will
+            // recover the missing fields on a later pass.
+            boolean populated = reconciler.closeFromReconcile(account, t);
+            if (!populated) {
+                t.setStatus(TradeStatus.CLOSED);
+                t.setClosedAt(Instant.now());
+                t.setLastSyncAt(Instant.now());
+                tradeRepo.persist(t);
+            }
+            events.record(makeEvent(
                     account.getId(), ExecutionEventType.POSITION_CLOSED,
                     Map.of(
                             "symbol", symbol,
                             "tradeId", t.getId(),
-                            "source", "ws_position"
+                            "source", "ws_position",
+                            "metadataPopulated", populated
                     )));
         }
     }
@@ -222,10 +300,15 @@ public class BybitV5WsClient {
         BigDecimal execQty = parseBd(exec.path("execQty").asText(null));
         String execType = exec.path("execType").asText(null);
 
-        // First-fill entry tracking: stamp entry price on the very first trade
-        // execution so the trade carries the real fill price, not the
-        // originally-placed limit. Subsequent partial fills don't overwrite.
-        if (trade.getEntryPrice() == null && execPrice != null) {
+        // First-fill entry refinement: OrderPlacer pre-fills with the intended
+        // entry; the very first execution event refines to the actual fill
+        // price. Subsequent partial fills don't overwrite. We use lastSyncAt
+        // as the "haven't seen any WS event yet" marker, since entryPrice is
+        // now non-null even before the WS event arrives.
+        if (trade.getLastSyncAt() == null && execPrice != null) {
+            // intended = signal-side entry pre-filled by OrderPlacer; actual =
+            // first WS fill. Log BEFORE overwriting so both values exist.
+            SlippageLogger.logEntry(trade, trade.getEntryPrice(), execPrice);
             trade.setEntryPrice(execPrice);
             trade.setLastSyncAt(Instant.now());
             if (trade.getStatus() == TradeStatus.PENDING_PLACE) {
@@ -234,7 +317,7 @@ public class BybitV5WsClient {
             tradeRepo.persist(trade);
         }
 
-        eventRepo.persist(makeEvent(
+        events.record(makeEvent(
                 account.getId(), ExecutionEventType.ORDER_FILLED,
                 Map.of(
                         "orderLinkId", orderLinkId,
@@ -288,10 +371,11 @@ public class BybitV5WsClient {
      * interceptor fires — inner-class method interceptors are never invoked
      * by CDI, which is why the handler lives on the outer class.
      */
-    private class Listener implements WebSocket.Listener {
+    class Listener implements WebSocket.Listener {
 
         private final ExchangeAccount account;
         private final StringBuilder partial = new StringBuilder();
+        private ScheduledFuture<?> pingTask;
 
         Listener(ExchangeAccount account) {
             this.account = account;
@@ -304,6 +388,7 @@ public class BybitV5WsClient {
             try {
                 authenticate(ws);
                 subscribe(ws);
+                startPingTask(ws);
             } catch (RuntimeException e) {
                 LOG.errorf(e, "WS open handler failed for account %d", account.getId());
             } catch (Exception e) {
@@ -319,7 +404,11 @@ public class BybitV5WsClient {
             if (last) {
                 String msg = partial.toString();
                 partial.setLength(0);
-                BybitV5WsClient.this.handleMessage(account, msg);
+                // Branch BEFORE handleMessage so keepalive frames don't open a
+                // transaction and aren't broadcast to the frontend.
+                if (!BybitV5WsClient.this.tryHandleKeepalive(ws, msg)) {
+                    BybitV5WsClient.this.handleMessage(account, msg);
+                }
             }
             return WebSocket.Listener.super.onText(ws, data, last);
         }
@@ -328,6 +417,7 @@ public class BybitV5WsClient {
         public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason) {
             LOG.warnf("Bybit WS closed for account %d — status=%d reason=%s",
                     account.getId(), statusCode, reason);
+            cancelPingTask();
             // NOTE: deliberately not persisting a WS_DISCONNECTED event here —
             // the listener thread has no active transaction, and wrapping this
             // in a synthetic @Transactional call would complicate the reconnect
@@ -341,6 +431,35 @@ public class BybitV5WsClient {
         @Override
         public void onError(WebSocket ws, Throwable error) {
             LOG.errorf(error, "Bybit WS error for account %d", account.getId());
+            // The JDK WebSocket contract does NOT guarantee onClose follows a
+            // transport-level onError, so cancel the ping schedule here too —
+            // otherwise we leak a recurring task that sends pings into a dead
+            // connection until the JVM exits.
+            cancelPingTask();
+        }
+
+        void startPingTask(WebSocket ws) {
+            cancelPingTask();
+            long interval = Math.max(1L, pingIntervalMillis);
+            pingTask = SCHEDULER.scheduleAtFixedRate(
+                    () -> sendPingSafely(ws),
+                    interval, interval, TimeUnit.MILLISECONDS);
+        }
+
+        void cancelPingTask() {
+            ScheduledFuture<?> task = pingTask;
+            if (task != null) {
+                task.cancel(false);
+                pingTask = null;
+            }
+        }
+
+        private void sendPingSafely(WebSocket ws) {
+            try {
+                ws.sendText(PING_FRAME, true);
+            } catch (RuntimeException e) {
+                LOG.warnf(e, "Bybit WS ping send failed for account %d", account.getId());
+            }
         }
 
         private void authenticate(WebSocket ws) throws JsonProcessingException {

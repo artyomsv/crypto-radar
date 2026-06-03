@@ -1,5 +1,6 @@
 package com.cryptoradar.signal.service;
 
+import com.cryptoradar.signal.config.SignalConfig;
 import com.cryptoradar.signal.model.TradingSignal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class SignalEngineStopPlacementTest {
     private static final double ENTRY_PRICE = 100.0;
     private static final double MIN_RISK_PCT = 0.015;
 
-    private final SignalEngine engine = new SignalEngine();
+    private final SignalEngine engine = new SignalEngine(new FakeConfigService(SignalConfig.defaults()));
 
     @Test
     @DisplayName("min-risk floor widens near-zero stop to MIN_RISK_PCT of entry")

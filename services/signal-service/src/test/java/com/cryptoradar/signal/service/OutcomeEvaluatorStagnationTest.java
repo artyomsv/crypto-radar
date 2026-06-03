@@ -29,7 +29,7 @@ class OutcomeEvaluatorStagnationTest {
 
     @BeforeEach
     void setUp() {
-        evaluator = new OutcomeEvaluator(null, null);
+        evaluator = new OutcomeEvaluator(null, null, null);
         evaluator.stagnationExitEnabled = true;
         evaluator.stagnationMinAgeMinutes = 45;
         evaluator.stagnationMfeThresholdPct = 0.2;

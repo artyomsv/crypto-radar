@@ -14,6 +14,7 @@ import com.cryptoradar.execution.resource.dto.CloseAllRequest;
 import com.cryptoradar.execution.resource.dto.EventView;
 import com.cryptoradar.execution.resource.dto.KillSwitchRequest;
 import com.cryptoradar.execution.resource.dto.PositionView;
+import com.cryptoradar.execution.resource.dto.TradeHistoryPage;
 import com.cryptoradar.execution.resource.dto.TradeView;
 import com.cryptoradar.execution.resource.dto.WalletSnapshot;
 import com.cryptoradar.execution.resource.dto.WhyView;
@@ -75,8 +76,17 @@ public class TradingResource {
         try {
             BybitResponse<BybitV5RestClient.ListResult<WalletV5>> resp =
                     bybit.getWalletBalance(a.getEnvironment(), a.getApiKeyEncrypted(), a.getApiSecretEncrypted());
-            if (!resp.isOk() || resp.result() == null || resp.result().list().isEmpty()) {
-                return Response.status(502).entity(Map.of("error", "Bybit wallet fetch failed")).build();
+            boolean listMissing = resp.result() == null || resp.result().list() == null
+                    || resp.result().list().isEmpty();
+            if (!resp.isOk() || listMissing) {
+                String listSize = resp.result() == null || resp.result().list() == null
+                        ? "null" : String.valueOf(resp.result().list().size());
+                LOG.warnf("wallet fetch non-OK for account %d: retCode=%d retMsg=%s listSize=%s",
+                        id, resp.retCode(), resp.retMsg(), listSize);
+                return Response.status(502).entity(Map.of(
+                        "error", "Bybit wallet fetch failed",
+                        "retCode", resp.retCode(),
+                        "retMsg", resp.retMsg() == null ? "" : resp.retMsg())).build();
             }
             WalletV5 w = resp.result().list().get(0);
             int openCount = tradeRepo.countOpenForAccount(id);
@@ -103,6 +113,20 @@ public class TradingResource {
     public List<TradeView> trades(@PathParam("accountId") Long id,
                                    @QueryParam("limit") @DefaultValue("50") int limit) {
         return tradeRepo.findClosedSince(id, Instant.EPOCH, limit).stream().map(TradeView::of).toList();
+    }
+
+    @GET
+    @Path("/{accountId}/trades/history")
+    public Response tradeHistory(@PathParam("accountId") Long id,
+                                  @QueryParam("page") @DefaultValue("0") int page,
+                                  @QueryParam("pageSize") @DefaultValue("25") int pageSize) {
+        if (accountRepo.findById(id) == null) return Response.status(404).build();
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, pageSize), 200);
+        List<TradeView> items = tradeRepo.findClosedPaged(id, safePage, safeSize)
+                .stream().map(TradeView::of).toList();
+        long total = tradeRepo.countClosedForAccount(id);
+        return Response.ok(new TradeHistoryPage(items, total, safePage, safeSize)).build();
     }
 
     @GET

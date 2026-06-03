@@ -46,7 +46,14 @@ export function RecentTradesList({ trades, onShowAll }: Props) {
   if (recent.length === 0) {
     return (
       <div className="rounded bg-[#141820] p-4 text-center text-[10px] text-gray-500">
-        No closed trades in the last 24 hours.
+        <div>No closed trades in the last 24 hours.</div>
+        <button
+          type="button"
+          onClick={onShowAll}
+          className="mt-2 text-gray-400 hover:text-gray-200"
+        >
+          see full history →
+        </button>
       </div>
     );
   }

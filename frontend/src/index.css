@@ -11,6 +11,13 @@
     background-color: #0a0e17;
     color: #f1f5f9;
   }
+  /* Native form controls (<select>, <input type="date">, etc.) render their
+     popup menus and OS chrome with browser defaults — which on dark themes
+     produces unreadable white-on-white dropdowns. color-scheme: dark tells
+     Chrome/Firefox/Safari to render those native pieces in dark mode. */
+  select, input[type="date"], input[type="time"], input[type="datetime-local"] {
+    color-scheme: dark;
+  }
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

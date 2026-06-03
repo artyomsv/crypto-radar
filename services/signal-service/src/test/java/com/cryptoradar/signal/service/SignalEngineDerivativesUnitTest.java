@@ -1,5 +1,6 @@
 package com.cryptoradar.signal.service;
 
+import com.cryptoradar.signal.config.SignalConfig;
 import com.cryptoradar.signal.model.DimensionScore;
 import com.cryptoradar.signal.model.TradingSignal;
 import org.junit.jupiter.api.DisplayName;
@@ -27,7 +28,7 @@ class SignalEngineDerivativesUnitTest {
 
     private static final double PRICE = 50000.0;
 
-    private final SignalEngine engine = new SignalEngine();
+    private final SignalEngine engine = new SignalEngine(new FakeConfigService(SignalConfig.defaults()));
 
     @Test
     @DisplayName("crowded longs as fraction (0.74) score bearish, not bullish")

@@ -151,7 +151,7 @@ Live in `techdebt/` (see `~/.claude/rules/tech-debt-tracking.md` for format). Hi
 
 ## Current engine baseline (as of 2026-04-24, v4 shipped)
 
-- 55 signal-service tests, 97 trade-execution-service tests, 38 shared-trade-core tests passing
+- 55 signal-service tests, 111 trade-execution-service tests, 38 shared-trade-core tests passing
 - Regime classified `BULL` at deploy time
 - Phase 2 outcome slice (2026-04-20 → 2026-04-23, pre-v4): winRate 45.9%, avgR **−0.135**, totalR −14.95 — inverted Derivatives scorer held SELL signals mathematically unreachable, zero SHORT outcomes ever fired
 - Post-v4 immediate effect: LTC Derivatives swung from stuck `+35` to honest `−35`; three symbols (ETH, XRP, LTC) sit within 3–10 pts of their first-ever SELL signal
@@ -163,10 +163,33 @@ All live in `services/trade-execution-service/src/main/java/com/cryptoradar/exec
 
 - **`SignalSubscriber.isBelowAlignmentFloor`** — rejects overview-envelope signals with `alignment < execution.alignment.floor` (default 70). Detector alerts lack alignment and bypass. Phase-2 rationale: the 40–55 alignment bucket lost 8.87R across 19 trades.
 - **`SymbolPerformanceGate`** — reads last N closed outcomes per symbol from `signal_outcomes`; suppresses dispatch when cumulative R ≤ threshold. Defaults: `lookback=10`, `threshold-r=-3.0`, `cache-ttl=30s`. Self-healing as the rolling window ages out.
-- **`DetectorConfluenceCheck`** — trend-continuation LONG entries require an open `dimension-scoring` LONG in the same symbol within `execution.confluence.window-minutes` (default 15). SHORTs and other detectors unaffected.
+- **`DetectorConfluenceCheck`** — trend-continuation entries (BOTH LONG and SHORT) require an open `dimension-scoring` outcome in the same symbol+direction within `execution.confluence.window-minutes` (default 15). v4 originally gated only LONGs (Vector B); after the SHORT-gap was unblocked the first 4 v4 SHORTs all lost, so the rule was mirrored symmetrically. Other detectors unaffected. Toggle: `execution.confluence.trend-continuation.required` (default true).
+- **`DailyPnlCalculator`** — computes today's realized PnL since UTC midnight as a percent of cached Bybit equity, fed into `GuardrailPolicy.evaluate` as the daily-halt input. Equity cache TTL: `execution.daily-pnl.equity-cache-ttl-sec` (default 60s). Trip threshold lives on `ExchangeAccount.maxDailyLossPercent` (default 7%). Open-position unrealized PnL is intentionally excluded — the gate fires on realized losses only to avoid oscillation. Fail-open when wallet endpoint fails.
 - **`StagnationMonitor`** (lifecycle, `@Scheduled`) — exchange-side companion to the OutcomeEvaluator stagnation exit. Reads MFE/MAE from `signal_outcomes` via the trade's `signal_id` and calls `OrderPlacer.close(..., ExitReason.STAGNATION)` when stagnant. **Default disabled** (`execution.stagnation-monitor.enabled=false`). Flip to `true` only after tracking-side STAGNATION reasons have been observed for 24–48h.
 
-All four gates fail-open on query errors — a stuck read cannot block legitimate trades (or, for the monitor, force-close live positions).
+All gates fail-open on query errors — a stuck read cannot block legitimate trades (or, for the monitor, force-close live positions).
+
+## Trail mirror — v5 critical fix
+
+Before v5, the entire v2/v3/v4 trail system was silently inert in production: zero of 35 closed trades had `trail_triggered_at` set or `trail_highest_r > 0` despite signal-side `OutcomeEvaluator` ratcheting trails on `signal_outcomes`. Root cause: `MarketDataClient.getLastPrice` parsed the wrong response shape — expected an object keyed by symbol, but `/api/market/prices` returns an ARRAY of `{symbol, price, ...}`. Every lookup returned null, `TrailMirror.processTrade` early-returned at every tick, dynamic stops never moved. Fix: array-walk parse in `MarketDataClient.parsePrice` (extracted method for unit-testability). Going forward, v4 trail wins should start materializing in `executed_trades.trail_triggered_at` once trades reach the +1R activation threshold.
+
+## Trade close pipeline (single-source v5)
+
+The path from "Bybit closed the position" → "row in `executed_trades` has correct PnL/fees/exit_reason/R-multiple" was previously split between WS `BybitV5WsClient.handlePosition` (fast, but only set status=CLOSED) and the periodic `OrderReconciler` (filled the rest). The split caused two bugs: (a) the WS race left rows permanently null because the reconciler skips already-CLOSED rows; (b) the reconciler defaulted `exit_reason` to TARGET when missing, mislabeling 26 of 28 v3-era stop hits as wins.
+
+v5 collapses to one canonical close path in `OrderReconciler.closeFromReconcile`:
+
+- **Called from both** the periodic reconcile loop AND the WS position handler (size→0 path) so close metadata is captured on the first signal of position closure.
+- **Inferred `exit_reason`** via `inferExitReason(trade, ClosedPnlV5)` — compares `avgExitPrice` to `stop_price` / `target_price` (with 0.1% slippage tolerance) and uses the trail-active flag; falls back to PnL sign + trail flag when levels are missing. Defaults to `MANUAL` rather than `TARGET` when the row truly cannot be classified.
+- **Backfills `entry_price`** from the closed-pnl payload's `avgEntryPrice` so R-multiple math survives missed WS execution events. `OrderPlacer` also pre-fills the intended entry up front; the WS first-fill event refines it (using `lastSyncAt == null` as the "haven't seen any WS event yet" marker).
+- **Time-windowed match** in `pickMatchingClose` — only accepts a closed-pnl entry whose `createdTime` falls between `openedAt − 1h` and `closedAt + 24h`. Without this, repeat trades on the same symbol could steal each other's PnL payload (caused mis-backfills with stop_price on the wrong side of entry_price).
+- **Idempotent** — calling `closeFromReconcile` on a row already CLOSED only fills NULL fields. Returns `true` only when at least one field changed.
+
+Two admin endpoints repair pre-fix data without resetting the DB:
+- `POST /api/execution/accounts/{id}/admin/backfill-closes?limit=N` — re-fetches closed-pnl from Bybit for any CLOSED row missing `realized_pnl_usdt`, `exit_reason`, or `entry_price`. Bounded by Bybit's ~30-day closed-pnl history window.
+- `POST /api/execution/accounts/{id}/admin/repair-exit-reasons?limit=N` — re-classifies rows where `exit_reason` contradicts the recorded PnL sign (TARGET with negative pnl, INITIAL_STOP with positive pnl). Pure local re-inference; no Bybit call.
+
+`computeRMultiple` rejects rows with corrupt risk geometry (stop on the wrong side of entry, or risk distance < 0.1% of entry) so backfill artifacts cannot pollute aggregate metrics.
 
 ## Further reading
 

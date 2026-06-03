@@ -3,7 +3,6 @@ package com.cryptoradar.execution.intake;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
@@ -42,41 +41,33 @@ public class SymbolPerformanceGate {
     @Inject
     EntityManager entityManager;
 
-    @ConfigProperty(name = "execution.symbol-gate.enabled", defaultValue = "true")
-    boolean enabled;
-
-    @ConfigProperty(name = "execution.symbol-gate.lookback", defaultValue = "10")
-    int lookback;
-
-    @ConfigProperty(name = "execution.symbol-gate.threshold-r", defaultValue = "-3.0")
-    double thresholdR;
-
-    @ConfigProperty(name = "execution.symbol-gate.cache-ttl-seconds", defaultValue = "30")
-    int cacheTtlSeconds;
+    @Inject
+    ExecutionSettingsService executionSettings;
 
     private final Map<String, CachedDecision> cache = new ConcurrentHashMap<>();
 
     public boolean isSuppressed(String symbol) {
-        if (!enabled) return false;
+        ExecutionSettingsService.Snapshot s = executionSettings.snapshot();
+        if (!s.symbolGateEnabled()) return false;
         CachedDecision cached = cache.get(symbol);
-        if (cached != null && !cached.isExpired(cacheTtlSeconds)) {
+        if (cached != null && !cached.isExpired(s.symbolGateCacheTtlSec())) {
             return cached.suppressed();
         }
-        CachedDecision fresh = evaluateFresh(symbol);
+        CachedDecision fresh = evaluateFresh(symbol, s);
         cache.put(symbol, fresh);
         return fresh.suppressed();
     }
 
-    private CachedDecision evaluateFresh(String symbol) {
-        Double totalR = queryTotalR(symbol);
+    private CachedDecision evaluateFresh(String symbol, ExecutionSettingsService.Snapshot s) {
+        Double totalR = queryTotalR(symbol, s.symbolGateLookback());
         if (totalR == null) {
             return new CachedDecision(false, 0.0, 0, Instant.now());
         }
-        boolean suppress = totalR <= thresholdR;
-        return new CachedDecision(suppress, totalR, lookback, Instant.now());
+        boolean suppress = totalR <= s.symbolGateThresholdR();
+        return new CachedDecision(suppress, totalR, s.symbolGateLookback(), Instant.now());
     }
 
-    Double queryTotalR(String symbol) {
+    Double queryTotalR(String symbol, int lookback) {
         try {
             Object result = entityManager.createNativeQuery(
                             "SELECT COALESCE(SUM(realized_r_multiple), 0) "

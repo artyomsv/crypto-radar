@@ -10,6 +10,8 @@ public record ClosedPnlV5(
         @JsonProperty("side") String side,
         @JsonProperty("qty") String qty,
         @JsonProperty("orderPrice") String orderPrice,
+        @JsonProperty("avgEntryPrice") String avgEntryPrice,
+        @JsonProperty("avgExitPrice") String avgExitPrice,
         @JsonProperty("closedPnl") String closedPnl,
         @JsonProperty("openFee") String openFee,
         @JsonProperty("closeFee") String closeFee,

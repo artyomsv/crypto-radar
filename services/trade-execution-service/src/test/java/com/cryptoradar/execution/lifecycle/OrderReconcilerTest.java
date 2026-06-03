@@ -140,8 +140,8 @@ class OrderReconcilerTest {
                 Map.entry("closedPnl", "1.0"),
                 Map.entry("openFee", "0.025"),
                 Map.entry("closeFee", "0.025"),
-                Map.entry("createdTime", "1700000100000"),
-                Map.entry("updatedTime", "1700000100000"));
+                Map.entry("createdTime", String.valueOf(System.currentTimeMillis())),
+                Map.entry("updatedTime", String.valueOf(System.currentTimeMillis())));
         stubFor(get(urlPathEqualTo("/v5/position/closed-pnl"))
                 .willReturn(okJson(mapper.writeValueAsString(Map.of(
                         "retCode", 0, "retMsg", "OK",
@@ -161,8 +161,8 @@ class OrderReconcilerTest {
                 Map.entry("qty", "0.001"),
                 Map.entry("orderPrice", "51000"),
                 Map.entry("closedPnl", "1.0"),
-                Map.entry("createdTime", "1700000100000"),
-                Map.entry("updatedTime", "1700000100000"));
+                Map.entry("createdTime", String.valueOf(System.currentTimeMillis())),
+                Map.entry("updatedTime", String.valueOf(System.currentTimeMillis())));
         stubFor(get(urlPathEqualTo("/v5/position/closed-pnl"))
                 .willReturn(okJson(mapper.writeValueAsString(Map.of(
                         "retCode", 0, "retMsg", "OK",
@@ -225,6 +225,125 @@ class OrderReconcilerTest {
         assertEquals(TradeStatus.CLOSED, refreshed.getStatus());
         assertNotNull(refreshed.getFeesUsdt());
         assertEquals(0, BigDecimal.ZERO.compareTo(refreshed.getFeesUsdt()));
+    }
+
+    /**
+     * Stub the closed-pnl endpoint with the post-fix payload shape: includes
+     * the avgEntryPrice / avgExitPrice fields the reconciler now uses to
+     * (a) backfill missing entry_price and (b) classify exits via price.
+     */
+    private void stubClosedPnlFullPayload(String avgEntryPrice, String avgExitPrice,
+                                           String closedPnl, String closeSide) throws Exception {
+        Map<String, Object> entry = Map.ofEntries(
+                Map.entry("symbol", "BTCUSDT"),
+                Map.entry("orderId", "CLOSE-3"),
+                Map.entry("side", closeSide),
+                Map.entry("qty", "0.001"),
+                Map.entry("orderPrice", avgExitPrice),
+                Map.entry("avgEntryPrice", avgEntryPrice),
+                Map.entry("avgExitPrice", avgExitPrice),
+                Map.entry("closedPnl", closedPnl),
+                Map.entry("openFee", "0.025"),
+                Map.entry("closeFee", "0.025"),
+                Map.entry("createdTime", String.valueOf(System.currentTimeMillis())),
+                Map.entry("updatedTime", String.valueOf(System.currentTimeMillis())));
+        stubFor(get(urlPathEqualTo("/v5/position/closed-pnl"))
+                .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                        "retCode", 0, "retMsg", "OK",
+                        "result", Map.of("list", List.of(entry)),
+                        "time", 1700000100000L)))));
+    }
+
+    @Test
+    @Transactional
+    void backfillRecoversIncompleteCloseRow() throws Exception {
+        // Simulate the WS race: row got marked CLOSED with only qty + closedAt,
+        // missing entry_price, exit_price, pnl, fees, exit_reason. Backfill
+        // should restore everything from Bybit's closed-pnl payload.
+        ExecutedTrade t = new ExecutedTrade();
+        t.setExchangeAccountId(account.getId());
+        t.setSymbol("BTCUSDT");
+        t.setDirection("LONG");
+        t.setStatus(TradeStatus.CLOSED);
+        t.setStopPrice(new BigDecimal("49500"));
+        t.setTargetPrice(new BigDecimal("52000"));
+        t.setQty(new BigDecimal("0.001"));
+        t.setExchangeOrderLinkId("ex-test-bf");
+        tradeRepo.persist(t);
+
+        stubClosedPnlFullPayload("50000", "49500", "-5.0", "Sell");
+
+        int recovered = reconciler.backfillIncompleteCloses(account.getId(), 50);
+
+        assertEquals(1, recovered);
+        ExecutedTrade refreshed = tradeRepo.findById(t.getId());
+        assertNotNull(refreshed.getEntryPrice());
+        assertEquals(0, new BigDecimal("50000").compareTo(refreshed.getEntryPrice()));
+        assertNotNull(refreshed.getExitPrice());
+        assertEquals(0, new BigDecimal("49500").compareTo(refreshed.getExitPrice()));
+        assertNotNull(refreshed.getRealizedPnlUsdt());
+        assertNotNull(refreshed.getFeesUsdt());
+        // exit at stop level + negative pnl + no trail → INITIAL_STOP
+        assertEquals(com.cryptoradar.execution.model.ExitReason.INITIAL_STOP, refreshed.getExitReason());
+        // R-multiple: (49500-50000)/abs(50000-49500) = -1.0R
+        assertNotNull(refreshed.getRealizedRMultiple());
+        assertEquals(0, new BigDecimal("-1.0000").compareTo(refreshed.getRealizedRMultiple()));
+    }
+
+    @Test
+    @Transactional
+    void backfillIsIdempotent() throws Exception {
+        // A row already fully populated should not be re-counted as recovered.
+        ExecutedTrade t = new ExecutedTrade();
+        t.setExchangeAccountId(account.getId());
+        t.setSymbol("BTCUSDT");
+        t.setDirection("LONG");
+        t.setStatus(TradeStatus.CLOSED);
+        t.setEntryPrice(new BigDecimal("50000"));
+        t.setExitPrice(new BigDecimal("51000"));
+        t.setStopPrice(new BigDecimal("49500"));
+        t.setTargetPrice(new BigDecimal("52000"));
+        t.setQty(new BigDecimal("0.001"));
+        t.setRealizedPnlUsdt(new BigDecimal("1.0"));
+        t.setFeesUsdt(new BigDecimal("0.05"));
+        t.setRealizedRMultiple(new BigDecimal("2.0000"));
+        t.setExitReason(com.cryptoradar.execution.model.ExitReason.TARGET);
+        t.setExchangeOrderLinkId("ex-test-idem");
+        tradeRepo.persist(t);
+
+        int recovered = reconciler.backfillIncompleteCloses(account.getId(), 50);
+        // No incomplete rows to scan → no Bybit call → 0 recovered.
+        assertEquals(0, recovered);
+    }
+
+    @Test
+    @Transactional
+    void closeFromReconcileMislabeledLossesNoLongerDefaultToTarget() throws Exception {
+        // Reproduces the Phase-2 bug: externally-closed LONG with negative PnL.
+        // Old code defaulted exit_reason to TARGET; new code must classify as
+        // INITIAL_STOP based on price + pnl sign.
+        ExecutedTrade t = new ExecutedTrade();
+        t.setExchangeAccountId(account.getId());
+        t.setSymbol("BTCUSDT");
+        t.setDirection("LONG");
+        t.setStatus(TradeStatus.OPEN);
+        t.setEntryPrice(new BigDecimal("50000"));
+        t.setStopPrice(new BigDecimal("49500"));
+        t.setTargetPrice(new BigDecimal("52000"));
+        t.setQty(new BigDecimal("0.001"));
+        t.setExchangeOrderLinkId("ex-test-loss");
+        tradeRepo.persist(t);
+
+        stubPositionsEmpty();
+        // Exit at 49500 (stop price), negative pnl — the realistic shape for
+        // a losing trade closed by Bybit's stop.
+        stubClosedPnlFullPayload("50000", "49500", "-5.0", "Sell");
+
+        reconciler.reconcileAccount(account);
+
+        ExecutedTrade refreshed = tradeRepo.findById(t.getId());
+        assertEquals(TradeStatus.CLOSED, refreshed.getStatus());
+        assertEquals(com.cryptoradar.execution.model.ExitReason.INITIAL_STOP, refreshed.getExitReason());
     }
 
     @Test

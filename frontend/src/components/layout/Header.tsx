@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Activity, Radio, Waves, BarChart3, Settings, Grid3X3, Columns, Wallet, Filter, Zap } from 'lucide-react';
+import { Activity, Radio, Waves, BarChart3, Settings, Grid3X3, Columns, Wallet, Filter, Zap, FlaskConical, SlidersHorizontal, TrendingUp } from 'lucide-react';
 
 export function Header() {
   const location = useLocation();
@@ -46,6 +46,9 @@ export function Header() {
             {navLink('/analytics', 'Analytics', Grid3X3)}
             {navLink('/compare', 'Compare', Columns)}
             {navLink('/portfolio', 'Portfolio', Wallet)}
+            {navLink('/backtest', 'Backtest', FlaskConical)}
+            {navLink('/options', 'Options', TrendingUp)}
+            {navLink('/signal-config', 'Engine', SlidersHorizontal)}
             {navLink('/config', 'Settings', Settings)}
             <div className="flex items-center gap-2 text-sm text-text-secondary">
               <Radio className="h-4 w-4 text-gain animate-pulse" />

@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { formatPrice, formatLargeNumber } from '@/lib/utils';
 import { AlertsManager } from './AlertsManager';
 import { DataExport } from './DataExport';
+import { TelegramNotificationsPanel } from './TelegramNotificationsPanel';
 
 interface CandleStat {
   interval: string;
@@ -121,6 +122,9 @@ export function CryptoConfig() {
 
       {/* Price Alerts */}
       <AlertsManager />
+
+      {/* Telegram Notifications */}
+      <TelegramNotificationsPanel />
 
       {/* Data Export */}
       <DataExport />
