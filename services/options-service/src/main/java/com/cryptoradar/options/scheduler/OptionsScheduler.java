@@ -2,6 +2,7 @@ package com.cryptoradar.options.scheduler;
 
 import com.cryptoradar.options.service.OptionsCollectorService;
 import com.cryptoradar.options.service.OpportunityScorer;
+import com.cryptoradar.options.service.ShortVolOpportunityScorer;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -27,6 +28,7 @@ public class OptionsScheduler {
 
     @Inject OptionsCollectorService collector;
     @Inject OpportunityScorer scorer;
+    @Inject ShortVolOpportunityScorer shortVolScorer;
 
     @ConfigProperty(name = "options.underlyings", defaultValue = "BTC,ETH,SOL,XAUT,XRP,MNT,DOGE")
     String underlyingsCsv;
@@ -66,6 +68,15 @@ public class OptionsScheduler {
             scorer.scoreAllUnderlyings(underlyings());
         } catch (Exception e) {
             LOG.errorf(e, "opportunity scoring run failed");
+        }
+    }
+
+    @Scheduled(every = "{scheduler.short-vol-scan.interval}", delayed = "50s", identity = "options-short-vol-scoring")
+    void scoreShortVolOpportunities() {
+        try {
+            shortVolScorer.scoreAllUnderlyings(underlyings());
+        } catch (Exception e) {
+            LOG.errorf(e, "short-vol scoring run failed");
         }
     }
 }

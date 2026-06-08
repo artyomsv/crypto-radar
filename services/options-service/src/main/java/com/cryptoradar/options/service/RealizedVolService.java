@@ -7,7 +7,10 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Computes annualized realized volatility from the shared {@code candles}
@@ -26,12 +29,24 @@ public class RealizedVolService {
 
     @Inject EntityManager entityManager;
 
+    // 5-minute cache. Annualized RV moves on the scale of hours; the enriched
+    // endpoint can be hit dozens of times/minute. Caching cuts the dominant
+    // per-call cost (Hibernate native-query setup + TimescaleDB chunk planning)
+    // from 400–800ms to a HashMap lookup.
+    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
+    private final ConcurrentHashMap<String, CachedRv> cache = new ConcurrentHashMap<>();
+
     /**
      * Underlying naming convention: Bybit options use bare ticker
      * ("BTC", "ETH"); spot candles use USDT-quote pair ("BTCUSDT").
      * Map here so callers can pass the underlying form.
      */
     public Double computeAnnualized(String underlying, int lookbackDays) {
+        String key = underlying + "/" + lookbackDays;
+        CachedRv cached = cache.get(key);
+        if (cached != null && !cached.isExpired()) {
+            return cached.value;
+        }
         String spotSymbol = underlying + "USDT";
         List<Double> closes = fetchDailyCloses(spotSymbol, lookbackDays + 1);
         if (closes.size() < 3) return null;
@@ -49,16 +64,30 @@ public class RealizedVolService {
         for (double r : logReturns) variance += (r - mean) * (r - mean);
         variance /= (logReturns.length - 1);
         double dailyStdev = Math.sqrt(variance);
-        return dailyStdev * Math.sqrt(TRADING_DAYS_PER_YEAR) * 100.0;
+        Double result = dailyStdev * Math.sqrt(TRADING_DAYS_PER_YEAR) * 100.0;
+        cache.put(key, new CachedRv(result, Instant.now()));
+        return result;
+    }
+
+    private record CachedRv(Double value, Instant cachedAt) {
+        boolean isExpired() {
+            return Duration.between(cachedAt, Instant.now()).compareTo(CACHE_TTL) >= 0;
+        }
     }
 
     @SuppressWarnings("unchecked")
     @Transactional
     List<Double> fetchDailyCloses(String spotSymbol, int limit) {
         try {
+            // The {@code time > now() - 90 days} predicate lets the TimescaleDB
+            // planner prune chunks aggressively. Without it the planner appends
+            // every 1d-interval chunk in the hypertable (hundreds of them);
+            // observed planning cost was 400-800ms per call even though the
+            // actual scan was sub-ms.
             List<Object> results = entityManager.createNativeQuery("""
                 SELECT close FROM candles
                 WHERE symbol = :symbol AND interval = '1d'
+                  AND time > now() - interval '90 days'
                 ORDER BY time DESC
                 LIMIT :limit
                 """)
@@ -74,6 +103,53 @@ public class RealizedVolService {
         } catch (Exception e) {
             LOG.warnf(e, "RealizedVolService query failed for %s", spotSymbol);
             return List.of();
+        }
+    }
+
+    /**
+     * Where the most recent ATM IV sits in its own 30-day rolling distribution
+     * (0–100 percentile). Used by the short-vol scorer's {@code ivPercentile}
+     * component — Sinclair Ch. 7: only sell vol when current vol is in an
+     * elevated percentile of its own history. Returns {@code null} when there
+     * are not enough historical snapshots to score.
+     *
+     * <p>Cheap to compute: one query, then in-memory rank. Cached at the
+     * same 5-min TTL as {@link #computeAnnualized}.
+     */
+    public Double computeIvPercentileLast30d(String underlying) {
+        String key = underlying + "/iv-pct-30d";
+        CachedRv cached = cache.get(key);
+        if (cached != null && !cached.isExpired()) return cached.value;
+        Double result = fetchIvPercentileLast30d(underlying);
+        cache.put(key, new CachedRv(result, Instant.now()));
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    @Transactional
+    Double fetchIvPercentileLast30d(String underlying) {
+        try {
+            // Take one ATM IV reading per day for the last 30 days, then percentile-rank.
+            List<Object> rows = entityManager.createNativeQuery("""
+                SELECT AVG(implied_vol) AS daily_iv
+                FROM option_snapshots
+                WHERE underlying = :u
+                  AND time > now() - interval '30 days'
+                  AND implied_vol IS NOT NULL
+                GROUP BY date_trunc('day', time)
+                ORDER BY date_trunc('day', time)
+                """)
+                    .setParameter("u", underlying)
+                    .getResultList();
+            if (rows.size() < 7) return null;   // not enough history to percentile
+            double[] series = rows.stream().mapToDouble(o -> ((Number) o).doubleValue()).toArray();
+            double current = series[series.length - 1];
+            long below = 0;
+            for (double v : series) if (v < current) below++;
+            return 100.0 * below / series.length;
+        } catch (Exception e) {
+            LOG.warnf(e, "IV percentile query failed for %s", underlying);
+            return null;
         }
     }
 

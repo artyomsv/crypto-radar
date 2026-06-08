@@ -116,7 +116,9 @@ public class OutcomeTracker {
         return outcome.getSignalId();
     }
 
-    private SignalOutcome buildOutcomeFromSetup(TradeSetup setup) {
+    // Package-private for unit tests — exercises the build/routing logic
+    // without spinning up the persistence layer.
+    SignalOutcome buildOutcomeFromSetup(TradeSetup setup) {
         SignalOutcome outcome = new SignalOutcome();
         outcome.setFiredAt(setup.firedAt() != null ? setup.firedAt() : Instant.now());
         outcome.setSignalId(UUID.randomUUID().toString());
@@ -141,14 +143,18 @@ public class OutcomeTracker {
      * engine-wide trail group from active SignalConfig so dimension-scoring
      * outcomes track UI edits without per-row backfill.
      */
-    private void applyTrailConfig(SignalOutcome outcome, TrailConfig config) {
+    // Package-private for unit tests.
+    void applyTrailConfig(SignalOutcome outcome, TrailConfig config) {
         if (config != null) {
             outcome.setTrailActivationR(config.activationR());
             outcome.setTrailStepR(config.stepR());
             outcome.setTrailOffsetR(config.offsetR());
             return;
         }
-        SignalConfig active = configService.getActive();
+        // Defensive null guard — matches OutcomeEvaluator.updateTrailingStop.
+        // Tests construct the tracker with a null configService; production
+        // injection should always supply one but the guard costs nothing.
+        SignalConfig active = configService != null ? configService.getActive() : null;
         if (active == null) return;
         SignalConfig.Trail trail = active.trail();
         if (trail == null) return;
@@ -162,7 +168,8 @@ public class OutcomeTracker {
         return String.join(" | ", setup.reasons());
     }
 
-    private boolean isTrackable(TradingSignal signal) {
+    // Package-private for unit tests.
+    boolean isTrackable(TradingSignal signal) {
         return signal != null
                 && signal.getSuggestedEntry() != null
                 && signal.getSuggestedStopLoss() != null
@@ -171,7 +178,8 @@ public class OutcomeTracker {
                 && resolveDirection(signal.getSignal()) != null;
     }
 
-    private String resolveDirection(String signalType) {
+    // Package-private for unit tests.
+    String resolveDirection(String signalType) {
         if (signalType == null) return null;
         if (LONG_SIGNALS.contains(signalType)) return DIRECTION_LONG;
         if (SHORT_SIGNALS.contains(signalType)) return DIRECTION_SHORT;
@@ -196,7 +204,9 @@ public class OutcomeTracker {
         return outcome;
     }
 
-    private void applyDimensionScores(SignalOutcome outcome, List<DimensionScore> dimensions) {
+    // Package-private for unit tests — exercises the dim-name routing,
+    // which has a load-bearing space ("Order Book", not "OrderBook").
+    void applyDimensionScores(SignalOutcome outcome, List<DimensionScore> dimensions) {
         if (dimensions == null) return;
         for (DimensionScore dim : dimensions) {
             writeDimensionScore(outcome, dim);

@@ -210,4 +210,33 @@ class OrderPlacerTest {
         ExecutedTrade trade = placer.place(account, req);
         assertEquals(TradeStatus.FAILED, trade.getStatus());
     }
+
+    @Test
+    void bybitRestExceptionMutatesExistingRowNoOrphan() {
+        // A Bybit REST connection drop used to leave an orphan PENDING_PLACE row
+        // (from the pre-call persist) AND create a second FAILED row. After the
+        // fix, the SAME row should be mutated to FAILED and only one row should
+        // exist for this signal_id. Stub overrides the order/create endpoint to
+        // a connection-reset fault — wallet, set-leverage, instruments stubs from
+        // @BeforeEach remain in place.
+        stubFor(post(urlPathEqualTo("/v5/order/create"))
+                .willReturn(WireMock.aResponse().withFault(
+                        com.github.tomakehurst.wiremock.http.Fault.CONNECTION_RESET_BY_PEER)));
+
+        OrderPlacer.PlacementRequest req = new OrderPlacer.PlacementRequest(
+                "BTCUSDT", "LONG", "trend-continuation", "sig-orphan-test",
+                new BigDecimal("50000"), new BigDecimal("49500"), new BigDecimal("51500"));
+
+        long beforeCount = tradeRepo.count();
+        ExecutedTrade trade = placer.place(account, req);
+        long afterCount = tradeRepo.count();
+
+        assertEquals(TradeStatus.FAILED, trade.getStatus());
+        assertEquals(beforeCount + 1, afterCount,
+                "exactly ONE row should be created per failed signal, not two");
+        List<ExecutedTrade> bySignal = tradeRepo.find("signalId", "sig-orphan-test").list();
+        assertEquals(1, bySignal.size(),
+                "must not leave a duplicate row for the same signal_id");
+        assertEquals(TradeStatus.FAILED, bySignal.get(0).getStatus());
+    }
 }

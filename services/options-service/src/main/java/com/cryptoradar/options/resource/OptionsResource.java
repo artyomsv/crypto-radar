@@ -1,6 +1,7 @@
 package com.cryptoradar.options.resource;
 
 import com.cryptoradar.options.repository.OptionOpportunityRepository;
+import com.cryptoradar.options.repository.OptionShortVolOpportunityRepository;
 import com.cryptoradar.options.repository.OptionSnapshotRepository;
 import com.cryptoradar.options.resource.dto.ChainRowView;
 import com.cryptoradar.options.resource.dto.EnrichedOpportunityView;
@@ -10,6 +11,8 @@ import com.cryptoradar.options.service.OpportunityEnricher;
 import com.cryptoradar.options.service.RealizedVolService;
 import com.cryptoradar.options.service.OptionsCollectorService;
 import com.cryptoradar.options.service.OpportunityScorer;
+import com.cryptoradar.options.service.ShortVolOpportunityScorer;
+import com.cryptoradar.options.service.DeflatedSharpeEvaluator;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
@@ -20,7 +23,9 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -34,19 +39,93 @@ public class OptionsResource {
     private final OptionsCollectorService collector;
     private final OpportunityScorer scorer;
     private final OpportunityEnricher enricher;
+    private final ShortVolOpportunityScorer shortVolScorer;
+    private final DeflatedSharpeEvaluator evaluator;
+    private final OptionShortVolOpportunityRepository shortVolRepo;
+
+    // Same default as OptionsScheduler so /diagnostic walks the same set
+    // the scorer actually evaluates each tick.
+    @ConfigProperty(name = "options.underlyings", defaultValue = "BTC,ETH,SOL,XAUT,XRP,MNT,DOGE")
+    String underlyingsCsv;
 
     public OptionsResource(OptionSnapshotRepository snapshotRepo,
                             OptionOpportunityRepository opportunityRepo,
                             RealizedVolService rvService,
                             OptionsCollectorService collector,
                             OpportunityScorer scorer,
-                            OpportunityEnricher enricher) {
+                            OpportunityEnricher enricher,
+                            ShortVolOpportunityScorer shortVolScorer,
+                            DeflatedSharpeEvaluator evaluator,
+                            OptionShortVolOpportunityRepository shortVolRepo) {
         this.snapshotRepo = snapshotRepo;
         this.opportunityRepo = opportunityRepo;
         this.rvService = rvService;
         this.collector = collector;
         this.scorer = scorer;
         this.enricher = enricher;
+        this.shortVolScorer = shortVolScorer;
+        this.evaluator = evaluator;
+        this.shortVolRepo = shortVolRepo;
+    }
+
+    /**
+     * Tier 3 — strategy evaluation report. Returns deflated Sharpe per
+     * strategy (long-vol + short-vol) with verdict labels. Backs the
+     * future watchlist "is this strategy alive?" indicator.
+     */
+    @GET
+    @Path("/eval")
+    public Map<String, Object> eval() {
+        return evaluator.report();
+    }
+
+    /**
+     * Tier 1 — list recent short-vol opportunities. Mirrors
+     * {@link #opportunities} for the long-vol side. Alert-only data —
+     * Tier 4 execution is feature-flagged off.
+     */
+    @GET
+    @Path("/short-vol/opportunities")
+    public List<com.cryptoradar.options.model.OptionShortVolOpportunity> shortVolOpportunities(
+            @QueryParam("limit") @DefaultValue("50") int limit,
+            @QueryParam("openOnly") @DefaultValue("false") boolean openOnly) {
+        int clamped = Math.min(Math.max(limit, 1), 200);
+        return openOnly
+                ? shortVolRepo.findOpen(clamped)
+                : shortVolRepo.findRecent(clamped);
+    }
+
+    /**
+     * Per-underlying live scoring snapshot. Returns the same math the scorer
+     * runs on each 60s tick, BUT does not persist. Useful for answering "why
+     * isn't anything firing?" without lowering the persistence threshold or
+     * polluting {@code option_opportunities} with sub-threshold rows.
+     *
+     * <p>Output per underlying: spot, ATM IV, RV7/14, gap score, signal
+     * overlay, computed confidence, threshold, would-fire flag, and the
+     * specific exit-reason string from the scorer's branch tree.
+     */
+    @GET
+    @Path("/diagnostic")
+    public Map<String, Object> diagnostic(@QueryParam("underlying") String underlying) {
+        List<String> targets = underlying != null && !underlying.isBlank()
+                ? List.of(underlying.toUpperCase())
+                : Arrays.stream(underlyingsCsv.split(","))
+                        .map(String::trim).filter(s -> !s.isEmpty()).toList();
+        List<OpportunityScorer.Diagnostic> rows = targets.stream()
+                .map(scorer::diagnose)
+                .toList();
+        List<ShortVolOpportunityScorer.Diagnostic> shortVolRows = targets.stream()
+                .map(shortVolScorer::diagnose)
+                .toList();
+        return Map.of(
+                "evaluatedAt", java.time.Instant.now().toString(),
+                "longVol", Map.of(
+                        "threshold", scorer.currentThreshold(),
+                        "underlyings", rows),
+                "shortVol", Map.of(
+                        "threshold", shortVolScorer.currentThreshold(),
+                        "underlyings", shortVolRows));
     }
 
     /**
@@ -102,7 +181,10 @@ public class OptionsResource {
         var entities = openOnly
                 ? opportunityRepo.findOpen(clamped)
                 : opportunityRepo.findRecent(clamped);
-        var enriched = entities.stream().map(enricher::enrich);
+        // Batched path collapses what was ~5 DB queries per opportunity into
+        // 1 snapshot batch + per-underlying RV/signal lookups — turns a 10s
+        // request into sub-second for typical 100-opportunity payloads.
+        var enriched = enricher.enrichBatch(entities).stream();
         if (!includeStale) {
             enriched = enriched.filter(e -> !e.isStale());
         }

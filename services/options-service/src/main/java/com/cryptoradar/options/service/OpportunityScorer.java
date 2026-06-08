@@ -65,6 +65,101 @@ public class OpportunityScorer {
         }
     }
 
+    public double currentThreshold() {
+        return confidenceThreshold;
+    }
+
+    /**
+     * Dry-run scoring — same math as {@link #scoreOne(String)} but never
+     * persists. Returns the full decomposition so callers can see exactly
+     * why an underlying did or did not produce a real opportunity row.
+     * Backs {@code GET /api/options/diagnostic}.
+     */
+    public Diagnostic diagnose(String underlying) {
+        Diagnostic d = new Diagnostic();
+        d.underlying = underlying;
+
+        List<OptionSnapshot> chain = snapshotRepo.latestChain(underlying);
+        if (chain.isEmpty()) {
+            d.exitReason = "no_chain";
+            return d;
+        }
+        d.chainSize = chain.size();
+        d.lastSnapshotAtMs = chain.stream()
+                .map(OptionSnapshot::getTime)
+                .filter(java.util.Objects::nonNull)
+                .mapToLong(java.time.Instant::toEpochMilli)
+                .max().orElse(0L);
+
+        Map<LocalDate, List<OptionSnapshot>> byExpiry = new LinkedHashMap<>();
+        for (OptionSnapshot s : chain) {
+            byExpiry.computeIfAbsent(s.getExpiry(), k -> new java.util.ArrayList<>()).add(s);
+        }
+        Optional<LocalDate> earliestExpiry = byExpiry.keySet().stream()
+                .filter(date -> !date.isBefore(LocalDate.now()))
+                .min(LocalDate::compareTo);
+        if (earliestExpiry.isEmpty()) {
+            d.exitReason = "no_future_expiry";
+            return d;
+        }
+        d.expiry = earliestExpiry.get();
+
+        Strangle s = pickStrangle(byExpiry.get(d.expiry));
+        if (s == null) {
+            d.exitReason = "no_strangle_available";
+            return d;
+        }
+        d.spot = s.underlyingPx;
+        d.callStrike = s.callStrike;
+        d.putStrike = s.putStrike;
+        d.callSymbol = s.callSymbol;
+        d.putSymbol = s.putSymbol;
+        d.premium = s.premium;
+        // Stored decimal-form (0.705); confidence math expects percent (70.5).
+        d.atmIvPct = s.atmIv == null ? null : s.atmIv * 100.0;
+
+        d.rv14Pct = rvService.computeAnnualized(underlying, 14);
+        d.rv7Pct = rvService.computeAnnualized(underlying, 7);
+        d.ivRvGapScore = computeGapScore(d.atmIvPct, d.rv14Pct);
+        d.overlayScore = overlayService.score(underlying);
+        d.confidence = 0.6 * d.ivRvGapScore + 0.4 * d.overlayScore;
+        d.threshold = confidenceThreshold;
+        d.wouldFire = d.confidence >= confidenceThreshold;
+        d.dedupSkipped = !d.wouldFire ? null : opportunityRepo.existsOpenForLegs(
+                s.callSymbol, s.putSymbol, dedupCooldownMinutes);
+        d.exitReason = d.wouldFire
+                ? (Boolean.TRUE.equals(d.dedupSkipped) ? "dedup_skip" : "would_persist")
+                : "below_threshold";
+        return d;
+    }
+
+    /**
+     * Plain holder for the diagnostic decomposition. Public fields keep the
+     * REST serialization shape obvious — every field maps 1:1 to a JSON key.
+     */
+    public static class Diagnostic {
+        public String underlying;
+        public Integer chainSize;
+        public Long lastSnapshotAtMs;
+        public LocalDate expiry;
+        public Double spot;
+        public Double callStrike;
+        public Double putStrike;
+        public String callSymbol;
+        public String putSymbol;
+        public Double premium;
+        public Double atmIvPct;
+        public Double rv14Pct;
+        public Double rv7Pct;
+        public Double ivRvGapScore;
+        public Double overlayScore;
+        public Double confidence;
+        public Double threshold;
+        public Boolean wouldFire;
+        public Boolean dedupSkipped;
+        public String exitReason;
+    }
+
     void scoreOne(String underlying) {
         List<OptionSnapshot> chain = snapshotRepo.latestChain(underlying);
         if (chain.isEmpty()) return;

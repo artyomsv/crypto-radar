@@ -1,8 +1,10 @@
-# Missing integration tests for MarketDataResource and BackfillService
+# Missing integration tests for MarketDataResource and BackfillService (partial)
+
+> **Status 2026-06-06:** symbol-normalization rule (USDT-suffix appending, regex, casing) extracted to a pure-function `SymbolNormalizer` with 10 unit tests; `MarketDataResource.addCrypto` now delegates to it. Remaining work is higher-effort integration testing of `BackfillService` pagination + gap detection, `removeCrypto deleteData=true` destructive path, and depthDays range validation. **Criticality demoted to Medium.**
 
 | Field | Value |
 |-------|-------|
-| Criticality | High |
+| Criticality | Medium (was High) |
 | Complexity | Medium |
 | Location | `services/market-data-service/src/main/java/com/cryptoradar/marketdata/resource/MarketDataResource.java`, `services/market-data-service/src/main/java/com/cryptoradar/marketdata/service/BackfillService.java` |
 | Found during | QA coverage check — recent commit batch |

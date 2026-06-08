@@ -71,6 +71,16 @@ class RUnitMathTest {
     }
 
     @Test
+    void zeroOrNegativeRiskPercentRejected() {
+        // Guard prevents silent qty=0 (was previously a silent zero) or
+        // negative qty if a misconfigured riskPercent slipped through.
+        assertThrows(IllegalArgumentException.class,
+                () -> RUnitMath.computeQty(1000.0, 0.0, 100.0, 99.0, 0.01));
+        assertThrows(IllegalArgumentException.class,
+                () -> RUnitMath.computeQty(1000.0, -1.0, 100.0, 99.0, 0.01));
+    }
+
+    @Test
     void riskPercentAsFraction() {
         // riskPercent is whole-number percent (1.0 = 1%), not a fraction (0.01 = 1%)
         // Confirm 1.0 argument means 1%: equity=1000, rp=1.0 → risk=10

@@ -55,11 +55,28 @@ public class OutcomeEvaluator {
     @ConfigProperty(name = "signal.stagnation-exit.min-age-minutes", defaultValue = "45")
     int stagnationMinAgeMinutes;
 
+    // Absolute thresholds — used when ATR-scaled rule can't compute (insufficient bars).
+    // Kept as a safety floor so a symbol with brand-new data still has SOME guardrail.
     @ConfigProperty(name = "signal.stagnation-exit.mfe-threshold-pct", defaultValue = "0.2")
     double stagnationMfeThresholdPct;
 
     @ConfigProperty(name = "signal.stagnation-exit.mae-floor-pct", defaultValue = "-0.3")
     double stagnationMaeFloorPct;
+
+    // ATR-scaled thresholds — primary rule. Replaces absolute thresholds when
+    // a 45-bar ATR is computable. Fixes the TRX-LONG-TC case (65% stagnation
+    // rate from too-tight absolute 0.2% on a symbol whose 45m ATR is ~0.05%)
+    // and the BTC-SHORT-TC case (too-loose absolute 0.2% on a symbol whose
+    // 45m ATR is ~0.3%, producing late stagnations). Per Lopez de Prado
+    // triple-barrier guidance — barriers must scale with rolling volatility.
+    @ConfigProperty(name = "signal.stagnation-exit.atr-lookback-bars", defaultValue = "45")
+    int stagnationAtrLookbackBars;
+
+    @ConfigProperty(name = "signal.stagnation-exit.mfe-atr-multiplier", defaultValue = "0.25")
+    double stagnationMfeAtrMultiplier;
+
+    @ConfigProperty(name = "signal.stagnation-exit.mae-atr-multiplier", defaultValue = "0.4")
+    double stagnationMaeAtrMultiplier;
 
     public OutcomeEvaluator(SignalOutcomeRepository repository, CandleClient candleClient,
                             ConfigService configService) {
@@ -104,8 +121,31 @@ public class OutcomeEvaluator {
 
         CandleBar lastBar = bars.get(bars.size() - 1);
         outcome.setLastEvaluatedAt(lastBar.time());
-        if (stagnationExitIfEligible(outcome, lastBar)) return true;
+        double atrPctRecent = atrPctOver(bars, stagnationAtrLookbackBars, outcome.getEntryPrice());
+        if (stagnationExitIfEligible(outcome, lastBar, atrPctRecent)) return true;
         return expireIfStale(outcome, bars);
+    }
+
+    /**
+     * Average True Range over the last {@code lookback} bars expressed as a
+     * percentage of {@code entryPrice}. Returns -1 if there are fewer than
+     * {@code lookback + 1} bars or entry price is zero — the caller treats
+     * that as "ATR unknown, fall back to absolute thresholds".
+     */
+    double atrPctOver(List<CandleBar> bars, int lookback, double entryPrice) {
+        if (bars.size() < lookback + 1 || entryPrice <= 0) return -1.0;
+        int from = bars.size() - lookback;
+        double trSum = 0.0;
+        for (int i = from; i < bars.size(); i++) {
+            CandleBar curr = bars.get(i);
+            CandleBar prev = bars.get(i - 1);
+            double hl = curr.high() - curr.low();
+            double hc = Math.abs(curr.high() - prev.close());
+            double lc = Math.abs(curr.low() - prev.close());
+            trSum += Math.max(Math.max(hl, hc), lc);
+        }
+        double atr = trSum / lookback;
+        return atr / entryPrice * 100.0;
     }
 
     /**
@@ -120,12 +160,23 @@ public class OutcomeEvaluator {
      * "STAGNATION"}. Realized R is ~-0.3 instead of the -1.0 a full stop
      * would produce.
      */
-    boolean stagnationExitIfEligible(SignalOutcome outcome, CandleBar lastBar) {
+    boolean stagnationExitIfEligible(SignalOutcome outcome, CandleBar lastBar, double atrPctRecent) {
         if (!stagnationExitEnabled) return false;
         Duration age = Duration.between(outcome.getFiredAt(), lastBar.time());
         if (age.toMinutes() < stagnationMinAgeMinutes) return false;
-        if (outcome.getMaxFavorablePct() >= stagnationMfeThresholdPct) return false;
-        if (outcome.getMaxAdversePct() <= stagnationMaeFloorPct) return false;
+
+        double mfeBar;
+        double maeBar;
+        if (atrPctRecent > 0) {
+            mfeBar = stagnationMfeAtrMultiplier * atrPctRecent;
+            maeBar = -stagnationMaeAtrMultiplier * atrPctRecent;
+        } else {
+            mfeBar = stagnationMfeThresholdPct;
+            maeBar = stagnationMaeFloorPct;
+        }
+
+        if (outcome.getMaxFavorablePct() >= mfeBar) return false;
+        if (outcome.getMaxAdversePct() <= maeBar) return false;
         closeOutcome(outcome, OutcomeStatus.HIT_STOP, lastBar.time(), lastBar.close(), EXIT_STAGNATION);
         return true;
     }

@@ -81,6 +81,11 @@ public class OptionOpportunity {
     @Column(name = "outcome_resolved_at")
     private Instant outcomeResolvedAt;
 
+    // Tier 3 triple-barrier label (WIN / LOSS / EXPIRED) — column added by
+    // options-shortvol-init.sql migration. Writer is TripleBarrierResolver.
+    @Column(name = "outcome_label", length = 16)
+    private String outcomeLabel;
+
     public Long getId() { return id; }
     public Instant getDetectedAt() { return detectedAt; }
     public void setDetectedAt(Instant detectedAt) { this.detectedAt = detectedAt; }
@@ -118,4 +123,6 @@ public class OptionOpportunity {
     public void setOutcomePnlPct(Double v) { this.outcomePnlPct = v; }
     public Instant getOutcomeResolvedAt() { return outcomeResolvedAt; }
     public void setOutcomeResolvedAt(Instant v) { this.outcomeResolvedAt = v; }
+    public String getOutcomeLabel() { return outcomeLabel; }
+    public void setOutcomeLabel(String v) { this.outcomeLabel = v; }
 }

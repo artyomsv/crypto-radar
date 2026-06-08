@@ -13,7 +13,10 @@ import java.sql.PreparedStatement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -105,6 +108,35 @@ public class OptionSnapshotRepository {
                 .setParameter("symbol", symbol)
                 .getResultList();
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
+    /**
+     * Batched version of {@link #latestForSymbol(String)} — returns the most
+     * recent snapshot (within 15 min) for each symbol in {@code symbols} in a
+     * single round-trip. Used by the enriched-opportunities endpoint to avoid
+     * the N+1 query pattern (100 opportunities × 2 legs = 200 queries → 1).
+     *
+     * <p>Uses TimescaleDB's {@code DISTINCT ON (symbol)} which scans the
+     * {@code (symbol, time DESC)} index once and emits one row per symbol.
+     */
+    @SuppressWarnings("unchecked")
+    @Transactional
+    public Map<String, OptionSnapshot> latestForSymbols(Collection<String> symbols) {
+        Map<String, OptionSnapshot> result = new HashMap<>();
+        if (symbols == null || symbols.isEmpty()) return result;
+        List<OptionSnapshot> rows = entityManager.createNativeQuery("""
+            SELECT DISTINCT ON (symbol) *
+            FROM option_snapshots
+            WHERE symbol IN (:symbols)
+              AND time > now() - interval '15 minutes'
+            ORDER BY symbol, time DESC
+            """, OptionSnapshot.class)
+                .setParameter("symbols", symbols)
+                .getResultList();
+        for (OptionSnapshot snap : rows) {
+            result.put(snap.getSymbol(), snap);
+        }
+        return result;
     }
 
     private static void setNullableDouble(PreparedStatement stmt, int idx, Double v) throws java.sql.SQLException {

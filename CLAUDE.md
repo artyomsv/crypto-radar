@@ -79,6 +79,8 @@ Append-only `(deployed_at PRIMARY KEY, version, description)`. Consumers join on
 | 2026-04-19 23:30 UTC | `v2-trail-system` — trailing stop ladder, final_exit_reason, time_to_mfe/mae, fees |
 | 2026-04-20 01:00 UTC | `v3-full-rollout` — regime detection, LS volume, confidence→alignment, metrics slices |
 | 2026-04-24 00:00 UTC | `v4-data-driven-vectors` — G.1 derivatives unit fix, G.2 news sentiment feed, G.3 orderbook name fix, Vectors A/B/D execution gates, Vector E stagnation exit (exchange side default-off), Vector F trail second-rung at 2.5R |
+| 2026-06-03 20:12 UTC | `v5-instrumentation-and-atr` — per-gate `SIGNAL_BLOCKED_*` events (60s-coalesced), ATR-scaled stagnation (`MFE<0.25×ATR(45m)`, `MAE>−0.4×ATR(45m)`, absolute fallback), SignalConfig v5 zeroes Order-Book + Sentiment weights, TC trail offset 0.5R → 0.75R |
+| 2026-06-06 14:01 UTC | `v6-profitability-pass` — `alignmentFloor` 70 → 55 (unlocks empirically-productive 50–70 bucket worth +35R/14d), SignalConfig v6 whale 0.25 → 0.35 (best single discriminator W−L diff +16.7), confluence window 15 → 7 min, `max_daily_loss_percent` 10 → 5, `StrategyPerformanceSizer` per-cell 0.5–1.5x sizing, `/api/execution/analytics/funnel` + `/strategy-pnl` endpoints |
 
 ## Frontend
 
@@ -196,4 +198,6 @@ Two admin endpoints repair pre-fix data without resetting the DB:
 - `README.md` — high-level product description + feature list
 - `devops/README.md` — k3s deployment, CNPG clusters, Barman backups
 - `techdebt/*.md` — prioritized tech-debt log
+- **`docs/knowledge-base/`** — opinionated, cited trading/markets KB. Start there for strategy theory, risk frameworks, derivatives mechanics, and the projectr-x ↔ theory crosswalk (`docs/knowledge-base/10-projectr-x-mapping/`). Read `docs/knowledge-base/README.md` first.
+- `docs/signal-config-api.md` — REST API for signal config versioning + reload
 - `.claude/rules/` under `~/.claude/` — personal conventions (port ranges, money handling, docker, secrets, git, observability, resilience, clean-code) that apply to every edit in this repo

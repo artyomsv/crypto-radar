@@ -1,4 +1,6 @@
-# Missing frontend component and API client tests
+# Missing frontend component and API client tests (partial — infrastructure landed)
+
+> **Status 2026-06-06:** Vitest + the testing config now ship in the frontend. First suite (`src/lib/optionsDerivations.test.ts`, 10 tests) covers the magnitude-aware price formatter and the OPTIONS_CONFIDENCE_THRESHOLD invariant — **caught a real bug** where `formatPrice(50000)` returned `'5'` (trailing-zero-trim regex was eating whole-number digits with no decimal). Fixed in place. Remaining: component-level tests for `CryptoConfig`, `WhaleTracker`, `CryptoDetailView` (need `@testing-library/react` + `happy-dom`) and `api.ts` route/mock tests (need `msw`). **Criticality holds at Medium**, complexity demoted from Small to Medium.
 
 | Field | Value |
 |-------|-------|

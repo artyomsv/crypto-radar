@@ -37,6 +37,9 @@ public class MarketDataService {
     @Inject
     AlertService alertService;
 
+    @Inject
+    StalenessDetector stalenessDetector;
+
     @Transactional
     public void fetchAndStoreCandles(String symbol, String interval, int limit) {
         List<Candle> candles = binanceClient.fetchKlines(symbol, interval, limit);
@@ -47,6 +50,10 @@ public class MarketDataService {
 
         upsertCandles(candles);
         redisEventPublisher.publishCandleUpdate(symbol, candles);
+        long newestEpochMs = candles.stream()
+                .mapToLong(c -> c.getTime().toEpochMilli())
+                .max().orElse(0L);
+        stalenessDetector.recordFetch(symbol, interval, newestEpochMs);
         LOG.infof("Stored %d candles for %s [%s]", candles.size(), symbol, interval);
     }
 

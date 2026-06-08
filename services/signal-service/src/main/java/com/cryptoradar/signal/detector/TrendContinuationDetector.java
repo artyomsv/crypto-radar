@@ -1,5 +1,6 @@
 package com.cryptoradar.signal.detector;
 
+import com.cryptoradar.core.TrailConfig;
 import com.cryptoradar.signal.model.MarketContext;
 import com.cryptoradar.signal.model.TradeSetup;
 import com.cryptoradar.signal.util.ContextValues;
@@ -46,6 +47,15 @@ public class TrendContinuationDetector implements TradeSetupDetector {
     private static final double STOP_ATR_MULTIPLE = 1.5;
     private static final double TARGET_R_MULTIPLE = 5.0;
     private static final int STRONG_SIGNAL_ALIGNMENT = 65;
+
+    // Trail config — wider offset than DEFAULT (0.5R → 0.75R) to let
+    // trend-continuation runners breathe through the natural pullback noise
+    // typical of the strategy. Phase 4 data: 124 trail wins averaged +0.88R
+    // and most TARGET hits averaged 11.79% MFE — the right tail is real and
+    // worth giving room. Second rung at 2.5R → 1.0R is unchanged from DEFAULT.
+    // LiquiditySweep and dimension-scoring keep the tighter 0.5R offset.
+    private static final TrailConfig TC_TRAIL =
+            new TrailConfig(1.0, 0.5, 0.75, 2.5, 1.0);
 
     @Override
     public String name() {
@@ -106,7 +116,7 @@ public class TrendContinuationDetector implements TradeSetupDetector {
         List<String> reasons = buildReasons(direction, in, pullbackPct);
 
         return new TradeSetup(NAME, symbol, direction, signalType,
-                entry, stop, target, rr, alignment, reasons, Instant.now());
+                entry, stop, target, rr, alignment, reasons, Instant.now(), TC_TRAIL);
     }
 
     private int computeAlignment(Inputs in, double pullbackPct) {

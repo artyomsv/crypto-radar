@@ -29,7 +29,11 @@ export function formatPrice(v: number | null | undefined): string {
     else if (abs >= 0.1) digits = 4;
     else if (abs >= 0.001) digits = 5;
     else digits = 8;
-    return v.toFixed(digits).replace(/\.?0+$/, '');
+    // Trim trailing zeros ONLY after a decimal point. The old regex
+    // /\.?0+$/ was eating trailing zeros from whole-number outputs too —
+    // e.g. 50000 → '5'. Now only matches "<digits>.<zeros>" or "<digits>.0+".
+    const formatted = v.toFixed(digits);
+    return formatted.includes('.') ? formatted.replace(/\.?0+$/, '') : formatted;
 }
 
 /**

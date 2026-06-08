@@ -21,6 +21,7 @@ const POLL_INTERVAL_DISCONNECTED_MS = 15_000;
 const POLL_INTERVAL_CONNECTED_MS = 30_000;
 const STALENESS_TICK_MS = 1_000;
 const WS_RECONNECT_DELAY_MS = 5_000;
+const WS_REFRESH_DEBOUNCE_MS = 250;
 
 function wsUrlFor(): string {
   const loc = window.location;
@@ -101,13 +102,24 @@ export function useExecutionStream(accountId: number | null): UseExecutionStream
         // Kick an initial REST refresh so numbers aren't stale on connect
         refresh();
       };
+      // Trailing 250ms debounce: bursty Bybit topics (e.g. order book
+      // updates if we ever subscribe to them, or rapid execution chains)
+      // would otherwise spawn 4 parallel REST GETs per frame and hammer
+      // the gateway. One refresh per 250ms is enough to keep numbers
+      // visually current without burning quota.
+      let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+      const debouncedRefresh = () => {
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(() => {
+          refreshTimer = null;
+          refresh();
+        }, WS_REFRESH_DEBOUNCE_MS);
+      };
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data);
-          // Any valid JSON frame from the server triggers a REST refresh
-          // so all numbers reflect the latest account state.
           if (msg && typeof msg === 'object') {
-            refresh();
+            debouncedRefresh();
           }
         } catch {
           // ignore non-JSON frames — server passes raw Bybit JSON through

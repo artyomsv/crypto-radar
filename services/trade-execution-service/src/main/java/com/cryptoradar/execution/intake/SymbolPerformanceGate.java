@@ -3,6 +3,7 @@ package com.cryptoradar.execution.intake;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
@@ -46,6 +47,16 @@ public class SymbolPerformanceGate {
 
     private final Map<String, CachedDecision> cache = new ConcurrentHashMap<>();
 
+    /**
+     * Runs OUTSIDE the caller's transaction (NOT_SUPPORTED) so a failing
+     * native query on {@code signal_outcomes} — e.g. PostgreSQL
+     * in_failed_sql_transaction, missing column during schema migration,
+     * network blip — cannot poison the SignalSubscriber transaction that
+     * wraps order dispatch. The fail-open path returns "not suppressed";
+     * the legitimate dispatch proceeds at full risk. See
+     * {@code techdebt/trade-execution-service/3-1-symbol-perf-gate-tx-poisoning.md}.
+     */
+    @Transactional(Transactional.TxType.NOT_SUPPORTED)
     public boolean isSuppressed(String symbol) {
         ExecutionSettingsService.Snapshot s = executionSettings.snapshot();
         if (!s.symbolGateEnabled()) return false;

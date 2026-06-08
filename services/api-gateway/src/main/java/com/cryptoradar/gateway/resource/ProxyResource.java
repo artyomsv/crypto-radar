@@ -511,6 +511,22 @@ public class ProxyResource {
         return proxyResponse(serviceClient.getRaw(serviceClient.getExecutionUrl() + "/api/execution/accounts"));
     }
 
+    @GET
+    @Path("/execution/analytics/funnel")
+    public Response executionFunnel(@QueryParam("hours") Integer hours) {
+        String url = serviceClient.getExecutionUrl() + "/api/execution/analytics/funnel"
+                + (hours != null ? "?hours=" + hours : "");
+        return proxyResponse(serviceClient.getRaw(url));
+    }
+
+    @GET
+    @Path("/execution/analytics/strategy-pnl")
+    public Response executionStrategyPnl(@QueryParam("days") Integer days) {
+        String url = serviceClient.getExecutionUrl() + "/api/execution/analytics/strategy-pnl"
+                + (days != null ? "?days=" + days : "");
+        return proxyResponse(serviceClient.getRaw(url));
+    }
+
     @POST
     @Path("/execution/accounts")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -700,5 +716,28 @@ public class ProxyResource {
                                         @QueryParam("days") @DefaultValue("14") int days) {
         return proxyResponse(serviceClient.getRaw(serviceClient.getOptionsUrl()
                 + "/api/options/realized-vol/" + underlying + "?days=" + days));
+    }
+
+    @GET
+    @Path("/options/diagnostic")
+    public Response optionsDiagnostic(@QueryParam("underlying") String underlying) {
+        String url = serviceClient.getOptionsUrl() + "/api/options/diagnostic"
+                + (underlying != null && !underlying.isBlank() ? "?underlying=" + underlying : "");
+        return proxyResponse(serviceClient.getRaw(url));
+    }
+
+    @GET
+    @Path("/options/eval")
+    public Response optionsEval() {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getOptionsUrl() + "/api/options/eval"));
+    }
+
+    @GET
+    @Path("/options/short-vol/opportunities")
+    public Response optionsShortVolOpportunities(@QueryParam("limit") @DefaultValue("50") int limit,
+                                                  @QueryParam("openOnly") @DefaultValue("false") boolean openOnly) {
+        return proxyResponse(serviceClient.getRaw(serviceClient.getOptionsUrl()
+                + "/api/options/short-vol/opportunities?limit=" + limit + "&openOnly=" + openOnly));
     }
 }

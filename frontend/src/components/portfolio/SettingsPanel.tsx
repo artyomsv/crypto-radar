@@ -51,14 +51,21 @@ export function SettingsPanel({ account, onClose, onSave }: Props) {
     setError(null);
     const diff: UpdateAccountRequest = {};
 
+    // Use Number() instead of parseFloat/parseInt — the latter silently
+    // truncate trailing garbage ("3abc" → 3) and could PATCH unexpected
+    // values. Number("3abc") → NaN, which the Finite check rejects.
     const parseDecimal = (k: keyof FormState, orig: number): number | undefined => {
-      const n = parseFloat(form[k]);
+      const raw = form[k].trim();
+      if (raw === '') return undefined;
+      const n = Number(raw);
       if (!Number.isFinite(n) || n === orig) return undefined;
       return n;
     };
     const parseInteger = (k: keyof FormState, orig: number): number | undefined => {
-      const n = parseInt(form[k], 10);
-      if (!Number.isFinite(n) || n === orig) return undefined;
+      const raw = form[k].trim();
+      if (raw === '') return undefined;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n === orig) return undefined;
       return n;
     };
 

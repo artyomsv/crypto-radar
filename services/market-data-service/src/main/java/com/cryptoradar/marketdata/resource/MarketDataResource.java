@@ -314,16 +314,13 @@ public class MarketDataResource {
         if (symbolObj == null) {
             return Response.status(400).entity(Map.of("error", "symbol is required")).build();
         }
-        String symbol = ((String) symbolObj).toUpperCase();
-        String name = (String) body.get("name");
-
-        if (!symbol.endsWith("USDT")) {
-            symbol = symbol + "USDT";
-        }
-
-        if (!SYMBOL_PATTERN.matcher(symbol).matches()) {
+        String symbol = com.cryptoradar.marketdata.service.SymbolNormalizer
+                .normalize((String) symbolObj)
+                .orElse(null);
+        if (symbol == null) {
             return Response.status(400).entity(Map.of("error", "Invalid symbol format")).build();
         }
+        String name = (String) body.get("name");
 
         // Validate symbol exists on Binance
         try {
@@ -352,7 +349,8 @@ public class MarketDataResource {
                      "INSERT INTO crypto_assets (symbol, name, rank, is_active) VALUES (?, ?, ?, true) " +
                              "ON CONFLICT (symbol) DO UPDATE SET name = EXCLUDED.name, is_active = true")) {
             stmt.setString(1, symbol);
-            stmt.setString(2, name != null ? name : symbol.replace("USDT", ""));
+            stmt.setString(2, name != null ? name
+                    : com.cryptoradar.marketdata.service.SymbolNormalizer.stripQuote(symbol));
             stmt.setInt(3, nextRank);
             stmt.executeUpdate();
         } catch (Exception e) {

@@ -75,7 +75,11 @@ public class OptionsCollectorService {
             if (snap != null) batch.add(snap);
         }
         if (batch.isEmpty()) {
-            LOG.debugf("no in-window contracts for %s (max %d days)", underlying, maxExpiryDays);
+            // Promoted from DEBUG to INFO — a silent zero-result cycle was the
+            // root cause of a 7-day data freeze (techdebt entry). Including
+            // received-count makes the misconfiguration obvious at a glance.
+            LOG.infof("no in-window contracts for %s (received %d, max %d days)",
+                    underlying, resp.result().list().size(), maxExpiryDays);
             return;
         }
         snapshotRepo.insertBatch(batch);

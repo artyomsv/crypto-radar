@@ -6,6 +6,10 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * Scores recent signal activity for an underlying as a 0-100 indicator of
  * upcoming volatility. Reads from the shared {@code signal_outcomes} hypertable
@@ -28,10 +32,24 @@ public class SignalOverlayService {
 
     @Inject EntityManager entityManager;
 
+    // Cache score per underlying — same rationale as RealizedVolService. The
+    // underlying SQL aggregate is cheap but the Hibernate + chunk-planner
+    // overhead dominated. 30s is short enough that "live" callers see fresh
+    // numbers as new signals fire, long enough to absorb burst traffic.
+    private static final Duration CACHE_TTL = Duration.ofSeconds(30);
+    private final ConcurrentHashMap<String, CachedScore> cache = new ConcurrentHashMap<>();
+
     public double score(String underlying) {
+        CachedScore cached = cache.get(underlying);
+        if (cached != null && !cached.isExpired()) {
+            return cached.value;
+        }
         String spotSymbol = underlying + "USDT";
         Stats s = querySignalStats(spotSymbol);
-        if (s == null) return 0.0;
+        if (s == null) {
+            cache.put(underlying, new CachedScore(0.0, Instant.now()));
+            return 0.0;
+        }
 
         // Density: 0 -> 0, 5+ signals in 6h -> 100.
         double densityScore = Math.min(100.0, s.signals6h * 20.0);
@@ -43,9 +61,17 @@ public class SignalOverlayService {
         double recentR = s.avgAbsR24h != null ? s.avgAbsR24h : 0.0;
         double recentRScore = Math.min(100.0, recentR * 50.0);
 
-        return WEIGHT_DENSITY * densityScore
+        double score = WEIGHT_DENSITY * densityScore
                 + WEIGHT_ALIGNMENT * alignmentScore
                 + WEIGHT_RECENT_R * recentRScore;
+        cache.put(underlying, new CachedScore(score, Instant.now()));
+        return score;
+    }
+
+    private record CachedScore(double value, Instant cachedAt) {
+        boolean isExpired() {
+            return Duration.between(cachedAt, Instant.now()).compareTo(CACHE_TTL) >= 0;
+        }
     }
 
     @SuppressWarnings("unchecked")

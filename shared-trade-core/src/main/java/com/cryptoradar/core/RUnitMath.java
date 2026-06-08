@@ -21,12 +21,15 @@ public final class RUnitMath {
      * @param stopPrice    planned stop price (absolute, any side)
      * @param lotSize      exchange-defined quantity step (e.g., 0.001 for BTC)
      * @return qty rounded down to the nearest multiple of lotSize
-     * @throws IllegalArgumentException if equity &lt;= 0, lotSize &lt;= 0, or entry equals stop
+     * @throws IllegalArgumentException if equity &lt;= 0, riskPercent &lt;= 0, lotSize &lt;= 0, or entry equals stop
      */
     public static double computeQty(double equity, double riskPercent,
                                     double entryPrice, double stopPrice, double lotSize) {
         if (equity <= 0) {
             throw new IllegalArgumentException("equity must be > 0, got " + equity);
+        }
+        if (riskPercent <= 0) {
+            throw new IllegalArgumentException("riskPercent must be > 0, got " + riskPercent);
         }
         if (lotSize <= 0) {
             throw new IllegalArgumentException("lotSize must be > 0, got " + lotSize);

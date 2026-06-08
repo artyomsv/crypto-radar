@@ -28,9 +28,12 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -61,6 +64,11 @@ public class SignalSubscriber {
     private static final String DEFAULT_STRATEGY = "dimension";
     private static final int CONNECT_DELAY_SECONDS = 3;
     private static final int RECONNECT_DELAY_SECONDS = 10;
+    // Coalesce gate-rejection events to one per (gate, symbol, direction) per 60s.
+    // The signal-service publishes overview every ~5s, so without coalescing a
+    // single below-floor symbol writes 12 events/min. With ~13 symbols and ~80%
+    // rejection rate this would write 125k+ rows/day — too noisy to query.
+    private static final Duration BLOCK_EMIT_COALESCE = Duration.ofSeconds(60);
 
     // Shared daemon scheduler — one per JVM. Previous impl created a fresh single-thread
     // pool inside connect()'s error branch, leaking a thread pool per reconnect attempt.
@@ -83,6 +91,8 @@ public class SignalSubscriber {
     @Inject DetectorConfluenceCheck confluenceCheck;
     @Inject DailyPnlCalculator dailyPnlCalculator;
     @Inject ExecutionSettingsService executionSettings;
+
+    private final ConcurrentHashMap<String, Instant> lastBlockEmit = new ConcurrentHashMap<>();
 
     @ConfigProperty(name = "quarkus.redis.hosts", defaultValue = "redis://localhost:6379")
     String redisHosts;
@@ -167,15 +177,21 @@ public class SignalSubscriber {
         String label = signalNode.path("signal").asText();
         if (symbol.isEmpty() || label.isEmpty()) return;
         if (!isActionableLabel(label)) return;
-        if (isBelowAlignmentFloor(signalNode)) {
-            LOG.debugf("ALIGNMENT_FLOOR skip %s %s alignment=%d floor=%d",
-                    symbol, label, signalNode.path("alignment").asInt(-1),
-                    executionSettings.snapshot().alignmentFloor());
-            return;
-        }
 
         List<ExchangeAccount> accounts = accountRepo.listAll();
         if (accounts.isEmpty()) return;
+
+        if (isBelowAlignmentFloor(signalNode)) {
+            int alignment = signalNode.path("alignment").asInt(-1);
+            int floor = executionSettings.snapshot().alignmentFloor();
+            LOG.debugf("ALIGNMENT_FLOOR skip %s %s alignment=%d floor=%d",
+                    symbol, label, alignment, floor);
+            String direction = isLongLabel(label) ? DIRECTION_LONG : DIRECTION_SHORT;
+            recordBlockedEvent(accounts.get(0), ExecutionEventType.SIGNAL_BLOCKED_ALIGNMENT_FLOOR,
+                    symbol, direction, signalNode.path("signalId").asText(null),
+                    Map.of("alignment", alignment, "floor", floor, "label", label));
+            return;
+        }
 
         for (ExchangeAccount account : accounts) {
             dispatchForAccount(account, signalNode, symbol, label);
@@ -259,20 +275,29 @@ public class SignalSubscriber {
 
     private void dispatchEnter(ExchangeAccount account, JsonNode signalNode,
                                 String symbol, String direction) {
+        String signalId = signalNode.path("signalId").asText(null);
         if (symbolGate.isSuppressed(symbol)) {
             SymbolPerformanceGate.CachedDecision decision = symbolGate.lastDecisionFor(symbol);
+            double totalR = decision != null ? decision.totalR() : 0.0;
+            int sampleSize = decision != null ? decision.sampleSize() : 0;
             LOG.infof("SYMBOL_SUPPRESSED %s %s — total-R %.2f over last %d closed outcomes below threshold",
-                    symbol, direction,
-                    decision != null ? decision.totalR() : 0.0,
-                    decision != null ? decision.sampleSize() : 0);
+                    symbol, direction, totalR, sampleSize);
+            recordBlockedEvent(account, ExecutionEventType.SIGNAL_BLOCKED_SYMBOL_PERF,
+                    symbol, direction, signalId,
+                    Map.of("totalR", totalR, "sampleSize", sampleSize,
+                            "threshold", executionSettings.snapshot().symbolGateThresholdR()));
             return;
         }
 
         String strategy = signalNode.path("strategy").asText(DEFAULT_STRATEGY);
         if (confluenceCheck.requiresConfluence(strategy, direction)
                 && !confluenceCheck.hasConfluence(symbol, direction)) {
+            int windowMinutes = executionSettings.snapshot().confluenceWindowMinutes();
             LOG.infof("CONFLUENCE_REQUIRED %s %s %s — no open dimension-scoring outcome in window",
                     symbol, direction, strategy);
+            recordBlockedEvent(account, ExecutionEventType.SIGNAL_BLOCKED_CONFLUENCE,
+                    symbol, direction, signalId,
+                    Map.of("strategy", strategy, "windowMinutes", windowMinutes));
             return;
         }
 
@@ -310,6 +335,40 @@ public class SignalSubscriber {
         tradeRepo.findOpenForAccount(account.getId()).stream()
                 .filter(t -> symbol.equals(t.getSymbol()) && direction.equals(t.getDirection()))
                 .forEach(t -> orderPlacer.close(account, t, ExitReason.FLIP_CLOSE));
+    }
+
+    /**
+     * Writes a SIGNAL_BLOCKED_* event to {@code execution_events}, coalesced
+     * per (gate, symbol, direction) to 1 emission per 60s. Existing 60s+ behavior
+     * for AlignmentFloor, SymbolPerf, and Confluence gates was log-only; this
+     * makes the funnel queryable. Rate-limit prevents 100k+ rows/day during
+     * normal CHOP regime where most symbols sit below alignment floor.
+     */
+    private void recordBlockedEvent(ExchangeAccount account, ExecutionEventType type,
+                                     String symbol, String direction, String signalId,
+                                     Map<String, Object> extraMeta) {
+        if (!shouldEmitBlockEvent(type, symbol, direction)) return;
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("symbol", symbol);
+        meta.put("direction", direction);
+        if (extraMeta != null) meta.putAll(extraMeta);
+        ExecutionEvent ev = new ExecutionEvent();
+        ev.setExchangeAccountId(account.getId());
+        ev.setEventType(type);
+        ev.setSignalId(signalId);
+        ev.setMetadata(meta);
+        events.record(ev);
+    }
+
+    boolean shouldEmitBlockEvent(ExecutionEventType type, String symbol, String direction) {
+        String key = type.name() + ":" + symbol + ":" + direction;
+        Instant now = Instant.now();
+        Instant last = lastBlockEmit.get(key);
+        if (last != null && Duration.between(last, now).compareTo(BLOCK_EMIT_COALESCE) < 0) {
+            return false;
+        }
+        lastBlockEmit.put(key, now);
+        return true;
     }
 
     private void logBlock(ExchangeAccount account, SignalCandidate candidate,

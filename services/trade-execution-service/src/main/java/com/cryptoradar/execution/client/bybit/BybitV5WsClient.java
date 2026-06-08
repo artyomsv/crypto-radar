@@ -188,6 +188,27 @@ public class BybitV5WsClient {
      * of the WebSocket listener thread. Package-private so unit tests and the
      * inner {@link Listener} can invoke it while the interceptor still fires.
      */
+    /**
+     * Writes a WS lifecycle event row so operators have a DB audit trail of
+     * connect / disconnect / reconnect transitions per account. Runs in its
+     * own transaction so a callback-thread invocation isn't blocked by lack
+     * of an ambient request context. Fail-open: a persist failure is logged
+     * and swallowed — we never want a logging side effect to break reconnect.
+     */
+    @Transactional
+    public void persistLifecycleEvent(Long accountId, ExecutionEventType type,
+                                       Map<String, Object> metadata) {
+        try {
+            ExecutionEvent ev = new ExecutionEvent();
+            ev.setExchangeAccountId(accountId);
+            ev.setEventType(type);
+            ev.setMetadata(metadata);
+            events.record(ev);
+        } catch (RuntimeException e) {
+            LOG.warnf(e, "persist %s failed for account %d", type, accountId);
+        }
+    }
+
     @Transactional
     public void handleMessage(ExchangeAccount account, String raw) {
         try {
@@ -385,6 +406,9 @@ public class BybitV5WsClient {
         public void onOpen(WebSocket ws) {
             LOG.infof("Bybit WS connected for account %d (%s)",
                     account.getId(), account.getEnvironment());
+            BybitV5WsClient.this.persistLifecycleEvent(
+                    account.getId(), ExecutionEventType.WS_RECONNECTED,
+                    Map.of("environment", account.getEnvironment()));
             try {
                 authenticate(ws);
                 subscribe(ws);
@@ -418,10 +442,9 @@ public class BybitV5WsClient {
             LOG.warnf("Bybit WS closed for account %d — status=%d reason=%s",
                     account.getId(), statusCode, reason);
             cancelPingTask();
-            // NOTE: deliberately not persisting a WS_DISCONNECTED event here —
-            // the listener thread has no active transaction, and wrapping this
-            // in a synthetic @Transactional call would complicate the reconnect
-            // path. Log suffices; a lifecycle-audit task can be added later.
+            BybitV5WsClient.this.persistLifecycleEvent(
+                    account.getId(), ExecutionEventType.WS_DISCONNECTED,
+                    Map.of("status", statusCode, "reason", reason == null ? "" : reason));
             SCHEDULER.schedule(
                     () -> connect(account),
                     RECONNECT_DELAY_SECONDS, TimeUnit.SECONDS);

@@ -12,6 +12,7 @@ import com.cryptoradar.execution.model.ExecutionEvent;
 import com.cryptoradar.execution.model.ExecutionEventType;
 import com.cryptoradar.execution.model.ExitReason;
 import com.cryptoradar.execution.model.TradeStatus;
+import com.cryptoradar.execution.intake.StrategyPerformanceSizer;
 import com.cryptoradar.execution.notify.ExecutionEventService;
 import com.cryptoradar.execution.repository.ExecutedTradeRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -39,13 +40,16 @@ public class OrderPlacer {
     private final InstrumentRegistry instruments;
     private final ExecutedTradeRepository tradeRepo;
     private final ExecutionEventService events;
+    private final StrategyPerformanceSizer sizer;
 
     public OrderPlacer(BybitV5RestClient bybit, InstrumentRegistry instruments,
-                       ExecutedTradeRepository tradeRepo, ExecutionEventService events) {
+                       ExecutedTradeRepository tradeRepo, ExecutionEventService events,
+                       StrategyPerformanceSizer sizer) {
         this.bybit = bybit;
         this.instruments = instruments;
         this.tradeRepo = tradeRepo;
         this.events = events;
+        this.sizer = sizer;
     }
 
     public record PlacementRequest(String symbol, String direction, String strategy,
@@ -63,11 +67,23 @@ public class OrderPlacer {
                     req.symbol(), levResp.retCode(), levResp.retMsg());
         }
 
-        // 2. Compute qty from live equity + account risk %.
+        // 2. Compute qty from live equity + account risk %, scaled by the
+        //    per-cell sizing multiplier. Strong empirical winners size up
+        //    (1.25-1.5x), weak losers size down (0.5x). See
+        //    StrategyPerformanceSizer for the bucket thresholds.
         double equity = fetchEquity(account);
-        double riskPct = account.getRiskPercent().doubleValue();
+        double baseRiskPct = account.getRiskPercent().doubleValue();
+        double sizeMultiplier = sizer.multiplierFor(req.symbol(), req.direction(), req.strategy());
+        double effectiveRiskPct = baseRiskPct * sizeMultiplier;
+        if (Math.abs(sizeMultiplier - 1.0) > 1e-9) {
+            StrategyPerformanceSizer.Cached d = sizer.lastDecisionFor(req.symbol(), req.direction(), req.strategy());
+            LOG.infof("SIZER %s %s/%s multiplier=%.2f (sample=%d totalR=%.2f) — risk %.3f%% -> %.3f%%",
+                    req.symbol(), req.direction(), req.strategy(), sizeMultiplier,
+                    d != null ? d.sampleSize() : 0, d != null ? d.totalR() : 0.0,
+                    baseRiskPct, effectiveRiskPct);
+        }
         double qtyStep = instruments.qtyStepFor(account.getEnvironment(), req.symbol());
-        double qty = RUnitMath.computeQty(equity, riskPct,
+        double qty = RUnitMath.computeQty(equity, effectiveRiskPct,
                 req.entryPrice().doubleValue(), req.stopPrice().doubleValue(), qtyStep);
         if (qty <= 0) {
             return fail(account, req, "qty computed as zero — skip");
@@ -108,8 +124,15 @@ public class OrderPlacer {
             resp = bybit.placeOrder(account.getEnvironment(),
                     account.getApiKeyEncrypted(), account.getApiSecretEncrypted(), orderReq);
         } catch (RuntimeException e) {
-            LOG.errorf(e, "placeOrder threw for %s/%s", req.symbol(), req.direction());
-            return fail(account, req, "Bybit call exception: " + e.getMessage());
+            // Mutate the already-persisted PENDING_PLACE row to FAILED instead of
+            // creating a second row. Without this, every connectivity blip left an
+            // orphan PENDING_PLACE row that polluted the reconciler's queue and
+            // dedup gate. Hibernate dirty-checks the change on tx commit.
+            LOG.error("placeOrder threw for " + req.symbol() + "/" + req.direction(), e);
+            trade.setStatus(TradeStatus.FAILED);
+            logEvent(account, trade, ExecutionEventType.ORDER_REJECTED,
+                    Map.of("reason", "Bybit call exception: " + e.getMessage()));
+            return trade;
         }
 
         if (resp.retCode() == RETCODE_OK || resp.retCode() == RETCODE_DUPLICATE_ORDER) {
