@@ -41,6 +41,12 @@ public class DonchianExitMonitor {
     @ConfigProperty(name = "execution.donchian-exit.enabled", defaultValue = "true")
     boolean enabled;
 
+    // NOTE: the daily-candle + last-price HTTP fetches below run inside this
+    // @Transactional sweep, holding the DB connection for the fetch loop's
+    // duration. Safe at Plan 2's expected handful of long-horizon trades;
+    // tracked for a two-phase (fetch-then-write) refactor before Plan 3
+    // pyramiding raises per-symbol trade counts. See
+    // techdebt/trade-execution-service/3-3-http-calls-inside-scheduled-transaction.md
     @Scheduled(every = "${execution.donchian-exit.interval:60s}", delayed = "50s")
     @Transactional
     public void sweep() {
