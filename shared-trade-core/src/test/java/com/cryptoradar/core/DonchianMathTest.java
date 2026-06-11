@@ -52,6 +52,12 @@ class DonchianMathTest {
     }
 
     @Test
+    void channelLow_throwsWhenNotEnoughHistory() {
+        assertThrows(IllegalArgumentException.class,
+                () -> DonchianMath.channelLow(LOWS, 3, 5));
+    }
+
+    @Test
     void computeN_constantOnePointRange_equalsOne() {
         // Every bar has high-low = 1 and no gaps, so TR is 1 throughout -> N = 1.
         int n = 25;
@@ -71,6 +77,15 @@ class DonchianMathTest {
         double[] a = {1, 2, 3};
         assertThrows(IllegalArgumentException.class,
                 () -> DonchianMath.computeN(a, a, a, 20));
+    }
+
+    @Test
+    void computeN_throwsWhenArrayLengthsDiffer() {
+        double[] highs = new double[25];
+        double[] lows = new double[24];
+        double[] closes = new double[25];
+        assertThrows(IllegalArgumentException.class,
+                () -> DonchianMath.computeN(highs, lows, closes, 20));
     }
 
     @Test

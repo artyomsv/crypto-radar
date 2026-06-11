@@ -10,6 +10,11 @@ public final class DonchianMath {
 
     private DonchianMath() {}
 
+    /** Canonical Turtle catastrophic-stop distance: 2N. */
+    public static final double STOP_MULTIPLE_2N = 2.0;
+    /** Canonical Turtle pyramid spacing: add a unit every 0.5N. */
+    public static final double ADD_FRACTION_HALF_N = 0.5;
+
     /** Breakout classification of a live price against a channel. */
     public enum Breakout { LONG, SHORT, NONE }
 
@@ -59,6 +64,11 @@ public final class DonchianMath {
      */
     public static double computeN(double[] highs, double[] lows, double[] closes, int period) {
         int length = highs.length;
+        if (lows.length != length || closes.length != length) {
+            throw new IllegalArgumentException(
+                    "computeN: highs/lows/closes must be the same length, got "
+                            + length + "/" + lows.length + "/" + closes.length);
+        }
         if (period <= 0 || length < period + 1) {
             throw new IllegalArgumentException("computeN: need at least " + (period + 1)
                     + " bars for period " + period + ", got " + length);
@@ -83,7 +93,10 @@ public final class DonchianMath {
     }
 
     private static void requireWindow(int length, int endExclusive, int lookback, String who) {
-        if (lookback <= 0 || endExclusive > length || endExclusive - lookback < 0) {
+        if (lookback <= 0) {
+            throw new IllegalArgumentException(who + ": lookback must be > 0, got " + lookback);
+        }
+        if (endExclusive > length || endExclusive - lookback < 0) {
             throw new IllegalArgumentException(who + ": need " + lookback
                     + " bars before index " + endExclusive + " in a series of " + length
                     + " — not enough history");
