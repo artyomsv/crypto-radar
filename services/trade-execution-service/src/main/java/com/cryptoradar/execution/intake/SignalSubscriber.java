@@ -332,11 +332,6 @@ public class SignalSubscriber {
             return;
         }
 
-        BigDecimal entry = safeBd(signalNode.path("entryPrice").asText(null));
-        BigDecimal stop = safeBd(signalNode.path("stopPrice").asText(null));
-        BigDecimal target = safeBd(signalNode.path("targetPrice").asText(null));
-        if (entry == null || stop == null || target == null) return;
-
         if (exitPolicy.isLongHorizon(candidate.strategy())
                 && mutualExclusion.isBlocked(account.getId(), symbol, direction)) {
             LOG.infof("MUTUAL_EXCLUSION blocked %s %s %s — breakout-family symbol+direction already held",
@@ -346,6 +341,11 @@ public class SignalSubscriber {
                     Map.of("strategy", candidate.strategy()));
             return;
         }
+
+        BigDecimal entry = safeBd(signalNode.path("entryPrice").asText(null));
+        BigDecimal stop = safeBd(signalNode.path("stopPrice").asText(null));
+        BigDecimal target = safeBd(signalNode.path("targetPrice").asText(null));
+        if (entry == null || stop == null || target == null) return;
 
         orderPlacer.place(account, new OrderPlacer.PlacementRequest(
                 symbol, direction, candidate.strategy(), candidate.signalId(), entry, stop, target));

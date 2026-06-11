@@ -14,7 +14,7 @@ class MutualExclusionGuardTest {
 
     private final StrategyExitPolicy exitPolicy = new StrategyExitPolicy() {
         @Override public boolean isLongHorizon(String s) {
-            return s != null && s.startsWith("turtle") || "donchian".equals(s);
+            return java.util.Set.of("turtle-s1", "turtle-s2", "donchian").contains(s);
         }
     };
 

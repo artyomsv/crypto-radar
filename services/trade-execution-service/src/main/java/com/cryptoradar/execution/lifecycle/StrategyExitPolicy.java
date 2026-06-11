@@ -23,9 +23,19 @@ public class StrategyExitPolicy {
             defaultValue = DEFAULT_LONG_HORIZON_CSV)
     String longHorizonCsv;
 
+    // Lazily computed from longHorizonCsv on first call. Not @PostConstruct:
+    // unit tests set longHorizonCsv directly on a plain instance (no CDI), so
+    // @PostConstruct would never run and parse() would NPE on a null CSV.
+    private volatile Set<String> cached;
+
     public boolean isLongHorizon(String strategy) {
         if (strategy == null) return false;
-        return parse().contains(strategy);
+        Set<String> set = cached;
+        if (set == null) {
+            set = parse();
+            cached = set;
+        }
+        return set.contains(strategy);
     }
 
     private Set<String> parse() {
