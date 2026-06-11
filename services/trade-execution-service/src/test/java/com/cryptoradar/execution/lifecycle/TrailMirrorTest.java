@@ -43,7 +43,9 @@ class TrailMirrorTest {
         events = mock(ExecutionEventService.class);
         bybit = mock(BybitV5RestClient.class);
         marketData = mock(MarketDataClient.class);
-        mirror = new TrailMirror(tradeRepo, accountRepo, events, bybit, marketData);
+        StrategyExitPolicy exitPolicy = new StrategyExitPolicy();
+        exitPolicy.longHorizonCsv = "donchian,turtle-s1,turtle-s2";
+        mirror = new TrailMirror(tradeRepo, accountRepo, events, bybit, marketData, exitPolicy);
 
         account = new ExchangeAccount();
         account.setExchange("BYBIT");

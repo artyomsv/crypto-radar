@@ -49,6 +49,7 @@ public class StagnationMonitor {
     @Inject ExchangeAccountRepository accountRepo;
     @Inject OrderPlacer orderPlacer;
     @Inject EntityManager entityManager;
+    @Inject StrategyExitPolicy exitPolicy;
 
     @ConfigProperty(name = "execution.stagnation-monitor.enabled", defaultValue = "false")
     boolean enabled;
@@ -87,6 +88,7 @@ public class StagnationMonitor {
 
         int closed = 0;
         for (ExecutedTrade trade : open) {
+            if (exitPolicy.isLongHorizon(trade.getStrategy())) continue;
             if (trade.getOpenedAt() == null) continue;
             if (trade.getOpenedAt().isAfter(ageThreshold)) continue;
             if (trade.getSignalId() == null) continue;

@@ -44,15 +44,17 @@ public class TrailMirror {
     private final ExecutionEventService events;
     private final BybitV5RestClient bybit;
     private final MarketDataClient marketData;
+    private final StrategyExitPolicy exitPolicy;
 
     public TrailMirror(ExecutedTradeRepository tradeRepo, ExchangeAccountRepository accountRepo,
                        ExecutionEventService events, BybitV5RestClient bybit,
-                       MarketDataClient marketData) {
+                       MarketDataClient marketData, StrategyExitPolicy exitPolicy) {
         this.tradeRepo = tradeRepo;
         this.accountRepo = accountRepo;
         this.events = events;
         this.bybit = bybit;
         this.marketData = marketData;
+        this.exitPolicy = exitPolicy;
     }
 
     @Scheduled(every = "${execution.trail.interval:60s}", delay = 30, delayUnit = TimeUnit.SECONDS)
@@ -63,6 +65,7 @@ public class TrailMirror {
 
     private void processAccount(ExchangeAccount account) {
         for (ExecutedTrade trade : tradeRepo.findOpenForAccount(account.getId())) {
+            if (exitPolicy.isLongHorizon(trade.getStrategy())) continue;
             try {
                 processTrade(account, trade);
             } catch (RuntimeException e) {
