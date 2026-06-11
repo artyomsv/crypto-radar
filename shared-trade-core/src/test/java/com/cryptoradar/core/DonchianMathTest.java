@@ -50,4 +50,26 @@ class DonchianMathTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DonchianMath.channelHigh(HIGHS, 3, 5));
     }
+
+    @Test
+    void computeN_constantOnePointRange_equalsOne() {
+        // Every bar has high-low = 1 and no gaps, so TR is 1 throughout -> N = 1.
+        int n = 25;
+        double[] highs = new double[n];
+        double[] lows = new double[n];
+        double[] closes = new double[n];
+        for (int i = 0; i < n; i++) {
+            highs[i] = 100.5;
+            lows[i] = 99.5;
+            closes[i] = 100.0;
+        }
+        assertEquals(1.0, DonchianMath.computeN(highs, lows, closes, 20), 1e-9);
+    }
+
+    @Test
+    void computeN_throwsWhenSeriesShorterThanPeriodPlusOne() {
+        double[] a = {1, 2, 3};
+        assertThrows(IllegalArgumentException.class,
+                () -> DonchianMath.computeN(a, a, a, 20));
+    }
 }

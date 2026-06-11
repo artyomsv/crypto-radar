@@ -40,6 +40,38 @@ public final class DonchianMath {
         return Breakout.NONE;
     }
 
+    /**
+     * N = Wilder-smoothed ATR over {@code period} days, the original Turtle
+     * volatility unit. True range needs the prior close, so the series must be
+     * at least {@code period + 1} long. Seeds with the simple average of the
+     * first {@code period} true ranges, then applies Wilder smoothing
+     * {@code N = ((period-1)·prevN + TR) / period} for the remainder.
+     */
+    public static double computeN(double[] highs, double[] lows, double[] closes, int period) {
+        int length = highs.length;
+        if (period <= 0 || length < period + 1) {
+            throw new IllegalArgumentException("computeN: need at least " + (period + 1)
+                    + " bars for period " + period + ", got " + length);
+        }
+        double seedSum = 0.0;
+        for (int i = 1; i <= period; i++) {
+            seedSum += trueRange(highs[i], lows[i], closes[i - 1]);
+        }
+        double n = seedSum / period;
+        for (int i = period + 1; i < length; i++) {
+            double tr = trueRange(highs[i], lows[i], closes[i - 1]);
+            n = ((period - 1) * n + tr) / period;
+        }
+        return n;
+    }
+
+    private static double trueRange(double high, double low, double prevClose) {
+        double a = high - low;
+        double b = Math.abs(high - prevClose);
+        double c = Math.abs(low - prevClose);
+        return Math.max(a, Math.max(b, c));
+    }
+
     private static void requireWindow(int length, int endExclusive, int lookback, String who) {
         if (lookback <= 0 || endExclusive > length || endExclusive - lookback < 0) {
             throw new IllegalArgumentException(who + ": need " + lookback
