@@ -1,6 +1,7 @@
 package com.cryptoradar.execution.intake;
 
 import com.cryptoradar.execution.lifecycle.OrderPlacer;
+import com.cryptoradar.execution.lifecycle.StrategyExitPolicy;
 import com.cryptoradar.execution.model.ExchangeAccount;
 import com.cryptoradar.execution.model.ExecutedTrade;
 import com.cryptoradar.execution.model.ExecutionEvent;
@@ -91,6 +92,8 @@ public class SignalSubscriber {
     @Inject DetectorConfluenceCheck confluenceCheck;
     @Inject DailyPnlCalculator dailyPnlCalculator;
     @Inject ExecutionSettingsService executionSettings;
+    @Inject StrategyExitPolicy exitPolicy;
+    @Inject MutualExclusionGuard mutualExclusion;
 
     private final ConcurrentHashMap<String, Instant> lastBlockEmit = new ConcurrentHashMap<>();
 
@@ -203,6 +206,13 @@ public class SignalSubscriber {
     // field is absent (detector-originated alerts never have it) so this
     // method is safe to call on any node; the caller scopes by envelope.
     boolean isBelowAlignmentFloor(JsonNode signalNode) {
+        String strategy = signalNode.path("strategy").asText(DEFAULT_STRATEGY);
+        if (exitPolicy.isLongHorizon(strategy)) {
+            // Breakout strategies carry a fixed mechanical alignment (not a
+            // confluence score); their safety comes from the 2N stop + other
+            // gates. Exempting them prevents spurious alignment-floor blocks.
+            return false;
+        }
         JsonNode alignmentNode = signalNode.get("alignment");
         if (alignmentNode == null || !alignmentNode.isNumber()) return false;
         return alignmentNode.asInt() < executionSettings.snapshot().alignmentFloor();
@@ -326,6 +336,16 @@ public class SignalSubscriber {
         BigDecimal stop = safeBd(signalNode.path("stopPrice").asText(null));
         BigDecimal target = safeBd(signalNode.path("targetPrice").asText(null));
         if (entry == null || stop == null || target == null) return;
+
+        if (exitPolicy.isLongHorizon(candidate.strategy())
+                && mutualExclusion.isBlocked(account.getId(), symbol, direction)) {
+            LOG.infof("MUTUAL_EXCLUSION blocked %s %s %s — breakout-family symbol+direction already held",
+                    symbol, direction, candidate.strategy());
+            recordBlockedEvent(account, ExecutionEventType.SIGNAL_BLOCKED_MUTUAL_EXCLUSION,
+                    symbol, direction, candidate.signalId(),
+                    Map.of("strategy", candidate.strategy()));
+            return;
+        }
 
         orderPlacer.place(account, new OrderPlacer.PlacementRequest(
                 symbol, direction, candidate.strategy(), candidate.signalId(), entry, stop, target));

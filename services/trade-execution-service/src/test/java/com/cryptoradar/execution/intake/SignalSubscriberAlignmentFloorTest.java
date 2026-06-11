@@ -1,5 +1,6 @@
 package com.cryptoradar.execution.intake;
 
+import com.cryptoradar.execution.lifecycle.StrategyExitPolicy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,11 @@ class SignalSubscriberAlignmentFloorTest {
                 return new Snapshot(floor, true, 10, -3.0, 30, true, 15, 60,
                         false, null, ExecutionSettingsService.DEFAULT_NOTIFIED_EVENTS, false, null, false);
             }
+        };
+        // exitPolicy must be wired so isBelowAlignmentFloor can check for long-horizon strategies.
+        // These tests cover the threshold logic; no strategy here is long-horizon.
+        s.exitPolicy = new StrategyExitPolicy() {
+            @Override public boolean isLongHorizon(String strategy) { return false; }
         };
         return s;
     }
