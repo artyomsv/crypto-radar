@@ -93,6 +93,7 @@ public final class SlippageLogger {
             case TRAIL_STOP -> "trail_stop";
             case TARGET -> "target";
             case STAGNATION -> "stagnation";
+            case DONCHIAN_EXIT -> "donchian_exit";
             case MANUAL -> "manual";
             case EXPIRED -> "expired";
             case FLIP_CLOSE -> "flip_close";

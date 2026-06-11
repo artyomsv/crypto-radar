@@ -8,5 +8,6 @@ public enum ExitReason {
     FLIP_CLOSE,
     MANUAL,
     KILL,
-    STAGNATION
+    STAGNATION,       // Stagnation monitor triggered
+    DONCHIAN_EXIT     // Reverse Donchian-channel breach (Turtle/Donchian native exit)
 }
