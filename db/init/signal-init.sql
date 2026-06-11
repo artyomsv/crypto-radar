@@ -151,3 +151,11 @@ INSERT INTO deployment_markers (deployed_at, version, description) VALUES
      'confirmation, confidence->alignment rename, metrics slices, derivatives ' ||
      'table-name fix, frontend surface.')
 ON CONFLICT (deployed_at) DO NOTHING;
+
+INSERT INTO deployment_markers (deployed_at, version, description) VALUES
+    ('2026-06-11T00:00:00Z', 'v8-turtle-donchian-live',
+     'Daily Donchian/Turtle breakout strategies live single-unit on Bybit: ' ||
+     'donchian/turtle-s1/turtle-s2 entries, 2N stop, native reverse-Donchian ' ||
+     'exit (10d/20d), mutual exclusion among breakout family, exempt from ' ||
+     'intraday stagnation/trail + alignment floor. Pyramiding = Plan 3.')
+ON CONFLICT (deployed_at) DO NOTHING;
