@@ -1,7 +1,5 @@
 package com.cryptoradar.execution.client;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -16,13 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  */
 class MarketDataClientTest {
 
-    private MarketDataClient client;
-
-    @BeforeEach
-    void setUp() {
-        client = new MarketDataClient();
-        client.mapper = new ObjectMapper();
-    }
+    // No-arg test constructor wires ObjectMapper; no @BeforeEach needed.
+    private final MarketDataClient client = new MarketDataClient();
 
     @Test
     void parsesPriceFromArrayShape() {
