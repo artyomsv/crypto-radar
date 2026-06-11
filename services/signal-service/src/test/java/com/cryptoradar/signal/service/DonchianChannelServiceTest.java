@@ -38,8 +38,20 @@ class DonchianChannelServiceTest {
         assertEquals(158.0, snap.high55());
         // last 10 completed lows are 139..148 -> low10 = 139
         assertEquals(139.0, snap.low10());
+        // last 20 completed lows are 129..148 -> low20 = 129
+        assertEquals(129.0, snap.low20());
+        // last 55 completed lows start at 94 -> low55 = 94
+        assertEquals(94.0, snap.low55());
+        // last 10 completed highs are 149..158 -> high10 = 158
+        assertEquals(158.0, snap.high10());
         assertTrue(snap.n() > 0);
         assertTrue(snap.lastS1BreakoutWasWinner());
+    }
+
+    @Test
+    void buildSnapshot_passesThroughLoserFlagFalse() {
+        DonchianSnapshot snap = service.buildSnapshot(bars(200, 80), false);
+        assertFalse(snap.lastS1BreakoutWasWinner());
     }
 
     @Test
