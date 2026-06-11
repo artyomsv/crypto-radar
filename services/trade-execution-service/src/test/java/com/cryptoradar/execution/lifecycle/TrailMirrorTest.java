@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -121,5 +123,22 @@ class TrailMirrorTest {
 
         mirror.processTrade(account, t);
         assertEquals(0, new BigDecimal("4925").compareTo(t.getDynamicStopPrice()));
+    }
+
+    @Test
+    void skipsLongHorizonStrategyTrades() {
+        // A donchian (long-horizon) trade whose price has moved well past the
+        // trail activation — it WOULD advance the stop if processed. The skip
+        // guard runs first in processAccount, so Bybit must never be touched.
+        ExecutedTrade donchian = openLongTrade(new BigDecimal("50000"), new BigDecimal("49500"), 0);
+        donchian.setStrategy("donchian");
+        when(accountRepo.listAll()).thenReturn(List.of(account));
+        when(tradeRepo.findOpenForAccount(account.getId())).thenReturn(List.of(donchian));
+        when(marketData.getLastPrice("BTCUSDT")).thenReturn(new BigDecimal("51000"));
+
+        mirror.tick();
+
+        verify(bybit, never()).setTradingStop(anyString(), anyString(), anyString(),
+                any(TradingStopRequest.class));
     }
 }

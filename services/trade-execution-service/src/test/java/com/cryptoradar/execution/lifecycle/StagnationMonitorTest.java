@@ -1,10 +1,23 @@
 package com.cryptoradar.execution.lifecycle;
 
+import com.cryptoradar.execution.model.ExchangeAccount;
+import com.cryptoradar.execution.model.ExecutedTrade;
+import com.cryptoradar.execution.repository.ExecutedTradeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for the stagnation decision. Scheduler + DB-read paths
@@ -66,5 +79,36 @@ class StagnationMonitorTest {
         // that was stagnant under defaults is now "moving enough".
         monitor.mfeThresholdPct = 0.1;
         assertFalse(monitor.isStagnant(new StagnationMonitor.Excursion(0.15, -0.1)));
+    }
+
+    @Test
+    void skipsLongHorizonStrategyTrades() {
+        // A donchian (long-horizon) trade that is old enough and carries a
+        // signal id — it would otherwise reach the stagnation check. The
+        // long-horizon guard is the first statement in the loop, so the trade
+        // must never be closed regardless of its excursion.
+        ExecutedTradeRepository tradeRepo = mock(ExecutedTradeRepository.class);
+        OrderPlacer orderPlacer = mock(OrderPlacer.class);
+        StrategyExitPolicy exitPolicy = new StrategyExitPolicy();
+        exitPolicy.longHorizonCsv = "donchian,turtle-s1,turtle-s2";
+        monitor.tradeRepo = tradeRepo;
+        monitor.orderPlacer = orderPlacer;
+        monitor.exitPolicy = exitPolicy;
+
+        ExchangeAccount account = new ExchangeAccount();
+        Instant ageThreshold = Instant.now().minus(monitor.minAgeMinutes, ChronoUnit.MINUTES);
+
+        ExecutedTrade donchian = new ExecutedTrade();
+        donchian.setSymbol("BTCUSDT");
+        donchian.setDirection("LONG");
+        donchian.setStrategy("donchian");
+        donchian.setSignalId("sig-1");
+        donchian.setOpenedAt(Instant.now().minus(2, ChronoUnit.HOURS)); // older than threshold
+        when(tradeRepo.findOpenForAccount(account.getId())).thenReturn(List.of(donchian));
+
+        int closed = monitor.sweepForAccount(account, ageThreshold);
+
+        assertEquals(0, closed);
+        verify(orderPlacer, never()).close(any(), any(), any());
     }
 }

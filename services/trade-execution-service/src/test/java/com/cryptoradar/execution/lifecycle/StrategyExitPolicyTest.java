@@ -35,4 +35,9 @@ class StrategyExitPolicyTest {
         assertTrue(p.isLongHorizon("turtle-s1"));
         assertFalse(p.isLongHorizon("turtle-s2"));
     }
+
+    @Test
+    void emptyIncomingStrategyDoesNotMatch() {
+        assertFalse(policy("donchian,turtle-s1").isLongHorizon(""));
+    }
 }

@@ -8,16 +8,19 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Single source of truth for which strategies are "long-horizon" (multi-day
- * Turtle/Donchian breakouts). These are kept out of the intraday
- * StagnationMonitor + TrailMirror, exempted from the alignment-floor gate, and
- * recognised by the DonchianExitMonitor + mutual-exclusion guard.
+ * Single source of truth for which strategies are long-horizon (multi-day
+ * Turtle/Donchian breakouts). Currently consumed by {@code StagnationMonitor}
+ * and {@code TrailMirror} to skip the intraday stagnation/trail exits. Planned
+ * consumers (later in this feature): the Donchian exit monitor, the
+ * alignment-floor exemption, and the mutual-exclusion guard.
  */
 @ApplicationScoped
 public class StrategyExitPolicy {
 
+    private static final String DEFAULT_LONG_HORIZON_CSV = "donchian,turtle-s1,turtle-s2";
+
     @ConfigProperty(name = "execution.long-horizon-strategies",
-            defaultValue = "donchian,turtle-s1,turtle-s2")
+            defaultValue = DEFAULT_LONG_HORIZON_CSV)
     String longHorizonCsv;
 
     public boolean isLongHorizon(String strategy) {
