@@ -29,7 +29,8 @@ class TurtleSystem1DetectorTest {
     }
 
     private DonchianSnapshot snap(boolean lastWinner) {
-        return new DonchianSnapshot(110, 90, 108, 92, 120, 80, 2.0, lastWinner, Instant.now());
+        // lastWinner maps to the LONG flag; SHORT flag is false (tests use LONG breakouts at 110.5)
+        return new DonchianSnapshot(110, 90, 108, 92, 120, 80, 2.0, lastWinner, false, Instant.now());
     }
 
     @Test
@@ -68,5 +69,12 @@ class TurtleSystem1DetectorTest {
     void silentWhenDisabled() {
         detector.enabled = false;
         assertTrue(detector.detect(ctx(110.5, snap(false))).isEmpty());
+    }
+
+    @Test
+    void shortWinnerDoesNotBlockLongEntry() {
+        // long flag false, short flag true -> a LONG breakout must still fire
+        DonchianSnapshot s = new DonchianSnapshot(110, 90, 108, 92, 120, 80, 2.0, false, true, Instant.now());
+        assertTrue(detector.detect(ctx(110.5, s)).isPresent());
     }
 }

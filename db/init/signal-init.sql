@@ -50,10 +50,11 @@ CREATE INDEX IF NOT EXISTS idx_signal_outcomes_dedup
 CREATE INDEX IF NOT EXISTS idx_signal_outcomes_symbol_fired
     ON signal_outcomes (symbol, fired_at DESC);
 
--- Scan target #4: Turtle S1 loser-filter ("last closed outcome for this symbol+strategy").
+-- Scan target #4: Turtle S1 loser-filter ("last closed outcome for this symbol+strategy+direction").
 -- Partial index over closed rows makes findLastClosedByStrategy a single-row seek.
+-- direction included so a LONG lookup does not cross-match a SHORT result.
 CREATE INDEX IF NOT EXISTS idx_signal_outcomes_strategy_closed
-    ON signal_outcomes (symbol, strategy, closed_at DESC)
+    ON signal_outcomes (symbol, strategy, direction, closed_at DESC)
     WHERE status <> 'PENDING';
 
 -- Compression for historical analysis once rows are well past their resolution window.

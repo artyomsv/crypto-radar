@@ -31,7 +31,7 @@ class DonchianChannelServiceTest {
 
     @Test
     void buildSnapshot_excludesTodayBar_fromChannels() {
-        DonchianSnapshot snap = service.buildSnapshot(bars(9999, -1), true);
+        DonchianSnapshot snap = service.buildSnapshot(bars(9999, -1), true, false);
         // last 20 completed highs are 139..158 -> high20 = 158
         assertEquals(158.0, snap.high20());
         // last 55 completed highs end at 158 -> high55 = 158
@@ -45,19 +45,20 @@ class DonchianChannelServiceTest {
         // last 10 completed highs are 149..158 -> high10 = 158
         assertEquals(158.0, snap.high10());
         assertTrue(snap.n() > 0);
-        assertTrue(snap.lastS1BreakoutWasWinner());
+        assertTrue(snap.lastS1LongWasWinner());
+        assertFalse(snap.lastS1ShortWasWinner());
     }
 
     @Test
     void buildSnapshot_passesThroughLoserFlagFalse() {
-        DonchianSnapshot snap = service.buildSnapshot(bars(200, 80), false);
-        assertFalse(snap.lastS1BreakoutWasWinner());
+        DonchianSnapshot snap = service.buildSnapshot(bars(200, 80), false, false);
+        assertFalse(snap.lastS1LongWasWinner());
     }
 
     @Test
     void buildSnapshot_throwsWhenInsufficientHistory() {
         List<CandleBar> tooFew = bars(200, 80).subList(0, 40); // < 56 bars
         assertThrows(IllegalArgumentException.class,
-                () -> service.buildSnapshot(tooFew, false));
+                () -> service.buildSnapshot(tooFew, false, false));
     }
 }

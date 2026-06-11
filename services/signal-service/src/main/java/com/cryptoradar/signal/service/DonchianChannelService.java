@@ -59,7 +59,9 @@ public class DonchianChannelService {
                         symbol, bars == null ? 0 : bars.size(), MIN_BARS);
                 return Optional.empty();
             }
-            DonchianSnapshot snap = buildSnapshot(bars, lastS1Winner(symbol));
+            DonchianSnapshot snap = buildSnapshot(bars,
+                    lastS1Winner(symbol, "LONG"),
+                    lastS1Winner(symbol, "SHORT"));
             cache.put(symbol, snap);
             return Optional.of(snap);
         } catch (RuntimeException e) {
@@ -72,8 +74,8 @@ public class DonchianChannelService {
         return Instant.now().toEpochMilli() - snap.computedAt().toEpochMilli() > TTL_MILLIS;
     }
 
-    private boolean lastS1Winner(String symbol) {
-        return outcomeRepo.findLastClosedByStrategy(symbol, S1_STRATEGY)
+    private boolean lastS1Winner(String symbol, String direction) {
+        return outcomeRepo.findLastClosedByStrategy(symbol, S1_STRATEGY, direction)
                 .map(SignalOutcome::getRealizedRMultiple)
                 .map(r -> r != null && r > 0)
                 .orElse(false);
@@ -81,10 +83,11 @@ public class DonchianChannelService {
 
     /**
      * Pure snapshot builder. {@code bars} is oldest-first; the LAST bar is the
-     * current/forming day and is excluded from all channels (a breakout is
-     * "price exceeds the prior n COMPLETED bars"). Package-private for testing.
+     * current/forming day and is excluded from all channels and from N (a
+     * breakout is "price exceeds the prior n COMPLETED bars"; N is an ATR over
+     * completed bars for the same reason). Package-private for testing.
      */
-    DonchianSnapshot buildSnapshot(List<CandleBar> bars, boolean lastS1Winner) {
+    DonchianSnapshot buildSnapshot(List<CandleBar> bars, boolean lastS1LongWinner, boolean lastS1ShortWinner) {
         int size = bars.size();
         if (size < MIN_BARS) {
             throw new IllegalArgumentException("Donchian needs >= " + MIN_BARS
@@ -99,6 +102,9 @@ public class DonchianChannelService {
             closes[i] = bars.get(i).close();
         }
         int endExclusive = size - 1; // exclude today's forming bar
+        double[] nHighs = java.util.Arrays.copyOf(highs, endExclusive);
+        double[] nLows = java.util.Arrays.copyOf(lows, endExclusive);
+        double[] nCloses = java.util.Arrays.copyOf(closes, endExclusive);
         return new DonchianSnapshot(
                 DonchianMath.channelHigh(highs, endExclusive, LOOKBACK_20),
                 DonchianMath.channelLow(lows, endExclusive, LOOKBACK_20),
@@ -106,8 +112,9 @@ public class DonchianChannelService {
                 DonchianMath.channelLow(lows, endExclusive, LOOKBACK_10),
                 DonchianMath.channelHigh(highs, endExclusive, LOOKBACK_55),
                 DonchianMath.channelLow(lows, endExclusive, LOOKBACK_55),
-                DonchianMath.computeN(highs, lows, closes, N_PERIOD),
-                lastS1Winner,
+                DonchianMath.computeN(nHighs, nLows, nCloses, N_PERIOD),
+                lastS1LongWinner,
+                lastS1ShortWinner,
                 Instant.now());
     }
 }

@@ -43,14 +43,16 @@ public class SignalOutcomeRepository implements PanacheRepositoryBase<SignalOutc
     }
 
     /**
-     * The most recently closed outcome for a symbol+strategy, newest first.
-     * Backs the Turtle System-1 loser-filter: the new 20-day breakout is
-     * skipped when the last closed {@code turtle-s1} trade was a winner.
+     * The most recently closed outcome for a symbol+strategy+direction, newest first.
+     * Backs the Turtle System-1 loser-filter: the new 20-day breakout in a given
+     * direction is skipped when the last closed {@code turtle-s1} trade in that same
+     * direction was a winner. Direction-scoped so a SHORT win does not suppress a
+     * subsequent LONG entry.
      * Empty when no closed outcome exists yet (so the first breakout is taken).
      */
-    public Optional<SignalOutcome> findLastClosedByStrategy(String symbol, String strategy) {
-        return find("symbol = ?1 and strategy = ?2 and status <> ?3 order by closedAt desc",
-                symbol, strategy, OutcomeStatus.PENDING)
+    public Optional<SignalOutcome> findLastClosedByStrategy(String symbol, String strategy, String direction) {
+        return find("symbol = ?1 and strategy = ?2 and direction = ?3 and status <> ?4 order by closedAt desc",
+                symbol, strategy, direction, OutcomeStatus.PENDING)
                 .firstResultOptional();
     }
 

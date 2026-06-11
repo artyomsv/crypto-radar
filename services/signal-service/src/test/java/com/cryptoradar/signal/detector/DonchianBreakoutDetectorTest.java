@@ -32,7 +32,7 @@ class DonchianBreakoutDetectorTest {
 
     private DonchianSnapshot snap() {
         // high20=110, low20=90, N=2
-        return new DonchianSnapshot(110, 90, 108, 92, 120, 80, 2.0, false, Instant.now());
+        return new DonchianSnapshot(110, 90, 108, 92, 120, 80, 2.0, false, false, Instant.now());
     }
 
     @Test

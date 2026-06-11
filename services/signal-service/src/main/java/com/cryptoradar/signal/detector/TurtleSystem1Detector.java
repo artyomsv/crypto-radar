@@ -40,8 +40,12 @@ public class TurtleSystem1Detector implements TradeSetupDetector {
 
         DonchianMath.Breakout dir = DonchianMath.breakoutDirection(price, snap.high20(), snap.low20());
         if (dir == DonchianMath.Breakout.NONE) return Optional.empty();
-        // Loser-filter: suppress the entry when the prior S1 breakout won.
-        if (snap.lastS1BreakoutWasWinner()) return Optional.empty();
+        // Loser-filter: suppress the entry when the prior S1 breakout in this
+        // direction won. Direction-scoped so a SHORT win does not block a LONG.
+        boolean lastWasWinner = (dir == DonchianMath.Breakout.LONG)
+                ? snap.lastS1LongWasWinner()
+                : snap.lastS1ShortWasWinner();
+        if (lastWasWinner) return Optional.empty();
 
         return Optional.of(BreakoutSetups.build(new BreakoutSetups.BreakoutSpec(
                 NAME, context.symbol(), price, snap.n(),

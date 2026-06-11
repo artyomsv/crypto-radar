@@ -30,7 +30,7 @@ class TurtleSystem2DetectorTest {
 
     // high55=120, low55=80; the 20-day channel (110/90) must NOT trigger S2
     private DonchianSnapshot snap() {
-        return new DonchianSnapshot(110, 90, 108, 92, 120, 80, 2.0, true, Instant.now());
+        return new DonchianSnapshot(110, 90, 108, 92, 120, 80, 2.0, true, true, Instant.now());
     }
 
     @Test
