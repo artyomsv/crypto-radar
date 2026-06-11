@@ -3,6 +3,7 @@ package com.cryptoradar.execution.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -26,17 +27,18 @@ import java.util.List;
 public class MarketDataClient {
 
     private static final Logger LOG = Logger.getLogger(MarketDataClient.class);
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(3);
 
     private final HttpClient http;
     private final ObjectMapper mapper;
     private final String baseUrl;
 
     /** CDI constructor — wired by Quarkus via constructor injection. */
-    @jakarta.inject.Inject
+    @Inject
     public MarketDataClient(
             @ConfigProperty(name = "market-data.url") String baseUrl,
             ObjectMapper mapper) {
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+        this.http = HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build();
         this.mapper = mapper;
         this.baseUrl = baseUrl;
     }
@@ -44,6 +46,8 @@ public class MarketDataClient {
     /** Test-only: parse helpers don't need HTTP/config. */
     MarketDataClient() {
         this.mapper = new ObjectMapper();
+        // http/baseUrl intentionally null: only the pure parse* helpers are valid
+        // on a no-arg (test) instance; calling an HTTP method here will NPE.
         this.http = null;
         this.baseUrl = null;
     }
@@ -54,7 +58,7 @@ public class MarketDataClient {
     public BigDecimal getLastPrice(String symbol) {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + "/api/market/prices"))
-                    .timeout(Duration.ofSeconds(3))
+                    .timeout(HTTP_TIMEOUT)
                     .GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
@@ -112,7 +116,7 @@ public class MarketDataClient {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(
                     baseUrl + "/api/market/candles/" + symbol + "?interval=1d&limit=" + limit))
-                    .timeout(Duration.ofSeconds(3))
+                    .timeout(HTTP_TIMEOUT)
                     .GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
@@ -120,7 +124,11 @@ public class MarketDataClient {
                 return List.of();
             }
             return parseDailyBars(resp.body());
-        } catch (IOException | InterruptedException | RuntimeException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warnf(e, "market-data 1d fetch interrupted for %s", symbol);
+            return List.of();
+        } catch (IOException | RuntimeException e) {
             LOG.warnf(e, "market-data 1d fetch failed for %s", symbol);
             return List.of();
         }
@@ -143,6 +151,7 @@ public class MarketDataClient {
             Collections.reverse(bars); // upstream DESC -> oldest-first
             return bars;
         } catch (RuntimeException | IOException e) {
+            LOG.warnf("parseDailyBars discarded a malformed daily-candle response: %s", e.getMessage());
             return List.of();
         }
     }

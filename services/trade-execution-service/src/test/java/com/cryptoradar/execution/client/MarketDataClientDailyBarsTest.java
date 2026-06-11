@@ -22,6 +22,7 @@ class MarketDataClientDailyBarsTest {
         List<MarketDataClient.DailyBar> bars = client.parseDailyBars(json);
         assertEquals(2, bars.size());
         // oldest-first: 2026-06-09 first
+        assertEquals(3.0, bars.get(0).open());
         assertEquals(9.0, bars.get(0).high());
         assertEquals(2.0, bars.get(0).low());
         assertEquals(12.0, bars.get(1).high());
