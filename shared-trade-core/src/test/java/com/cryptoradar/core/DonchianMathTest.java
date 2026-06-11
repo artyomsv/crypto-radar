@@ -72,4 +72,16 @@ class DonchianMathTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DonchianMath.computeN(a, a, a, 20));
     }
+
+    @Test
+    void unitStop_longSubtractsTwoN_shortAddsTwoN() {
+        assertEquals(96.0, DonchianMath.unitStop(100.0, 2.0, true, 2.0), 1e-9);
+        assertEquals(104.0, DonchianMath.unitStop(100.0, 2.0, false, 2.0), 1e-9);
+    }
+
+    @Test
+    void addTrigger_longAddsHalfN_shortSubtractsHalfN() {
+        assertEquals(101.0, DonchianMath.addTrigger(100.0, 2.0, true, 0.5), 1e-9);
+        assertEquals(99.0, DonchianMath.addTrigger(100.0, 2.0, false, 0.5), 1e-9);
+    }
 }

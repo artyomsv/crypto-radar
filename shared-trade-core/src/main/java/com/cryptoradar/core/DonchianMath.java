@@ -40,6 +40,16 @@ public final class DonchianMath {
         return Breakout.NONE;
     }
 
+    /** Protective stop: {@code entry - mult·N} for LONG, {@code entry + mult·N} for SHORT. */
+    public static double unitStop(double entry, double n, boolean isLong, double stopMultiple) {
+        return isLong ? entry - stopMultiple * n : entry + stopMultiple * n;
+    }
+
+    /** Next pyramid level: {@code lastEntry + frac·N} for LONG, {@code lastEntry - frac·N} for SHORT. */
+    public static double addTrigger(double lastUnitEntry, double n, boolean isLong, double stepFraction) {
+        return isLong ? lastUnitEntry + stepFraction * n : lastUnitEntry - stepFraction * n;
+    }
+
     /**
      * N = Wilder-smoothed ATR over {@code period} days, the original Turtle
      * volatility unit. True range needs the prior close, so the series must be
