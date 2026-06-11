@@ -3,6 +3,7 @@ package com.cryptoradar.signal.service;
 import com.cryptoradar.signal.detector.TradeSetupDetector;
 import com.cryptoradar.signal.model.CandleBar;
 import com.cryptoradar.signal.model.DimensionScore;
+import com.cryptoradar.signal.model.DonchianSnapshot;
 import com.cryptoradar.signal.model.MarketContext;
 import com.cryptoradar.signal.model.SymbolRawData;
 import com.cryptoradar.signal.model.TradeSetup;
@@ -42,12 +43,15 @@ public class TradeSetupEngine {
     private static final String PRICE_FIELD = "price";
 
     private final DataAggregator dataAggregator;
+    private final DonchianChannelService donchianService;
     private final Instance<TradeSetupDetector> detectors;
 
     public TradeSetupEngine(
             DataAggregator dataAggregator,
+            DonchianChannelService donchianService,
             @Any Instance<TradeSetupDetector> detectors) {
         this.dataAggregator = dataAggregator;
+        this.donchianService = donchianService;
         this.detectors = detectors;
     }
 
@@ -80,6 +84,7 @@ public class TradeSetupEngine {
         Double currentPrice = ContextValues.readDouble(data.priceData(), PRICE_FIELD);
         Map<String, Double> dimensionScores = toDimensionScores(dimensions);
         List<CandleBar> bars = loadRecentBars(symbol);
+        DonchianSnapshot donchian = donchianService.snapshotFor(symbol).orElse(null);
 
         return new MarketContext(
                 symbol,
@@ -89,7 +94,8 @@ public class TradeSetupEngine {
                 nullSafe(data.derivativesData()),
                 nullSafe(data.macroData()),
                 dimensionScores,
-                bars);
+                bars,
+                donchian);
     }
 
     private Map<String, Double> toDimensionScores(List<DimensionScore> dimensions) {

@@ -242,6 +242,6 @@ class LiquiditySweepDetectorTest {
 
         return new MarketContext(
                 "TESTUSDT", currentPrice, analytics, Map.of(), Map.of(), Map.of(),
-                dimensionScores, bars);
+                dimensionScores, bars, null);
     }
 }

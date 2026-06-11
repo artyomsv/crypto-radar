@@ -23,6 +23,8 @@ import java.util.Map;
  *                          used by detectors as a confluence filter
  * @param recent4hBars      last N closed 4h bars, oldest first; may be empty
  *                          if market-data-service was unreachable
+ * @param donchian          daily Donchian channel snapshot, or {@code null}
+ *                          when unavailable; breakout detectors no-op on null
  */
 public record MarketContext(
         String symbol,
@@ -32,11 +34,12 @@ public record MarketContext(
         Map<String, Object> derivativesData,
         Map<String, Object> macroData,
         Map<String, Double> dimensionScores,
-        List<CandleBar> recent4hBars
+        List<CandleBar> recent4hBars,
+        DonchianSnapshot donchian
 ) {
     public static MarketContext empty(String symbol) {
         return new MarketContext(symbol, null,
                 Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
-                Collections.emptyList());
+                Collections.emptyList(), null);
     }
 }
