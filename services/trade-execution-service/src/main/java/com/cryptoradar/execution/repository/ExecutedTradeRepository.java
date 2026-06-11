@@ -21,6 +21,18 @@ public class ExecutedTradeRepository implements PanacheRepository<ExecutedTrade>
                 Sort.descending("openedAt"), accountId, OPEN_STATUSES).list();
     }
 
+    /**
+     * Any open trade for this account+symbol+direction regardless of strategy.
+     * Backs the breakout-family mutual-exclusion guard. Uses the same
+     * open-status set as {@link #findOpenBySymbolAndDirectionAndStrategy}.
+     */
+    public Optional<ExecutedTrade> findOpenBySymbolAndDirection(
+            Long accountId, String symbol, String direction) {
+        return find("exchangeAccountId = ?1 and symbol = ?2 and direction = ?3 and status in ?4",
+                accountId, symbol, direction, OPEN_STATUSES)
+                .firstResultOptional();
+    }
+
     public Optional<ExecutedTrade> findOpenBySymbolAndDirectionAndStrategy(
             Long accountId, String symbol, String direction, String strategy) {
         return find(
