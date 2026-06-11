@@ -22,8 +22,6 @@ import java.util.Optional;
 public class TurtleSystem1Detector implements TradeSetupDetector {
 
     static final String NAME = "turtle-s1";
-    private static final double TARGET_N_MULTIPLE = 20.0;
-    private static final int MECHANICAL_ALIGNMENT = 60;
 
     @ConfigProperty(name = "turtle.s1.enabled", defaultValue = "true")
     boolean enabled;
@@ -45,13 +43,13 @@ public class TurtleSystem1Detector implements TradeSetupDetector {
         // Loser-filter: suppress the entry when the prior S1 breakout won.
         if (snap.lastS1BreakoutWasWinner()) return Optional.empty();
 
-        return Optional.of(BreakoutSetups.build(NAME, context.symbol(), price, snap.n(),
-                dir == DonchianMath.Breakout.LONG, DonchianMath.STOP_MULTIPLE_2N, TARGET_N_MULTIPLE,
-                MECHANICAL_ALIGNMENT,
+        return Optional.of(BreakoutSetups.build(new BreakoutSetups.BreakoutSpec(
+                NAME, context.symbol(), price, snap.n(),
+                dir == DonchianMath.Breakout.LONG,
                 List.of(String.format("Turtle S1 20-day %s breakout (high20=%.4f low20=%.4f N=%.4f)",
                         dir, snap.high20(), snap.low20(), snap.n()),
                         "Loser-filter passed (last S1 breakout was not a winner)",
                         "Operative exit = reverse 10-day Donchian monitor; TP is a 20N backstop"),
-                Instant.now()));
+                Instant.now())));
     }
 }

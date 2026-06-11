@@ -70,4 +70,10 @@ class DonchianBreakoutDetectorTest {
                 Collections.emptyList(), snap());
         assertTrue(detector.detect(c).isEmpty());
     }
+
+    @Test
+    void silentWhenDisabled() {
+        detector.enabled = false;
+        assertTrue(detector.detect(ctx(110.5, snap())).isEmpty());
+    }
 }

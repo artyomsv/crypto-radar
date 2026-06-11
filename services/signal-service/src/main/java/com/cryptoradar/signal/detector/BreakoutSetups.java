@@ -8,23 +8,34 @@ import java.util.List;
 
 /**
  * Shared construction of the breakout strategies' {@link TradeSetup}. All three
- * detectors size the stop at 2N, carry a distant {@code targetNMultiple}·N
- * nominal TP (the operative exit is the downstream Donchian monitor), and use a
- * fixed mechanical alignment (these are rule-based, not confluence-scored).
+ * detectors size the stop at 2N, carry a distant nominal TP (operative exit is
+ * the downstream Donchian monitor), and use a fixed mechanical alignment (these
+ * are rule-based, not confluence-scored).
  */
 final class BreakoutSetups {
 
     private BreakoutSetups() {}
 
-    static TradeSetup build(String strategy, String symbol, double entry, double n,
-                            boolean isLong, double stopMultiple, double targetNMultiple,
-                            int alignment, List<String> reasons, Instant firedAt) {
-        double stop = DonchianMath.unitStop(entry, n, isLong, stopMultiple);
-        double target = isLong ? entry + targetNMultiple * n : entry - targetNMultiple * n;
-        double rr = stopMultiple == 0 ? 0 : targetNMultiple / stopMultiple;
-        String direction = isLong ? "LONG" : "SHORT";
-        String signalType = isLong ? "BUY" : "SELL";
-        return new TradeSetup(strategy, symbol, direction, signalType,
-                entry, stop, target, rr, alignment, reasons, firedAt);
+    /** Canonical Turtle 2N catastrophic stop. */
+    private static final double STOP_MULTIPLE = DonchianMath.STOP_MULTIPLE_2N;
+    /** Distant nominal target so the RR-floor passes; real exit is the Donchian monitor. */
+    private static final double TARGET_N_MULTIPLE = 20.0;
+    /** Fixed alignment — breakouts are rule-based, not confluence-scored. */
+    private static final int MECHANICAL_ALIGNMENT = 60;
+
+    /** Parameter object for {@link #build(BreakoutSpec)}. */
+    record BreakoutSpec(String strategy, String symbol, double entry, double n,
+                        boolean isLong, List<String> reasons, Instant firedAt) {}
+
+    static TradeSetup build(BreakoutSpec spec) {
+        double stop = DonchianMath.unitStop(spec.entry(), spec.n(), spec.isLong(), STOP_MULTIPLE);
+        double target = spec.isLong()
+                ? spec.entry() + TARGET_N_MULTIPLE * spec.n()
+                : spec.entry() - TARGET_N_MULTIPLE * spec.n();
+        double rr = TARGET_N_MULTIPLE / STOP_MULTIPLE;
+        String direction = spec.isLong() ? "LONG" : "SHORT";
+        String signalType = spec.isLong() ? "BUY" : "SELL";
+        return new TradeSetup(spec.strategy(), spec.symbol(), direction, signalType,
+                spec.entry(), stop, target, rr, MECHANICAL_ALIGNMENT, spec.reasons(), spec.firedAt());
     }
 }

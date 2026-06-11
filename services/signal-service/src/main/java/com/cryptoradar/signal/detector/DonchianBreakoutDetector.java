@@ -21,8 +21,6 @@ import java.util.Optional;
 public class DonchianBreakoutDetector implements TradeSetupDetector {
 
     static final String NAME = "donchian";
-    private static final double TARGET_N_MULTIPLE = 20.0;
-    private static final int MECHANICAL_ALIGNMENT = 60;
 
     @ConfigProperty(name = "turtle.donchian.enabled", defaultValue = "true")
     boolean enabled;
@@ -42,12 +40,12 @@ public class DonchianBreakoutDetector implements TradeSetupDetector {
         DonchianMath.Breakout dir = DonchianMath.breakoutDirection(price, snap.high20(), snap.low20());
         if (dir == DonchianMath.Breakout.NONE) return Optional.empty();
 
-        return Optional.of(BreakoutSetups.build(NAME, context.symbol(), price, snap.n(),
-                dir == DonchianMath.Breakout.LONG, DonchianMath.STOP_MULTIPLE_2N, TARGET_N_MULTIPLE,
-                MECHANICAL_ALIGNMENT,
+        return Optional.of(BreakoutSetups.build(new BreakoutSetups.BreakoutSpec(
+                NAME, context.symbol(), price, snap.n(),
+                dir == DonchianMath.Breakout.LONG,
                 List.of(String.format("Donchian 20-day %s breakout (high20=%.4f low20=%.4f N=%.4f)",
                         dir, snap.high20(), snap.low20(), snap.n()),
                         "Operative exit = reverse 10-day Donchian monitor; TP is a 20N backstop"),
-                Instant.now()));
+                Instant.now())));
     }
 }

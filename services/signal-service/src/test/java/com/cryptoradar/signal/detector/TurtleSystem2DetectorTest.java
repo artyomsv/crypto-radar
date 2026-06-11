@@ -57,4 +57,23 @@ class TurtleSystem2DetectorTest {
     void firesShortOnLow55Break() {
         assertEquals("SHORT", detector.detect(ctx(79.5, snap())).get().direction());
     }
+
+    @Test
+    void silentWhenNoSnapshot() {
+        assertTrue(detector.detect(ctx(120.5, null)).isEmpty());
+    }
+
+    @Test
+    void silentWhenNoPrice() {
+        MarketContext c = new MarketContext("SOLUSDT", null,
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                Collections.emptyList(), snap());
+        assertTrue(detector.detect(c).isEmpty());
+    }
+
+    @Test
+    void silentWhenDisabled() {
+        detector.enabled = false;
+        assertTrue(detector.detect(ctx(120.5, snap())).isEmpty());
+    }
 }

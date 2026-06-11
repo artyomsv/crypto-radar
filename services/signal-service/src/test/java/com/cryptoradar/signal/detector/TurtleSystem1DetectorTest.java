@@ -55,4 +55,18 @@ class TurtleSystem1DetectorTest {
     void silentWhenNoSnapshot() {
         assertTrue(detector.detect(ctx(110.5, null)).isEmpty());
     }
+
+    @Test
+    void silentWhenNoPrice() {
+        MarketContext c = new MarketContext("ETHUSDT", null,
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                Collections.emptyList(), snap(false));
+        assertTrue(detector.detect(c).isEmpty());
+    }
+
+    @Test
+    void silentWhenDisabled() {
+        detector.enabled = false;
+        assertTrue(detector.detect(ctx(110.5, snap(false))).isEmpty());
+    }
 }

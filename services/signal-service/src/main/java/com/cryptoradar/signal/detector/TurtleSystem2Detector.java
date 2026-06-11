@@ -20,8 +20,6 @@ import java.util.Optional;
 public class TurtleSystem2Detector implements TradeSetupDetector {
 
     static final String NAME = "turtle-s2";
-    private static final double TARGET_N_MULTIPLE = 20.0;
-    private static final int MECHANICAL_ALIGNMENT = 60;
 
     @ConfigProperty(name = "turtle.s2.enabled", defaultValue = "true")
     boolean enabled;
@@ -41,12 +39,12 @@ public class TurtleSystem2Detector implements TradeSetupDetector {
         DonchianMath.Breakout dir = DonchianMath.breakoutDirection(price, snap.high55(), snap.low55());
         if (dir == DonchianMath.Breakout.NONE) return Optional.empty();
 
-        return Optional.of(BreakoutSetups.build(NAME, context.symbol(), price, snap.n(),
-                dir == DonchianMath.Breakout.LONG, DonchianMath.STOP_MULTIPLE_2N, TARGET_N_MULTIPLE,
-                MECHANICAL_ALIGNMENT,
+        return Optional.of(BreakoutSetups.build(new BreakoutSetups.BreakoutSpec(
+                NAME, context.symbol(), price, snap.n(),
+                dir == DonchianMath.Breakout.LONG,
                 List.of(String.format("Turtle S2 55-day %s breakout (high55=%.4f low55=%.4f N=%.4f)",
                         dir, snap.high55(), snap.low55(), snap.n()),
                         "Operative exit = reverse 20-day Donchian monitor; TP is a 20N backstop"),
-                Instant.now()));
+                Instant.now())));
     }
 }
