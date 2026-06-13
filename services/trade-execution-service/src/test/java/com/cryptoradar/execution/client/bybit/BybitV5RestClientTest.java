@@ -60,6 +60,7 @@ class BybitV5RestClientTest {
     @Inject BybitV5RestClient client;
     @Inject CredentialCipher cipher;
     @Inject ObjectMapper mapper;
+    @Inject BybitClock clock;
 
     String apiKeyCipher;
     String apiSecretCipher;
@@ -185,6 +186,63 @@ class BybitV5RestClientTest {
         BybitResponse<Map<String, Object>> resp =
                 client.setLeverage("DEMO", apiKeyCipher, apiSecretCipher, "BTCUSDT", 3);
         assertTrue(resp.isOk());
+    }
+
+    @Test
+    void resyncsAndRetriesOnceAfterTimestampError() throws Exception {
+        // Clock-sync endpoint the reactive retry will call.
+        stubFor(get(urlPathEqualTo("/v5/market/time"))
+                .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                        "retCode", 0, "retMsg", "OK",
+                        "result", Map.of("timeSecond", "1700000000", "timeNano", "1700000000000000000"),
+                        "time", System.currentTimeMillis())))));
+
+        String walletOk = mapper.writeValueAsString(Map.of(
+                "retCode", 0, "retMsg", "OK",
+                "result", Map.of("list", List.of()), "time", 1700000000000L));
+        String timestampError = mapper.writeValueAsString(Map.of(
+                "retCode", 10002,
+                "retMsg", "invalid request, please check your server timestamp or recv_window param",
+                "result", Map.of(), "time", 1700000000000L));
+
+        // First wallet call rejected with 10002, second (post-resync) succeeds.
+        stubFor(get(urlPathEqualTo("/v5/account/wallet-balance"))
+                .inScenario("ts").whenScenarioStateIs(com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED)
+                .willReturn(okJson(timestampError)).willSetStateTo("recovered"));
+        stubFor(get(urlPathEqualTo("/v5/account/wallet-balance"))
+                .inScenario("ts").whenScenarioStateIs("recovered")
+                .willReturn(okJson(walletOk)));
+
+        BybitResponse<BybitV5RestClient.ListResult<WalletV5>> resp =
+                client.getWalletBalance("DEMO", apiKeyCipher, apiSecretCipher);
+
+        assertTrue(resp.isOk(), "retry after clock resync should recover");
+        verify(2, getRequestedFor(urlPathEqualTo("/v5/account/wallet-balance")));
+        verify(moreThanOrExactly(1), getRequestedFor(urlPathEqualTo("/v5/market/time")));
+    }
+
+    @Test
+    void signedTimestampTracksBybitServerClockNotHostClock() throws Exception {
+        long serverAhead = System.currentTimeMillis() + 120_000; // pretend host is 2 min behind
+        stubFor(get(urlPathEqualTo("/v5/market/time"))
+                .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                        "retCode", 0, "retMsg", "OK",
+                        "result", Map.of("timeSecond", String.valueOf(serverAhead / 1000),
+                                "timeNano", serverAhead + "000000"),
+                        "time", serverAhead)))));
+        clock.sync(); // adopt the +2min offset
+
+        stubFor(get(urlPathEqualTo("/v5/account/wallet-balance"))
+                .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                        "retCode", 0, "retMsg", "OK",
+                        "result", Map.of("list", List.of()), "time", 1700000000000L)))));
+
+        client.getWalletBalance("DEMO", apiKeyCipher, apiSecretCipher);
+
+        var events = wireMock.findAll(getRequestedFor(urlPathEqualTo("/v5/account/wallet-balance")));
+        long sentTimestamp = Long.parseLong(events.get(0).getHeader("X-BAPI-TIMESTAMP"));
+        assertTrue(Math.abs(sentTimestamp - serverAhead) < 5000,
+                "signed timestamp should track Bybit server clock, sent=" + sentTimestamp + " server=" + serverAhead);
     }
 
     @Test

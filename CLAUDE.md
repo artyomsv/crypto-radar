@@ -194,6 +194,12 @@ Two admin endpoints repair pre-fix data without resetting the DB:
 
 `computeRMultiple` rejects rows with corrupt risk geometry (stop on the wrong side of entry, or risk distance < 0.1% of entry) so backfill artifacts cannot pollute aggregate metrics.
 
+## Bybit clock sync — drift-immune signing
+
+Same class of "silently inert" bug as the v5 trail-mirror incident. Bybit rejects any signed request whose `X-BAPI-TIMESTAMP` falls outside `[serverTime − recvWindow, serverTime + 1s]` with `retCode=10002`. The Docker Desktop / WSL2 host clock drifts behind real time after the laptop sleeps (observed: 33–34s), exceeding any sane `recv_window`, so **every** signed call — wallet, positions, orders — fails silently and the portfolio shows nothing. Bumping `recv_window` (5s→30s historically) is an arms race the clock eventually wins.
+
+Fix: `BybitV5RestClient` never signs with the raw local clock. `BybitClock` (`@ApplicationScoped`) holds an offset = `bybitServerMillis − localMillis`, read from the unsigned `/v5/market/time`; `signedHeaders` uses `clock.nowMillis()` (`System.currentTimeMillis() + offset`). Three self-recovery layers: **startup prime** (`@Observes StartupEvent`), **periodic resync** (`@Scheduled`, `bybit.clock.sync-interval` default 30s), and **reactive resync** — `signedGet`/`signedPost` force a `clock.sync()` and retry once on any residual `10002` (GET trivially safe; POST safe because 10002 is a pre-execution rejection and `orderLinkId` dedupes). All syncs fail-open (stale offset still beats the drifted clock). `recv_window` stays 30s as a jitter buffer. Config: `bybit.clock.sync-environment` (default MAINNET — offset is host-side, identical per env). Note: the host clock itself stays drifted — the app is immune, but `w32tm /resync` (elevated) fixes host-wide time hygiene.
+
 ## Further reading
 
 - `README.md` — high-level product description + feature list

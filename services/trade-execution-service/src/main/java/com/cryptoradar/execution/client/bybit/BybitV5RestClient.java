@@ -35,14 +35,17 @@ import java.util.TreeMap;
 public class BybitV5RestClient {
 
     private static final Logger LOG = Logger.getLogger(BybitV5RestClient.class);
-    // Was 5000ms. Bumped to 30s after a clock-skew incident: the Docker
-    // Desktop WSL VM clock drifts after the laptop sleeps, and 7-8s of skew
-    // exceeds the 5s window — every signed call gets rejected with
-    // retCode=10002 until Windows w32tm resyncs. 30s tolerates ordinary drift
-    // without weakening signature security (timestamp is still part of the
-    // HMAC payload, replayability bounded by recv_window not enabled here).
+    // recv_window is a jitter buffer only — request timestamps come from
+    // BybitClock (synced to Bybit server time), not the raw host clock, so
+    // large host drift no longer trips retCode=10002. 30s comfortably absorbs
+    // network latency and sub-sync-interval jitter without weakening signature
+    // security (the timestamp is part of the HMAC payload).
     private static final String RECV_WINDOW = "30000";
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    // Bybit "invalid request, please check your server timestamp or recv_window".
+    // If we still see this after signing with the synced clock, the offset is
+    // stale (e.g. the laptop just resumed) — force a resync and retry once.
+    private static final int RETCODE_TIMESTAMP_ERROR = 10002;
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -50,6 +53,7 @@ public class BybitV5RestClient {
 
     @Inject ObjectMapper mapper;
     @Inject CredentialCipher cipher;
+    @Inject BybitClock clock;
 
     @ConfigProperty(name = "bybit.rest-base-override.DEMO")
     java.util.Optional<String> demoBaseOverride;
@@ -65,8 +69,9 @@ public class BybitV5RestClient {
     // =====================================================================
 
     public BybitResponse<ServerTimeResult> getServerTime(String environment) {
-        return executeGet(environment, "/v5/market/time", "", Map.of(),
-                simpleType(ServerTimeResult.class));
+        URI uri = URI.create(baseFor(environment) + "/v5/market/time");
+        HttpRequest req = HttpRequest.newBuilder(uri).timeout(TIMEOUT).GET().build();
+        return send(req, "/v5/market/time", simpleType(ServerTimeResult.class));
     }
 
     // =====================================================================
@@ -75,24 +80,21 @@ public class BybitV5RestClient {
 
     public BybitResponse<ApiKeyPermissionsV5> queryApiKey(String environment,
                                                            String apiKeyCipher, String apiSecretCipher) {
-        return executeGet(environment, "/v5/user/query-api", "",
-                signedHeaders(apiKeyCipher, apiSecretCipher, ""),
+        return signedGet(new SignedGetSpec(environment, "/v5/user/query-api", "", apiKeyCipher, apiSecretCipher),
                 simpleType(ApiKeyPermissionsV5.class));
     }
 
     public BybitResponse<ListResult<WalletV5>> getWalletBalance(String environment,
                                                                   String apiKeyCipher, String apiSecretCipher) {
         String qs = "accountType=UNIFIED";
-        return executeGet(environment, "/v5/account/wallet-balance", qs,
-                signedHeaders(apiKeyCipher, apiSecretCipher, qs),
+        return signedGet(new SignedGetSpec(environment, "/v5/account/wallet-balance", qs, apiKeyCipher, apiSecretCipher),
                 listType(WalletV5.class));
     }
 
     public BybitResponse<ListResult<PositionV5>> getPositionList(String environment,
                                                                    String apiKeyCipher, String apiSecretCipher) {
         String qs = "category=linear&settleCoin=USDT";
-        return executeGet(environment, "/v5/position/list", qs,
-                signedHeaders(apiKeyCipher, apiSecretCipher, qs),
+        return signedGet(new SignedGetSpec(environment, "/v5/position/list", qs, apiKeyCipher, apiSecretCipher),
                 listType(PositionV5.class));
     }
 
@@ -100,8 +102,7 @@ public class BybitV5RestClient {
                                                                  String apiKeyCipher, String apiSecretCipher,
                                                                  String symbol, int limit) {
         String qs = "category=linear&symbol=" + symbol + "&limit=" + limit;
-        return executeGet(environment, "/v5/position/closed-pnl", qs,
-                signedHeaders(apiKeyCipher, apiSecretCipher, qs),
+        return signedGet(new SignedGetSpec(environment, "/v5/position/closed-pnl", qs, apiKeyCipher, apiSecretCipher),
                 listType(ClosedPnlV5.class));
     }
 
@@ -114,30 +115,30 @@ public class BybitV5RestClient {
                                                             String symbol, int leverage) {
         SetLeverageRequest body = new SetLeverageRequest("linear", symbol,
                 String.valueOf(leverage), String.valueOf(leverage));
-        return executePost(environment, "/v5/position/set-leverage", body,
-                apiKeyCipher, apiSecretCipher, mapType());
+        return signedPost(new SignedPostSpec(environment, "/v5/position/set-leverage", body, apiKeyCipher, apiSecretCipher),
+                mapType());
     }
 
     public BybitResponse<PlaceOrderResult> placeOrder(String environment,
                                                        String apiKeyCipher, String apiSecretCipher,
                                                        PlaceOrderRequest req) {
-        return executePost(environment, "/v5/order/create", req,
-                apiKeyCipher, apiSecretCipher, simpleType(PlaceOrderResult.class));
+        return signedPost(new SignedPostSpec(environment, "/v5/order/create", req, apiKeyCipher, apiSecretCipher),
+                simpleType(PlaceOrderResult.class));
     }
 
     public BybitResponse<Map<String, Object>> setTradingStop(String environment,
                                                                String apiKeyCipher, String apiSecretCipher,
                                                                TradingStopRequest req) {
-        return executePost(environment, "/v5/position/trading-stop", req,
-                apiKeyCipher, apiSecretCipher, mapType());
+        return signedPost(new SignedPostSpec(environment, "/v5/position/trading-stop", req, apiKeyCipher, apiSecretCipher),
+                mapType());
     }
 
     public BybitResponse<PlaceOrderResult> cancelOrder(String environment,
                                                         String apiKeyCipher, String apiSecretCipher,
                                                         String symbol, String orderId) {
         Map<String, String> body = Map.of("category", "linear", "symbol", symbol, "orderId", orderId);
-        return executePost(environment, "/v5/order/cancel", body,
-                apiKeyCipher, apiSecretCipher, simpleType(PlaceOrderResult.class));
+        return signedPost(new SignedPostSpec(environment, "/v5/order/cancel", body, apiKeyCipher, apiSecretCipher),
+                simpleType(PlaceOrderResult.class));
     }
 
     // =====================================================================
@@ -170,10 +171,65 @@ public class BybitV5RestClient {
                 mapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
     }
 
+    /** Carrier for a signed GET — keeps the dispatch methods under the param limit. */
+    private record SignedGetSpec(String environment, String path, String queryString,
+                                 String apiKeyCipher, String apiSecretCipher) {}
+
+    /** Carrier for a signed POST. {@code body} is serialized to the signed payload. */
+    private record SignedPostSpec(String environment, String path, Object body,
+                                  String apiKeyCipher, String apiSecretCipher) {}
+
+    private <T> BybitResponse<T> signedGet(SignedGetSpec spec, JavaType type) {
+        BybitResponse<T> resp = sendSignedGet(spec, type);
+        if (resp.retCode() != RETCODE_TIMESTAMP_ERROR) {
+            return resp;
+        }
+        // Synced clock still rejected — offset is stale (likely a host resume).
+        // Force a resync and retry once; 10002 means Bybit did nothing, so a
+        // GET retry is trivially safe.
+        LOG.warnf("retCode=10002 on %s — resyncing Bybit clock and retrying once", spec.path());
+        clock.sync();
+        return sendSignedGet(spec, type);
+    }
+
+    private <T> BybitResponse<T> signedPost(SignedPostSpec spec, JavaType type) {
+        BybitResponse<T> resp = sendSignedPost(spec, type);
+        if (resp.retCode() != RETCODE_TIMESTAMP_ERROR) {
+            return resp;
+        }
+        // A 10002 is a pre-execution rejection (bad timestamp) — the order was
+        // never placed, so re-signing with a fresh timestamp and retrying once
+        // is safe. orderLinkId still dedupes any pathological double-send.
+        LOG.warnf("retCode=10002 on %s — resyncing Bybit clock and retrying once", spec.path());
+        clock.sync();
+        return sendSignedPost(spec, type);
+    }
+
+    private <T> BybitResponse<T> sendSignedGet(SignedGetSpec spec, JavaType type) {
+        String qs = spec.queryString();
+        Map<String, String> headers = signedHeaders(spec.apiKeyCipher(), spec.apiSecretCipher(), qs);
+        URI uri = URI.create(baseFor(spec.environment()) + spec.path() + (qs.isEmpty() ? "" : "?" + qs));
+        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(TIMEOUT).GET();
+        headers.forEach(rb::header);
+        return send(rb.build(), spec.path(), type);
+    }
+
+    private <T> BybitResponse<T> sendSignedPost(SignedPostSpec spec, JavaType type) {
+        String json = writeJson(spec.body());
+        Map<String, String> headers = signedHeaders(spec.apiKeyCipher(), spec.apiSecretCipher(), json);
+        URI uri = URI.create(baseFor(spec.environment()) + spec.path());
+        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(TIMEOUT)
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .header("Content-Type", "application/json");
+        headers.forEach(rb::header);
+        return send(rb.build(), spec.path(), type);
+    }
+
     private Map<String, String> signedHeaders(String keyCipher, String secretCipher, String payload) {
         String apiKey = cipher.decrypt(keyCipher);
         String apiSecret = cipher.decrypt(secretCipher);
-        String ts = String.valueOf(System.currentTimeMillis());
+        // Timestamp comes from the drift-corrected clock, not System.currentTimeMillis().
+        String ts = String.valueOf(clock.nowMillis());
         String sig = BybitV5Signer.sign(apiSecret, ts, apiKey, RECV_WINDOW, payload);
         Map<String, String> h = new TreeMap<>();
         h.put("X-BAPI-API-KEY", apiKey);
@@ -181,26 +237,6 @@ public class BybitV5RestClient {
         h.put("X-BAPI-RECV-WINDOW", RECV_WINDOW);
         h.put("X-BAPI-SIGN", sig);
         return h;
-    }
-
-    private <T> BybitResponse<T> executeGet(String environment, String path, String qs,
-                                             Map<String, String> headers, JavaType type) {
-        URI uri = URI.create(baseFor(environment) + path + (qs.isEmpty() ? "" : "?" + qs));
-        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(TIMEOUT).GET();
-        headers.forEach(rb::header);
-        return send(rb.build(), path, type);
-    }
-
-    private <T> BybitResponse<T> executePost(String environment, String path, Object body,
-                                              String keyCipher, String secretCipher, JavaType type) {
-        String json = writeJson(body);
-        Map<String, String> headers = signedHeaders(keyCipher, secretCipher, json);
-        URI uri = URI.create(baseFor(environment) + path);
-        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(TIMEOUT)
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .header("Content-Type", "application/json");
-        headers.forEach(rb::header);
-        return send(rb.build(), path, type);
     }
 
     private <T> BybitResponse<T> send(HttpRequest req, String path, JavaType type) {
