@@ -57,7 +57,7 @@ public class BybitLiquidationProvider {
                     // Subscribe to liquidation topics for all tracked symbols
                     Set<String> symbols = futuresClient.getTrackedSymbols();
                     String args = symbols.stream()
-                            .map(s -> "\"liquidation." + s + "\"")
+                            .map(s -> "\"allLiquidation." + s + "\"")
                             .collect(Collectors.joining(","));
                     ws.sendText("{\"op\":\"subscribe\",\"args\":[" + args + "]}", true);
 
@@ -87,20 +87,25 @@ public class BybitLiquidationProvider {
         try {
             JsonNode root = objectMapper.readTree(message);
             String topic = root.path("topic").asText();
-            if (!topic.startsWith("liquidation.")) return;
+            if (!topic.startsWith("allLiquidation.")) return;
 
+            // allLiquidation pushes a data ARRAY of compact records: T=time(ms),
+            // s=symbol, S=side, v=size, p=bankruptcy price (vs the deprecated
+            // `liquidation` topic's single object with full field names).
             JsonNode data = root.get("data");
-            if (data == null) return;
+            if (data == null || !data.isArray()) return;
 
-            String symbol = data.path("symbol").asText();
-            String side = data.path("side").asText().toUpperCase();
-            double price = Double.parseDouble(data.path("price").asText());
-            double qty = Double.parseDouble(data.path("size").asText());
-            long tsMs = data.path("updatedTime").asLong();
+            for (JsonNode item : data) {
+                String symbol = item.path("s").asText();
+                String side = item.path("S").asText().toUpperCase();
+                double price = Double.parseDouble(item.path("p").asText());
+                double qty = Double.parseDouble(item.path("v").asText());
+                long tsMs = item.path("T").asLong();
 
-            Liquidation liq = new Liquidation(
-                    symbol, side, price, qty, price * qty, Instant.ofEpochMilli(tsMs));
-            derivativesService.recordLiquidation(liq);
+                Liquidation liq = new Liquidation(
+                        symbol, side, price, qty, price * qty, Instant.ofEpochMilli(tsMs));
+                derivativesService.recordLiquidation(liq);
+            }
         } catch (Exception e) {
             LOG.debugf("[Bybit Liquidations] Parse error: %s", e.getMessage());
         }

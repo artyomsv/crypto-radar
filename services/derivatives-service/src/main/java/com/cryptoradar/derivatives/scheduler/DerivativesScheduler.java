@@ -34,7 +34,10 @@ public class DerivativesScheduler {
 
     private static final Logger LOG = Logger.getLogger(DerivativesScheduler.class);
 
-    private static final String LIQUIDATION_WS_URL = "wss://fstream.binance.com/ws/!forceOrder@arr";
+    // Binance decommissioned the legacy wss://fstream.binance.com/ws/ base path on
+    // 2026-04-23; legacy connections still open but receive no data (our feed died
+    // 2026-04-27). !forceOrder@arr now lives under the /market path.
+    private static final String LIQUIDATION_WS_URL = "wss://fstream.binance.com/market/ws/!forceOrder@arr";
     private static final int MAX_RECONNECT_ATTEMPTS = 10;
     private static final long INITIAL_RECONNECT_DELAY_MS = 5_000;
 

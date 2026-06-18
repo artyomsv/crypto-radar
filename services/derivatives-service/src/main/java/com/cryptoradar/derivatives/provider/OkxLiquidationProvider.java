@@ -78,6 +78,19 @@ public class OkxLiquidationProvider {
             if ("pong".equals(message)) return;
 
             JsonNode root = objectMapper.readTree(message);
+
+            // Surface subscribe acks/errors instead of silently waiting for data
+            // that never arrives — a malformed subscription used to fail invisibly.
+            String event = root.path("event").asText("");
+            if ("error".equals(event)) {
+                LOG.warnf("[OKX Liquidations] Subscribe rejected: %s", message);
+                return;
+            }
+            if ("subscribe".equals(event)) {
+                LOG.infof("[OKX Liquidations] Subscription confirmed: %s", root.path("arg"));
+                return;
+            }
+
             JsonNode data = root.get("data");
             if (data == null || !data.isArray()) return;
 
