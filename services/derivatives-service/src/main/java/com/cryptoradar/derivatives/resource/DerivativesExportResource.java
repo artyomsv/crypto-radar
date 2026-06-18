@@ -31,9 +31,9 @@ public class DerivativesExportResource {
         Instant since = Instant.now().minus(7, ChronoUnit.DAYS);
 
         StringBuilder csv = new StringBuilder();
-        csv.append("time,symbol,side,price,quantity,value_usd\n");
+        csv.append("time,symbol,side,price,quantity,value_usd,exchange\n");
 
-        String sql = "SELECT time, symbol, side, price, quantity, value_usd " +
+        String sql = "SELECT time, symbol, side, price, quantity, value_usd, exchange " +
                 "FROM liquidations WHERE time >= ? ORDER BY time DESC LIMIT ?";
 
         try (Connection conn = dataSource.getConnection();
@@ -54,6 +54,8 @@ public class DerivativesExportResource {
                             .append(rs.getDouble("quantity"))
                             .append(',')
                             .append(rs.getDouble("value_usd"))
+                            .append(',')
+                            .append(rs.getString("exchange") == null ? "" : rs.getString("exchange"))
                             .append('\n');
                 }
             }

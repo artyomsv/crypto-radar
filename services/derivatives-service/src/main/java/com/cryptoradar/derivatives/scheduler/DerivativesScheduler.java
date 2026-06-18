@@ -5,6 +5,7 @@ import com.cryptoradar.derivatives.event.RedisEventPublisher;
 import com.cryptoradar.derivatives.model.DerivativesOverview;
 import com.cryptoradar.derivatives.model.Liquidation;
 import com.cryptoradar.derivatives.model.LiquidationMap;
+import com.cryptoradar.derivatives.provider.LiquidationNormalizer;
 import com.cryptoradar.derivatives.service.DerivativesService;
 import com.cryptoradar.derivatives.service.LiquidationMapService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -205,14 +206,16 @@ public class DerivativesScheduler {
             String symbol = order.get("s").asText();
             if (!tracked.contains(symbol)) return;
 
-            String side = order.get("S").asText();
+            // Binance reports the liquidation order side; q is base-asset quantity.
+            String side = LiquidationNormalizer.liquidatedSide(
+                    LiquidationNormalizer.BINANCE, order.get("S").asText());
             double price = order.get("p").asDouble();
             double quantity = order.get("q").asDouble();
             double valueUsd = price * quantity;
             long timeMs = order.get("T").asLong();
 
-            Liquidation liq = new Liquidation(symbol, side, price, quantity, valueUsd,
-                    Instant.ofEpochMilli(timeMs));
+            Liquidation liq = new Liquidation(LiquidationNormalizer.BINANCE, symbol, side,
+                    price, quantity, valueUsd, Instant.ofEpochMilli(timeMs));
             derivativesService.recordLiquidation(liq);
 
             LOG.debugf("Liquidation: %s %s %.2f @ %.2f ($%.0f)",

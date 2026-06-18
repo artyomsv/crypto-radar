@@ -8,6 +8,7 @@ import com.cryptoradar.derivatives.model.Liquidation;
 import com.cryptoradar.derivatives.model.LongShortRatio;
 import com.cryptoradar.derivatives.model.OpenInterest;
 import com.cryptoradar.derivatives.model.SymbolDerivatives;
+import com.cryptoradar.derivatives.provider.LiquidationNormalizer;
 import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -201,12 +202,13 @@ public class DerivativesService {
         List<Liquidation> liquidations = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT symbol, side, price, quantity, value_usd, time " +
+                     "SELECT exchange, symbol, side, price, quantity, value_usd, time " +
                              "FROM liquidations ORDER BY time DESC LIMIT ?")) {
             stmt.setInt(1, clampedLimit);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     liquidations.add(new Liquidation(
+                            rs.getString("exchange"),
                             rs.getString("symbol"),
                             rs.getString("side"),
                             rs.getDouble("price"),
@@ -284,10 +286,10 @@ public class DerivativesService {
                 while (rs.next()) {
                     String side = rs.getString("side");
                     double total = rs.getDouble("total");
-                    if ("BUY".equals(side)) {
-                        totalLong = total;
-                    } else {
-                        totalShort = total;
+                    if (LiquidationNormalizer.LONG.equals(side)) {
+                        totalLong += total;
+                    } else if (LiquidationNormalizer.SHORT.equals(side)) {
+                        totalShort += total;
                     }
                 }
             }
@@ -387,8 +389,8 @@ public class DerivativesService {
      */
     public void storeLiquidationQuietly(Liquidation liq) {
         String sql = "INSERT INTO liquidations " +
-                "(time, symbol, side, price, quantity, value_usd) " +
-                "SELECT ?, ?, ?, ?, ?, ? " +
+                "(time, exchange, symbol, side, price, quantity, value_usd) " +
+                "SELECT ?, ?, ?, ?, ?, ?, ? " +
                 "WHERE NOT EXISTS (" +
                 "  SELECT 1 FROM liquidations " +
                 "  WHERE time = ? AND symbol = ? AND side = ? AND price = ?" +
@@ -396,15 +398,16 @@ public class DerivativesService {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setTimestamp(1, Timestamp.from(liq.getTime()));
-            stmt.setString(2, liq.getSymbol());
-            stmt.setString(3, liq.getSide());
-            stmt.setDouble(4, liq.getPrice());
-            stmt.setDouble(5, liq.getQuantity());
-            stmt.setDouble(6, liq.getValueUsd());
-            stmt.setTimestamp(7, Timestamp.from(liq.getTime()));
-            stmt.setString(8, liq.getSymbol());
-            stmt.setString(9, liq.getSide());
-            stmt.setDouble(10, liq.getPrice());
+            stmt.setString(2, liq.getExchange());
+            stmt.setString(3, liq.getSymbol());
+            stmt.setString(4, liq.getSide());
+            stmt.setDouble(5, liq.getPrice());
+            stmt.setDouble(6, liq.getQuantity());
+            stmt.setDouble(7, liq.getValueUsd());
+            stmt.setTimestamp(8, Timestamp.from(liq.getTime()));
+            stmt.setString(9, liq.getSymbol());
+            stmt.setString(10, liq.getSide());
+            stmt.setDouble(11, liq.getPrice());
             stmt.executeUpdate();
         } catch (Exception e) {
             LOG.debugf("Failed to store backfill liquidation for %s: %s", liq.getSymbol(), e.getMessage());
@@ -413,16 +416,17 @@ public class DerivativesService {
 
     private void storeLiquidation(Liquidation liq) {
         String sql = "INSERT INTO liquidations " +
-                "(time, symbol, side, price, quantity, value_usd) " +
-                "VALUES (?, ?, ?, ?, ?, ?)";
+                "(time, exchange, symbol, side, price, quantity, value_usd) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setTimestamp(1, Timestamp.from(liq.getTime()));
-            stmt.setString(2, liq.getSymbol());
-            stmt.setString(3, liq.getSide());
-            stmt.setDouble(4, liq.getPrice());
-            stmt.setDouble(5, liq.getQuantity());
-            stmt.setDouble(6, liq.getValueUsd());
+            stmt.setString(2, liq.getExchange());
+            stmt.setString(3, liq.getSymbol());
+            stmt.setString(4, liq.getSide());
+            stmt.setDouble(5, liq.getPrice());
+            stmt.setDouble(6, liq.getQuantity());
+            stmt.setDouble(7, liq.getValueUsd());
             stmt.executeUpdate();
         } catch (Exception e) {
             LOG.warnf("Failed to store liquidation for %s: %s", liq.getSymbol(), e.getMessage());

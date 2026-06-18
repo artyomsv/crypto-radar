@@ -12,10 +12,14 @@ import org.jboss.logging.Logger;
 
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +31,8 @@ public class OkxLiquidationProvider {
     private static final String WS_URL = "wss://ws.okx.com:8443/ws/v5/public";
     private static final String SUBSCRIBE_MSG =
             "{\"op\":\"subscribe\",\"args\":[{\"channel\":\"liquidation-orders\",\"instType\":\"SWAP\"}]}";
+    private static final String INSTRUMENTS_URL =
+            "https://www.okx.com/api/v5/public/instruments?instType=SWAP";
 
     @Inject
     DerivativesService derivativesService;
@@ -34,12 +40,51 @@ public class OkxLiquidationProvider {
     @Inject
     ObjectMapper objectMapper;
 
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10)).build();
+    // instId -> base-asset size of one contract (ctVal * ctMult). OKX reports
+    // liquidation size in contracts, not base asset, so this is required to
+    // compute a comparable USD notional.
+    private final Map<String, Double> contractSizes = new ConcurrentHashMap<>();
+
     private volatile WebSocket webSocket;
     private volatile ScheduledExecutorService heartbeat;
 
     void onStartup(@Observes StartupEvent event) {
+        loadContractSizes();
         Executors.newSingleThreadScheduledExecutor()
                 .schedule(this::connect, 10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Fetches the SWAP instrument catalogue once so liquidation contract counts
+     * can be converted to base-asset quantity. Fail-open: on error the map stays
+     * empty and liquidations for unknown instruments are skipped (better than
+     * storing a wrong notional).
+     */
+    private void loadContractSizes() {
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(INSTRUMENTS_URL))
+                    .timeout(Duration.ofSeconds(10)).GET().build();
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            JsonNode data = objectMapper.readTree(resp.body()).path("data");
+            if (!data.isArray()) return;
+            for (JsonNode inst : data) {
+                double ctVal = parseOrZero(inst.path("ctVal").asText());
+                double ctMult = parseOrZero(inst.path("ctMult").asText());
+                if (ctVal > 0 && ctMult > 0) {
+                    contractSizes.put(inst.path("instId").asText(), ctVal * ctMult);
+                }
+            }
+            LOG.infof("[OKX Liquidations] Loaded contract sizes for %d instruments", contractSizes.size());
+        } catch (Exception e) {
+            LOG.warnf("[OKX Liquidations] Failed to load contract sizes: %s", e.getMessage());
+        }
+    }
+
+    private static double parseOrZero(String s) {
+        try { return s == null || s.isEmpty() ? 0 : Double.parseDouble(s); }
+        catch (NumberFormatException e) { return 0; }
     }
 
     private void connect() {
@@ -99,17 +144,26 @@ public class OkxLiquidationProvider {
                 // Map "BTC-USDT-SWAP" -> "BTCUSDT"
                 String symbol = instId.replace("-SWAP", "").replace("-", "");
 
+                Double contractSize = contractSizes.get(instId);
+                if (contractSize == null) {
+                    LOG.debugf("[OKX Liquidations] No contract size for %s — skipping", instId);
+                    continue;
+                }
+
                 JsonNode details = item.get("details");
                 if (details == null || !details.isArray()) continue;
 
                 for (JsonNode detail : details) {
-                    String side = detail.path("side").asText().toUpperCase();
+                    // OKX reports the liquidation order side; sz is in contracts.
+                    String side = LiquidationNormalizer.liquidatedSide(
+                            LiquidationNormalizer.OKX, detail.path("side").asText());
                     double price = Double.parseDouble(detail.path("px").asText());
-                    double qty = Double.parseDouble(detail.path("sz").asText());
+                    double contracts = Double.parseDouble(detail.path("sz").asText());
+                    double qty = LiquidationNormalizer.contractsToBaseQty(contracts, contractSize, 1.0);
                     long tsMs = Long.parseLong(detail.path("ts").asText());
 
-                    Liquidation liq = new Liquidation(
-                            symbol, side, price, qty, price * qty, Instant.ofEpochMilli(tsMs));
+                    Liquidation liq = new Liquidation(LiquidationNormalizer.OKX, symbol, side,
+                            price, qty, price * qty, Instant.ofEpochMilli(tsMs));
                     derivativesService.recordLiquidation(liq);
                 }
             }

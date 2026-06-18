@@ -4,6 +4,7 @@ import java.time.Instant;
 
 public class Liquidation {
 
+    private String exchange;
     private String symbol;
     private String side;
     private double price;
@@ -13,8 +14,9 @@ public class Liquidation {
 
     public Liquidation() {}
 
-    public Liquidation(String symbol, String side, double price, double quantity,
+    public Liquidation(String exchange, String symbol, String side, double price, double quantity,
                        double valueUsd, Instant time) {
+        this.exchange = exchange;
         this.symbol = symbol;
         this.side = side;
         this.price = price;
@@ -22,6 +24,9 @@ public class Liquidation {
         this.valueUsd = valueUsd;
         this.time = time;
     }
+
+    public String getExchange() { return exchange; }
+    public void setExchange(String exchange) { this.exchange = exchange; }
 
     public String getSymbol() { return symbol; }
     public void setSymbol(String symbol) { this.symbol = symbol; }

@@ -97,13 +97,15 @@ public class BybitLiquidationProvider {
 
             for (JsonNode item : data) {
                 String symbol = item.path("s").asText();
-                String side = item.path("S").asText().toUpperCase();
+                // Bybit reports the liquidated position side; v is base-asset size.
+                String side = LiquidationNormalizer.liquidatedSide(
+                        LiquidationNormalizer.BYBIT, item.path("S").asText());
                 double price = Double.parseDouble(item.path("p").asText());
                 double qty = Double.parseDouble(item.path("v").asText());
                 long tsMs = item.path("T").asLong();
 
-                Liquidation liq = new Liquidation(
-                        symbol, side, price, qty, price * qty, Instant.ofEpochMilli(tsMs));
+                Liquidation liq = new Liquidation(LiquidationNormalizer.BYBIT, symbol, side,
+                        price, qty, price * qty, Instant.ofEpochMilli(tsMs));
                 derivativesService.recordLiquidation(liq);
             }
         } catch (Exception e) {

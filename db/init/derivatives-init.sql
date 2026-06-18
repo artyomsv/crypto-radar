@@ -30,7 +30,10 @@ CREATE INDEX IF NOT EXISTS idx_oi_symbol_time ON open_interest (symbol, time DES
 -- Liquidation events
 CREATE TABLE IF NOT EXISTS liquidations (
     time TIMESTAMPTZ NOT NULL,
+    exchange VARCHAR(16),
     symbol VARCHAR(20) NOT NULL,
+    -- side stores the liquidated POSITION side: 'LONG' or 'SHORT' (normalized
+    -- across venues; quantity/value_usd are base-asset notional).
     side VARCHAR(10) NOT NULL,
     price DOUBLE PRECISION NOT NULL,
     quantity DOUBLE PRECISION NOT NULL,
@@ -39,6 +42,7 @@ CREATE TABLE IF NOT EXISTS liquidations (
 SELECT create_hypertable('liquidations', 'time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS idx_liq_symbol_time ON liquidations (symbol, time DESC);
 CREATE INDEX IF NOT EXISTS idx_liq_side ON liquidations (side, time DESC);
+CREATE INDEX IF NOT EXISTS idx_liq_exchange_time ON liquidations (exchange, time DESC);
 
 -- Long/short ratio snapshots
 CREATE TABLE IF NOT EXISTS long_short_ratio (

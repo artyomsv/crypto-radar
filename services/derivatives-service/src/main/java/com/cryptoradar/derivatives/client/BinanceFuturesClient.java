@@ -2,6 +2,7 @@ package com.cryptoradar.derivatives.client;
 
 import com.cryptoradar.derivatives.model.FundingRate;
 import com.cryptoradar.derivatives.model.Liquidation;
+import com.cryptoradar.derivatives.provider.LiquidationNormalizer;
 import com.cryptoradar.derivatives.model.LongShortRatio;
 import com.cryptoradar.derivatives.model.OpenInterest;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -224,11 +225,13 @@ public class BinanceFuturesClient {
             List<Liquidation> results = new ArrayList<>();
             for (JsonNode node : root) {
                 String sym = node.get("symbol").asText();
-                String side = node.get("side").asText();
+                String side = LiquidationNormalizer.liquidatedSide(
+                        LiquidationNormalizer.BINANCE, node.get("side").asText());
                 double price = node.get("price").asDouble();
                 double qty = node.get("executedQty").asDouble();
                 long timeMs = node.get("time").asLong();
-                results.add(new Liquidation(sym, side, price, qty, price * qty, Instant.ofEpochMilli(timeMs)));
+                results.add(new Liquidation(LiquidationNormalizer.BINANCE, sym, side, price, qty,
+                        price * qty, Instant.ofEpochMilli(timeMs)));
             }
             return results;
         } catch (InterruptedException e) {
