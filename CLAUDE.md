@@ -200,6 +200,36 @@ Same class of "silently inert" bug as the v5 trail-mirror incident. Bybit reject
 
 Fix: `BybitV5RestClient` never signs with the raw local clock. `BybitClock` (`@ApplicationScoped`) holds an offset = `bybitServerMillis − localMillis`, read from the unsigned `/v5/market/time`; `signedHeaders` uses `clock.nowMillis()` (`System.currentTimeMillis() + offset`). Three self-recovery layers: **startup prime** (`@Observes StartupEvent`), **periodic resync** (`@Scheduled`, `bybit.clock.sync-interval` default 30s), and **reactive resync** — `signedGet`/`signedPost` force a `clock.sync()` and retry once on any residual `10002` (GET trivially safe; POST safe because 10002 is a pre-execution rejection and `orderLinkId` dedupes). All syncs fail-open (stale offset still beats the drifted clock). `recv_window` stays 30s as a jitter buffer. Config: `bybit.clock.sync-environment` (default MAINNET — offset is host-side, identical per env). Note: the host clock itself stays drifted — the app is immune, but `w32tm /resync` (elevated) fixes host-wide time hygiene.
 
+## AI probability gate — Phase 1 (shadow), signal-service
+
+Replacement for the uncalibrated `alignment` score, which measured flat-to-inverted vs win
+rate (70+ bucket negative expectancy). Lives in `services/signal-service/.../probability/`.
+**Shadow only — places no orders, changes no execution.**
+
+- **`ProbabilityScanScheduler`** (`@Scheduled probability.scan.interval`, default 1h) — per
+  symbol from the cached `SignalOverview`: synthesizes one ATR-geometry `Candidate`
+  (`CandidateBuilder`: entry=last 1h close, stop=1.5×ATR, target=2R, MIN_RISK_PCT floor;
+  direction = sign of `overallScore`), scores it two ways, persists a PENDING row.
+- **Hybrid estimator** (`WinProbabilityEstimator`): a **calibrated** `LogisticWinModel`
+  (pure logistic regression trained in-process from closed `signal_outcomes` — the only
+  features with historical labels, the 6 dimension scores; label = `HIT_TARGET`; retrain
+  `probability.model.retrain-interval`, default 6h) **plus** an LLM overlay
+  (`GeminiProbabilityClient`, gemini-3.1-flash-lite, fail-open). Both probabilities logged
+  **independently** — the blend is a Phase 2 decision made from calibration evidence.
+- **`ShadowOutcomeEvaluator`** (`@Scheduled probability.eval.interval`, default 15m) walks 1h
+  candles forward (72h hold, stop-first on straddle) to set the realized
+  HIT_TARGET/HIT_STOP/EXPIRED label.
+- **`probability_candidates`** table (regular, not a hypertable — low volume; in `signal-init.sql`):
+  geometry + `stats_prob` + `llm_prob` + `llm_reasoning` + `features_json` + realized outcome.
+- **`GET /api/signals/probability/calibration`** (proxied via gateway) — reliability curve
+  (predicted-prob decile → realized win rate) for stats and LLM separately. The evidence that
+  decides promotion to a live gate.
+- Phasing: Phase 1 = this (shadow + calibration data collection). Phase 2 = train a rich-feature
+  model on accrued shadow data, promote to a live EV gate once calibrated. Phase 3 = retire
+  `alignment`/detectors as entry driver. Spec: `docs/superpowers/specs/2026-06-18-ai-probability-gate-design.md`.
+- Observed at deploy: stats P ≈ 0.13–0.18 (anchored to the real ~19% target-before-stop base
+  rate at 2:1 R:R), LLM P ≈ 0.35–0.62 — the divergence is what calibration will adjudicate.
+
 ## Further reading
 
 - `README.md` — high-level product description + feature list

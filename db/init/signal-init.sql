@@ -159,3 +159,36 @@ INSERT INTO deployment_markers (deployed_at, version, description) VALUES
      'exit (10d/20d), mutual exclusion among breakout family, exempt from ' ||
      'intraday stagnation/trail + alignment floor. Pyramiding = Plan 3.')
 ON CONFLICT (deployed_at) DO NOTHING;
+
+-- AI probability gate (Phase 1, shadow): hourly scan synthesizes ATR-geometry
+-- candidates, scores each with a calibrated logistic model + LLM overlay, and
+-- forward-evaluates the realized HIT_TARGET/HIT_STOP/EXPIRED outcome. Shadow only —
+-- no live orders. Regular table (low volume), not a hypertable.
+CREATE TABLE IF NOT EXISTS probability_candidates (
+    id            BIGSERIAL PRIMARY KEY,
+    scanned_at    TIMESTAMPTZ NOT NULL,
+    symbol        VARCHAR(32) NOT NULL,
+    direction     VARCHAR(8)  NOT NULL,
+    entry_price   DOUBLE PRECISION NOT NULL,
+    stop_price    DOUBLE PRECISION NOT NULL,
+    target_price  DOUBLE PRECISION NOT NULL,
+    atr           DOUBLE PRECISION NOT NULL,
+    risk_reward   DOUBLE PRECISION NOT NULL,
+    stats_prob    DOUBLE PRECISION,
+    llm_prob      DOUBLE PRECISION,
+    llm_reasoning TEXT,
+    features_json TEXT,
+    status        VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    closed_at     TIMESTAMPTZ,
+    closed_price  DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS idx_prob_cand_status ON probability_candidates (status, scanned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prob_cand_symbol ON probability_candidates (symbol, scanned_at DESC);
+
+INSERT INTO deployment_markers (deployed_at, version, description) VALUES
+    ('2026-06-18T00:00:00Z', 'v9-probability-gate-shadow',
+     'AI probability gate Phase 1 (shadow): hourly ATR-candidate scan, calibrated ' ||
+     'logistic win-model (trained on signal_outcomes) + Gemini overlay, shadow ' ||
+     'forward-evaluation, /api/signals/probability/calibration reliability curve. ' ||
+     'No live execution change.')
+ON CONFLICT (deployed_at) DO NOTHING;

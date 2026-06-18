@@ -351,6 +351,13 @@ public class ProxyResource {
     }
 
     @GET
+    @Path("/signals/probability/calibration")
+    public Response getProbabilityCalibration() {
+        return proxyResponse(serviceClient.getRaw(
+                serviceClient.getSignalServiceUrl() + "/api/signals/probability/calibration"));
+    }
+
+    @GET
     @Path("/signals/metrics")
     public Response getSignalMetrics(@QueryParam("periodDays") @DefaultValue("30") int periodDays) {
         String url = serviceClient.getSignalServiceUrl() + "/api/signals/metrics?periodDays=" + periodDays;
