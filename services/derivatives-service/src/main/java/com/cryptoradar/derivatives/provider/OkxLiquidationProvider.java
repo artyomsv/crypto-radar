@@ -1,5 +1,6 @@
 package com.cryptoradar.derivatives.provider;
 
+import com.cryptoradar.derivatives.client.BinanceFuturesClient;
 import com.cryptoradar.derivatives.model.Liquidation;
 import com.cryptoradar.derivatives.service.DerivativesService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,6 +37,9 @@ public class OkxLiquidationProvider {
 
     @Inject
     DerivativesService derivativesService;
+
+    @Inject
+    BinanceFuturesClient futuresClient;
 
     @Inject
     ObjectMapper objectMapper;
@@ -144,6 +148,11 @@ public class OkxLiquidationProvider {
                 // Map "BTC-USDT-SWAP" -> "BTCUSDT"
                 String symbol = instId.replace("-SWAP", "").replace("-", "");
 
+                // OKX streams all SWAP liquidations market-wide; scope to the
+                // symbols we track (Binance/Bybit are already scoped) so the
+                // table isn't flooded with exotic alts we never trade.
+                if (!futuresClient.getTrackedSymbols().contains(symbol)) continue;
+
                 Double contractSize = contractSizes.get(instId);
                 if (contractSize == null) {
                     LOG.debugf("[OKX Liquidations] No contract size for %s — skipping", instId);
@@ -154,10 +163,11 @@ public class OkxLiquidationProvider {
                 if (details == null || !details.isArray()) continue;
 
                 for (JsonNode detail : details) {
-                    // OKX reports the liquidation order side; sz is in contracts.
+                    // OKX reports the liquidation order side; sz is in contracts;
+                    // the price field is bkPx (bankruptcy price), not px.
                     String side = LiquidationNormalizer.liquidatedSide(
                             LiquidationNormalizer.OKX, detail.path("side").asText());
-                    double price = Double.parseDouble(detail.path("px").asText());
+                    double price = Double.parseDouble(detail.path("bkPx").asText());
                     double contracts = Double.parseDouble(detail.path("sz").asText());
                     double qty = LiquidationNormalizer.contractsToBaseQty(contracts, contractSize, 1.0);
                     long tsMs = Long.parseLong(detail.path("ts").asText());
