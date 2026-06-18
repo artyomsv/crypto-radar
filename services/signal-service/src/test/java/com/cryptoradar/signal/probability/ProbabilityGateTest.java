@@ -1,7 +1,10 @@
 package com.cryptoradar.signal.probability;
 
+import com.cryptoradar.signal.model.CandleBar;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -114,5 +117,65 @@ class ProbabilityGateTest {
                 CalibrationReporter.bucketize(List.of(new double[]{1.0, 1}));
         assertEquals(1, buckets.size());
         assertEquals("0.9-1.0", buckets.get(0).range());
+    }
+
+    // ---- TechnicalIndicators ----
+
+    @Test
+    void computeReturnsNullBelowMinBars() {
+        assertNull(TechnicalIndicators.compute(barsOfCloses(closesRange(10))));
+    }
+
+    @Test
+    void rsiIsHundredWhenEveryBarRises() {
+        double[] closes = closesRange(40); // strictly increasing
+        assertEquals(100.0, TechnicalIndicators.rsi(closes, 14), 1e-9);
+    }
+
+    @Test
+    void bollingerPercentBIsHalfAtTheMean() {
+        // Flat series -> sd 0 -> guarded to 0.5
+        double[] flat = new double[25];
+        java.util.Arrays.fill(flat, 100.0);
+        assertEquals(0.5, TechnicalIndicators.bollingerPercentB(flat, 20, 2.0), 1e-9);
+    }
+
+    @Test
+    void momentumIsTenPercentOverTenBars() {
+        double[] closes = new double[20];
+        for (int i = 0; i < 20; i++) closes[i] = 100.0;
+        closes[19] = 110.0; // last is 10% above closes[9]=100
+        assertEquals(0.10, TechnicalIndicators.momentum(closes, 10), 1e-9);
+    }
+
+    @Test
+    void realizedVolIsZeroForConstantPrice() {
+        double[] flat = new double[30];
+        java.util.Arrays.fill(flat, 50.0);
+        assertEquals(0.0, TechnicalIndicators.realizedVolPct(flat), 1e-9);
+    }
+
+    @Test
+    void computeProducesAllIndicatorsWithEnoughBars() {
+        TechnicalIndicators ind = TechnicalIndicators.compute(barsOfCloses(closesRange(50)));
+        assertNotNull(ind);
+        assertEquals(100.0, ind.rsi14(), 1e-9);          // strictly rising
+        assertTrue(ind.macdHistogram() >= 0);            // uptrend -> non-negative histogram
+    }
+
+    private static double[] closesRange(int n) {
+        double[] c = new double[n];
+        for (int i = 0; i < n; i++) c[i] = 100.0 + i; // strictly increasing
+        return c;
+    }
+
+    private static List<CandleBar> barsOfCloses(double[] closes) {
+        List<CandleBar> bars = new ArrayList<>();
+        Instant t = Instant.parse("2026-01-01T00:00:00Z");
+        for (double close : closes) {
+            bars.add(new CandleBar(t, close, close + 1, close - 1, close, 1000.0));
+            t = t.plusSeconds(3600);
+        }
+        return bars;
     }
 }

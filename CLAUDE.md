@@ -219,6 +219,12 @@ rate (70+ bucket negative expectancy). Lives in `services/signal-service/.../pro
 - **`ShadowOutcomeEvaluator`** (`@Scheduled probability.eval.interval`, default 15m) walks 1h
   candles forward (72h hold, stop-first on straddle) to set the realized
   HIT_TARGET/HIT_STOP/EXPIRED label.
+- **`FeatureAssembler`** builds the `features_json` snapshot logged per candidate: the 6
+  dimension scores (what Phase 1's logistic model trains on) PLUS the raw instruments a rich
+  Phase 2 model will use — candle-derived `TechnicalIndicators` (RSI/Bollinger %B/MACD
+  histogram/momentum/realized-vol/volume ratio) and `liqImbalance24h` (multi-venue LONG-vs-SHORT
+  liquidation $ from `LiquidationImbalanceReader`). These raw features only accrue going forward,
+  so they are logged from day one of shadow.
 - **`probability_candidates`** table (regular, not a hypertable — low volume; in `signal-init.sql`):
   geometry + `stats_prob` + `llm_prob` + `llm_reasoning` + `features_json` + realized outcome.
 - **`GET /api/signals/probability/calibration`** (proxied via gateway) — reliability curve

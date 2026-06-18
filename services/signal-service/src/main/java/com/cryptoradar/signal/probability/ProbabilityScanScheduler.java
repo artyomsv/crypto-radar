@@ -37,6 +37,7 @@ public class ProbabilityScanScheduler {
     @Inject CandleClient candleClient;
     @Inject WinProbabilityEstimator estimator;
     @Inject ProbabilityCandidateRepository repository;
+    @Inject FeatureAssembler featureAssembler;
     @Inject ObjectMapper mapper;
 
     @Scheduled(every = "{probability.scan.interval:1h}", delayed = "90s", identity = "probability-scan")
@@ -72,14 +73,14 @@ public class ProbabilityScanScheduler {
         double statsProb = estimator.statsProbability(dimScores);
         Optional<GeminiProbabilityClient.LlmEstimate> llm =
                 estimator.llmProbability(buildPrompt(symbol, candidate, signal, dimScores));
+        String featuresJson = toJson(featureAssembler.assemble(signal, candidate, bars, dimScores));
 
-        persist(symbol, candidate, statsProb, llm, dimScores, signal);
+        persist(symbol, candidate, statsProb, llm, featuresJson);
         return true;
     }
 
     private void persist(String symbol, Candidate candidate, double statsProb,
-                         Optional<GeminiProbabilityClient.LlmEstimate> llm,
-                         Map<String, Double> dimScores, TradingSignal signal) {
+                         Optional<GeminiProbabilityClient.LlmEstimate> llm, String featuresJson) {
         ProbabilityCandidate row = new ProbabilityCandidate();
         row.scannedAt = Instant.now();
         row.symbol = symbol;
@@ -92,9 +93,17 @@ public class ProbabilityScanScheduler {
         row.statsProb = statsProb;
         row.llmProb = llm.map(GeminiProbabilityClient.LlmEstimate::probability).orElse(null);
         row.llmReasoning = llm.map(GeminiProbabilityClient.LlmEstimate::reasoning).orElse(null);
-        row.featuresJson = featuresJson(dimScores, signal, candidate);
+        row.featuresJson = featuresJson;
         row.status = ProbabilityCandidate.STATUS_PENDING;
         repository.persist(row);
+    }
+
+    private String toJson(Map<String, Object> features) {
+        try {
+            return mapper.writeValueAsString(features);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     private Map<String, Double> dimensionScores(TradingSignal signal) {
@@ -103,19 +112,6 @@ public class ProbabilityScanScheduler {
             scores.put(dim.name(), dim.score());
         }
         return scores;
-    }
-
-    private String featuresJson(Map<String, Double> dimScores, TradingSignal signal, Candidate candidate) {
-        Map<String, Object> features = new LinkedHashMap<>(dimScores);
-        features.put("overallScore", signal.getOverallScore());
-        features.put("alignment", signal.getAlignment());
-        features.put("atr", candidate.atr());
-        features.put("atrPct", candidate.atr() / candidate.entry());
-        try {
-            return mapper.writeValueAsString(features);
-        } catch (Exception e) {
-            return "{}";
-        }
     }
 
     private String buildPrompt(String symbol, Candidate candidate, TradingSignal signal,
