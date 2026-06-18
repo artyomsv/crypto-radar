@@ -2,7 +2,6 @@ package com.cryptoradar.options.service;
 
 import com.cryptoradar.options.client.BybitOptionsClient;
 import com.cryptoradar.options.client.dto.BybitResponse;
-import com.cryptoradar.options.client.dto.HistoricalVolV5;
 import com.cryptoradar.options.client.dto.OptionTickerV5;
 import com.cryptoradar.options.model.OptionSnapshot;
 import com.cryptoradar.options.repository.OptionSnapshotRepository;
@@ -48,6 +47,7 @@ public class OptionsCollectorService {
     @Inject BybitOptionsClient client;
     @Inject OptionSnapshotRepository snapshotRepo;
     @Inject AgroalDataSource dataSource;
+    @Inject RealizedVolService realizedVolService;
 
     @ConfigProperty(name = "options.max-expiry-days", defaultValue = "4")
     int maxExpiryDays;
@@ -139,23 +139,21 @@ public class OptionsCollectorService {
     }
 
     /**
-     * Persist the latest HV reading per (underlying, period). Bybit returns a
-     * time series — we keep only the most recent point per poll cycle.
+     * Persist the latest realized-vol reading per (underlying, period).
+     *
+     * <p>Source is our own {@code candles} hypertable via {@link RealizedVolService},
+     * not Bybit's {@code /v5/market/historical-volatility} endpoint — that endpoint
+     * was found to return an empty array for every baseCoin (BTC included), so it
+     * yielded zero rows. Historical vol IS realized vol (annualized stdev of log
+     * returns), so candle-derived RV is a faithful, more robust replacement.
      */
     public void collectHistoricalVol(String underlying, int periodDays) {
-        BybitResponse<List<HistoricalVolV5>> resp;
-        try {
-            resp = client.getHistoricalVolatility(underlying, periodDays);
-        } catch (RuntimeException e) {
-            LOG.warnf(e, "HV fetch failed for %s/%d", underlying, periodDays);
+        Double hv = realizedVolService.computeAnnualized(underlying, periodDays);
+        if (hv == null) {
+            LOG.debugf("RV unavailable for %s/%d (insufficient candle history)", underlying, periodDays);
             return;
         }
-        if (!resp.isOk() || resp.result() == null || resp.result().isEmpty()) return;
-        HistoricalVolV5 latest = resp.result().get(0);
-        Double hv = parseDouble(latest.value());
-        if (hv == null) return;
-        Instant t = Instant.ofEpochMilli(Long.parseLong(latest.timeMs()));
-        upsertHv(t, underlying, periodDays, hv);
+        upsertHv(Instant.now(), underlying, periodDays, hv);
     }
 
     private void upsertHv(Instant time, String underlying, int periodDays, double hv) {

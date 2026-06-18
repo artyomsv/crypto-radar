@@ -91,16 +91,17 @@ public class DerivativesService {
      */
     public void refreshLongShortRatios() {
         Set<String> symbols = futuresClient.getTrackedSymbols();
-        int count = 0;
+        List<LongShortRatio> fetched = new ArrayList<>();
         for (String symbol : symbols) {
             LongShortRatio lsr = futuresClient.fetchLongShortRatio(symbol);
             if (lsr != null) {
                 longShortCache.put(symbol, lsr);
-                count++;
+                fetched.add(lsr);
             }
             sleepBetweenRequests();
         }
-        LOG.infof("Refreshed long/short ratios for %d/%d symbols", count, symbols.size());
+        storeLongShortRatios(fetched);
+        LOG.infof("Refreshed long/short ratios for %d/%d symbols", fetched.size(), symbols.size());
     }
 
     /**
@@ -313,6 +314,29 @@ public class DerivativesService {
             LOG.debugf("Failed to query 24h liquidations for %s: %s", symbol, e.getMessage());
         }
         return 0;
+    }
+
+    private void storeLongShortRatios(List<LongShortRatio> ratios) {
+        String sql = "INSERT INTO long_short_ratio " +
+                "(time, symbol, long_account, short_account, long_short_ratio) " +
+                "VALUES (?, ?, ?, ?, ?) " +
+                "ON CONFLICT (time, symbol) DO UPDATE SET " +
+                "long_account = EXCLUDED.long_account, short_account = EXCLUDED.short_account, " +
+                "long_short_ratio = EXCLUDED.long_short_ratio";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            for (LongShortRatio lsr : ratios) {
+                stmt.setTimestamp(1, Timestamp.from(lsr.getTimestamp()));
+                stmt.setString(2, lsr.getSymbol());
+                stmt.setDouble(3, lsr.getLongAccount());
+                stmt.setDouble(4, lsr.getShortAccount());
+                stmt.setDouble(5, lsr.getLongShortRatio());
+                stmt.addBatch();
+            }
+            stmt.executeBatch();
+        } catch (Exception e) {
+            LOG.warnf("Failed to store long/short ratios: %s", e.getMessage());
+        }
     }
 
     private void storeFundingRates(List<FundingRate> rates) {
