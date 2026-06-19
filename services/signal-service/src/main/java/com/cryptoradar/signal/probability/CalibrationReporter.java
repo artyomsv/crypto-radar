@@ -22,22 +22,32 @@ public class CalibrationReporter {
     @Inject
     ProbabilityCandidateRepository repository;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "probability.config-tag", defaultValue = "v2-1to1-flip")
+    String configTag;
+
     /** One predicted-probability bucket and the realized win rate within it. */
     public record Bucket(String range, int sampleSize, double avgPredicted, double realizedWinRate) {}
 
-    public record Report(int totalClosed, List<Bucket> stats, List<Bucket> llm) {}
+    public record Report(String configTag, int totalClosed, double realizedWinRate,
+                         List<Bucket> stats, List<Bucket> llm, List<Bucket> calibrated) {}
 
     @Transactional
     public Report report() {
-        List<ProbabilityCandidate> closed = repository.findClosedWithStatsProb();
+        List<ProbabilityCandidate> closed = repository.findClosedForTag(configTag);
         List<double[]> statsPairs = new ArrayList<>();
         List<double[]> llmPairs = new ArrayList<>();
+        List<double[]> calibratedPairs = new ArrayList<>();
+        int wins = 0;
         for (ProbabilityCandidate c : closed) {
             int won = ProbabilityCandidate.STATUS_HIT_TARGET.equals(c.status) ? 1 : 0;
+            wins += won;
             if (c.statsProb != null) statsPairs.add(new double[]{c.statsProb, won});
             if (c.llmProb != null) llmPairs.add(new double[]{c.llmProb, won});
+            if (c.calibratedProb != null) calibratedPairs.add(new double[]{c.calibratedProb, won});
         }
-        return new Report(closed.size(), bucketize(statsPairs), bucketize(llmPairs));
+        double realized = closed.isEmpty() ? 0.0 : (double) wins / closed.size();
+        return new Report(configTag, closed.size(), realized,
+                bucketize(statsPairs), bucketize(llmPairs), bucketize(calibratedPairs));
     }
 
     /**

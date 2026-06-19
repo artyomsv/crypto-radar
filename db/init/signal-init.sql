@@ -180,7 +180,11 @@ CREATE TABLE IF NOT EXISTS probability_candidates (
     features_json TEXT,
     status        VARCHAR(16) NOT NULL DEFAULT 'PENDING',
     closed_at     TIMESTAMPTZ,
-    closed_price  DOUBLE PRECISION
+    closed_price  DOUBLE PRECISION,
+    config_tag    VARCHAR(32),
+    mfe_atr       DOUBLE PRECISION,
+    mae_atr       DOUBLE PRECISION,
+    calibrated_prob DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS idx_prob_cand_status ON probability_candidates (status, scanned_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prob_cand_symbol ON probability_candidates (symbol, scanned_at DESC);

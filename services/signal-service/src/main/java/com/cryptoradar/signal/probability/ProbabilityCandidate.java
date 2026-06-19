@@ -75,4 +75,19 @@ public class ProbabilityCandidate {
 
     @Column(name = "closed_price")
     public Double closedPrice;
+
+    /** Generator config that produced this candidate (geometry + direction policy). */
+    @Column(name = "config_tag")
+    public String configTag;
+
+    /** Max favorable / adverse excursion over the candidate's life, in ATR units. */
+    @Column(name = "mfe_atr")
+    public Double mfeAtr;
+
+    @Column(name = "mae_atr")
+    public Double maeAtr;
+
+    /** Empirically recalibrated win probability (from {@code ProbabilityCalibrator}). */
+    @Column(name = "calibrated_prob")
+    public Double calibratedProb;
 }

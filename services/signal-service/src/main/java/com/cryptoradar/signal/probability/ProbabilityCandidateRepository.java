@@ -22,4 +22,15 @@ public class ProbabilityCandidateRepository implements PanacheRepository<Probabi
     public List<ProbabilityCandidate> findClosedWithStatsProb() {
         return list("status <> ?1 and statsProb is not null", ProbabilityCandidate.STATUS_PENDING);
     }
+
+    /** Closed candidates for one config tag — calibration is scoped per config. */
+    public List<ProbabilityCandidate> findClosedForTag(String configTag) {
+        return list("status <> ?1 and configTag = ?2", ProbabilityCandidate.STATUS_PENDING, configTag);
+    }
+
+    /** Closed candidates with an LLM probability for one config tag (calibrator training). */
+    public List<ProbabilityCandidate> findClosedWithLlmProbForTag(String configTag) {
+        return list("status <> ?1 and configTag = ?2 and llmProb is not null",
+                ProbabilityCandidate.STATUS_PENDING, configTag);
+    }
 }

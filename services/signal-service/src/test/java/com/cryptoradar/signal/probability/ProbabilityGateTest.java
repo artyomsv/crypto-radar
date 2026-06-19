@@ -22,7 +22,7 @@ class ProbabilityGateTest {
 
     @Test
     void longCandidateHasStopBelowAndTargetAboveAtTwoToOne() {
-        Candidate c = CandidateBuilder.build(Candidate.LONG, 100.0, 4.0); // risk = 1.5*4 = 6
+        Candidate c = CandidateBuilder.build(Candidate.LONG, 100.0, 4.0, 1.5, 2.0); // risk = 1.5*4 = 6
         assertEquals(94.0, c.stop(), EPS);
         assertEquals(112.0, c.target(), EPS);   // entry + 2*risk
         assertEquals(2.0, c.riskReward(), EPS);
@@ -31,25 +31,33 @@ class ProbabilityGateTest {
 
     @Test
     void shortCandidateMirrorsGeometry() {
-        Candidate c = CandidateBuilder.build(Candidate.SHORT, 100.0, 4.0); // risk = 6
+        Candidate c = CandidateBuilder.build(Candidate.SHORT, 100.0, 4.0, 1.5, 2.0); // risk = 6
         assertEquals(106.0, c.stop(), EPS);
         assertEquals(88.0, c.target(), EPS);
         assertEquals(2.0, c.riskReward(), EPS);
     }
 
     @Test
+    void oneToOneGeometryPutsTargetAtRiskDistance() {
+        Candidate c = CandidateBuilder.build(Candidate.LONG, 100.0, 4.0, 1.5, 1.0); // risk 6, reward 6
+        assertEquals(94.0, c.stop(), EPS);
+        assertEquals(106.0, c.target(), EPS);
+        assertEquals(1.0, c.riskReward(), EPS);
+    }
+
+    @Test
     void riskIsFlooredAtMinRiskPctWhenAtrIsTiny() {
         // 1.5*0.1 = 0.15 < MIN_RISK_PCT*100 = 1.5 -> risk floored to 1.5
-        Candidate c = CandidateBuilder.build(Candidate.LONG, 100.0, 0.1);
+        Candidate c = CandidateBuilder.build(Candidate.LONG, 100.0, 0.1, 1.5, 2.0);
         assertEquals(98.5, c.stop(), EPS);
         assertEquals(103.0, c.target(), EPS);
     }
 
     @Test
     void rejectsNonPositiveInputsAndBadDirection() {
-        assertThrows(IllegalArgumentException.class, () -> CandidateBuilder.build(Candidate.LONG, 0, 1));
-        assertThrows(IllegalArgumentException.class, () -> CandidateBuilder.build(Candidate.LONG, 100, 0));
-        assertThrows(IllegalArgumentException.class, () -> CandidateBuilder.build("SIDEWAYS", 100, 1));
+        assertThrows(IllegalArgumentException.class, () -> CandidateBuilder.build(Candidate.LONG, 0, 1, 1.5, 2.0));
+        assertThrows(IllegalArgumentException.class, () -> CandidateBuilder.build(Candidate.LONG, 100, 0, 1.5, 2.0));
+        assertThrows(IllegalArgumentException.class, () -> CandidateBuilder.build("SIDEWAYS", 100, 1, 1.5, 2.0));
     }
 
     // ---- LogisticWinModel ----

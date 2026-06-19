@@ -230,9 +230,18 @@ rate (70+ bucket negative expectancy). Lives in `services/signal-service/.../pro
 - **`GET /api/signals/probability/calibration`** (proxied via gateway) — reliability curve
   (predicted-prob decile → realized win rate) for stats and LLM separately. The evidence that
   decides promotion to a live gate.
-- Phasing: Phase 1 = this (shadow + calibration data collection). Phase 2 = train a rich-feature
-  model on accrued shadow data, promote to a live EV gate once calibrated. Phase 3 = retire
-  `alignment`/detectors as entry driver. Spec: `docs/superpowers/specs/2026-06-18-ai-probability-gate-design.md`.
+- **Phase 2 (shadow, config-driven)**: a 129-candidate backtest of the realized MFE/MAE showed
+  the dimension-score direction was *anti-predictive* (avg MFE 0.48 ATR vs MAE 1.99 ATR) and 2:1
+  targets almost never hit — so the generator now defaults to **inverted direction + 1:1 geometry**
+  (`probability.direction.invert`, `probability.geometry.*`), tagged via `probability.config-tag`
+  (`v2-1to1-flip`) so calibration stays per-config. `ProbabilityCalibrator` recalibrates the
+  (better-ranking) LLM probability against realized same-tag outcomes (`calibrated_prob`);
+  `ShadowOutcomeEvaluator` records `mfe_atr`/`mae_atr` for ongoing geometry validation. Still shadow
+  — the flip's ~90% in-sample win rate is regime-dependent and must prove out-of-sample first.
+- Phasing: Phase 1 = shadow + calibration data collection. Phase 2 = the above (recalibrate +
+  geometry/direction rethink, still shadow). Phase 3 = promote to a live EV gate once the flip
+  validates out-of-sample, then retire `alignment` as entry driver. Spec:
+  `docs/superpowers/specs/2026-06-18-ai-probability-gate-design.md`.
 - Observed at deploy: stats P ≈ 0.13–0.18 (anchored to the real ~19% target-before-stop base
   rate at 2:1 R:R), LLM P ≈ 0.35–0.62 — the divergence is what calibration will adjudicate.
 

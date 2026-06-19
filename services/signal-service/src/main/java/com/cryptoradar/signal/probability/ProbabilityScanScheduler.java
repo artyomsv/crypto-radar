@@ -7,6 +7,7 @@ import com.cryptoradar.signal.service.CandleClient;
 import com.cryptoradar.signal.service.SignalService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.scheduler.Scheduled;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -36,9 +37,23 @@ public class ProbabilityScanScheduler {
     @Inject SignalService signalService;
     @Inject CandleClient candleClient;
     @Inject WinProbabilityEstimator estimator;
+    @Inject ProbabilityCalibrator calibrator;
     @Inject ProbabilityCandidateRepository repository;
     @Inject FeatureAssembler featureAssembler;
     @Inject ObjectMapper mapper;
+
+    // Phase 2 geometry/direction, data-driven from shadow backtest: the
+    // dimension-score direction was anti-predictive (MAE ~4x MFE) and the 2:1
+    // target almost never hit, so default to inverted direction + 1:1 geometry
+    // and keep proving it out-of-sample in shadow. All configurable.
+    @ConfigProperty(name = "probability.geometry.stop-atr-mult", defaultValue = "1.5")
+    double stopAtrMult;
+    @ConfigProperty(name = "probability.geometry.target-r", defaultValue = "1.0")
+    double targetR;
+    @ConfigProperty(name = "probability.direction.invert", defaultValue = "true")
+    boolean invertDirection;
+    @ConfigProperty(name = "probability.config-tag", defaultValue = "v2-1to1-flip")
+    String configTag;
 
     @Scheduled(every = "{probability.scan.interval:1h}", delayed = "90s", identity = "probability-scan")
     void scan() {
@@ -67,20 +82,27 @@ public class ProbabilityScanScheduler {
         if (atr <= 0 || entry <= 0) return false;
 
         Map<String, Double> dimScores = dimensionScores(signal);
-        String direction = signal.getOverallScore() >= 0 ? Candidate.LONG : Candidate.SHORT;
-        Candidate candidate = CandidateBuilder.build(direction, entry, atr);
+        // Direction from the dimension-score sign, optionally inverted (the sign
+        // was shown anti-predictive in the ranging shadow window).
+        boolean bullish = signal.getOverallScore() >= 0;
+        if (invertDirection) bullish = !bullish;
+        String direction = bullish ? Candidate.LONG : Candidate.SHORT;
+        Candidate candidate = CandidateBuilder.build(direction, entry, atr, stopAtrMult, targetR);
 
         double statsProb = estimator.statsProbability(dimScores);
         Optional<GeminiProbabilityClient.LlmEstimate> llm =
                 estimator.llmProbability(buildPrompt(symbol, candidate, signal, dimScores));
+        Double llmProb = llm.map(GeminiProbabilityClient.LlmEstimate::probability).orElse(null);
+        Double calibratedProb = calibrator.calibrate(llmProb);
         String featuresJson = toJson(featureAssembler.assemble(signal, candidate, bars, dimScores));
 
-        persist(symbol, candidate, statsProb, llm, featuresJson);
+        persist(symbol, candidate, statsProb, llm, calibratedProb, featuresJson);
         return true;
     }
 
     private void persist(String symbol, Candidate candidate, double statsProb,
-                         Optional<GeminiProbabilityClient.LlmEstimate> llm, String featuresJson) {
+                         Optional<GeminiProbabilityClient.LlmEstimate> llm,
+                         Double calibratedProb, String featuresJson) {
         ProbabilityCandidate row = new ProbabilityCandidate();
         row.scannedAt = Instant.now();
         row.symbol = symbol;
@@ -93,6 +115,8 @@ public class ProbabilityScanScheduler {
         row.statsProb = statsProb;
         row.llmProb = llm.map(GeminiProbabilityClient.LlmEstimate::probability).orElse(null);
         row.llmReasoning = llm.map(GeminiProbabilityClient.LlmEstimate::reasoning).orElse(null);
+        row.calibratedProb = calibratedProb;
+        row.configTag = configTag;
         row.featuresJson = featuresJson;
         row.status = ProbabilityCandidate.STATUS_PENDING;
         repository.persist(row);

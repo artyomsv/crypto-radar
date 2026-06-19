@@ -45,7 +45,13 @@ public class ShadowOutcomeEvaluator {
 
     /** Detached snapshot of a pending candidate — no entity crosses the HTTP boundary. */
     private record Pending(Long id, String symbol, String direction, Instant scannedAt,
-                           double stop, double target, double entry) {}
+                           double stop, double target, double entry, double atr) {}
+
+    /** Excursion tracker (ATR units) over a candidate's life. */
+    private static final class Excursion {
+        double mfe = 0;
+        double mae = 0;
+    }
 
     @Scheduled(every = "{probability.eval.interval:15m}", delayed = "150s", identity = "probability-eval")
     void evaluate() {
@@ -77,37 +83,50 @@ public class ShadowOutcomeEvaluator {
     List<Pending> loadPending() {
         return repository.findPending().stream()
                 .map(c -> new Pending(c.id, c.symbol, c.direction, c.scannedAt,
-                        c.stopPrice, c.targetPrice, c.entryPrice))
+                        c.stopPrice, c.targetPrice, c.entryPrice, c.atr))
                 .toList();
     }
 
     private boolean closeIfResolved(Pending p, List<CandleBar> bars) {
         boolean isLong = Candidate.LONG.equals(p.direction());
+        Excursion ex = new Excursion();
         for (CandleBar bar : bars) {
             if (!bar.time().isAfter(p.scannedAt())) continue;
+            track(ex, p, bar, isLong);
             if (isLong) {
-                if (bar.low() <= p.stop()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_STOP, p.stop(), bar.time());
-                if (bar.high() >= p.target()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_TARGET, p.target(), bar.time());
+                if (bar.low() <= p.stop()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_STOP, p.stop(), bar.time(), ex);
+                if (bar.high() >= p.target()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_TARGET, p.target(), bar.time(), ex);
             } else {
-                if (bar.high() >= p.stop()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_STOP, p.stop(), bar.time());
-                if (bar.low() <= p.target()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_TARGET, p.target(), bar.time());
+                if (bar.high() >= p.stop()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_STOP, p.stop(), bar.time(), ex);
+                if (bar.low() <= p.target()) return close(p.id(), ProbabilityCandidate.STATUS_HIT_TARGET, p.target(), bar.time(), ex);
             }
         }
         if (Duration.between(p.scannedAt(), Instant.now()).toHours() >= HOLD_HOURS) {
             double lastClose = bars.isEmpty() ? p.entry() : bars.get(bars.size() - 1).close();
-            return close(p.id(), ProbabilityCandidate.STATUS_EXPIRED, lastClose, Instant.now());
+            return close(p.id(), ProbabilityCandidate.STATUS_EXPIRED, lastClose, Instant.now(), ex);
         }
         return false;
     }
 
+    /** Updates favorable/adverse excursion (ATR units) for the bar, direction-aware. */
+    private void track(Excursion ex, Pending p, CandleBar bar, boolean isLong) {
+        if (p.atr() <= 0) return;
+        double fav = isLong ? bar.high() - p.entry() : p.entry() - bar.low();
+        double adv = isLong ? p.entry() - bar.low() : bar.high() - p.entry();
+        ex.mfe = Math.max(ex.mfe, fav / p.atr());
+        ex.mae = Math.max(ex.mae, adv / p.atr());
+    }
+
     /** Short write transaction per close — independent commit, no batch rollback. */
     @Transactional
-    boolean close(Long id, String status, double price, Instant when) {
+    boolean close(Long id, String status, double price, Instant when, Excursion ex) {
         ProbabilityCandidate c = repository.findById(id);
         if (c == null || !ProbabilityCandidate.STATUS_PENDING.equals(c.status)) return false;
         c.status = status;
         c.closedPrice = price;
         c.closedAt = when;
+        c.mfeAtr = ex.mfe;
+        c.maeAtr = ex.mae;
         repository.persist(c);
         return true;
     }
