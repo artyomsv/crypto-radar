@@ -64,7 +64,11 @@ public class DirectionModelTrainer {
             List<double[]> rows = new ArrayList<>();
             List<Integer> labels = new ArrayList<>();
             for (TradingSignal signal : signalService.getSignalOverview().getSignals()) {
-                accumulate(signal.getSymbol(), rows, labels);
+                try {
+                    accumulate(signal.getSymbol(), rows, labels);
+                } catch (RuntimeException e) {
+                    LOG.warnf("Direction-model training skipped %s: %s", signal.getSymbol(), e.getMessage());
+                }
             }
             if (rows.isEmpty()) {
                 LOG.warn("Direction-model retrain skipped — no training rows");
