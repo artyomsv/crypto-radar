@@ -17,6 +17,7 @@ public final class LabelWalker {
 
     public static String resolve(List<CandleBar> forwardBars, double entry,
                                  double stop, double target, boolean isLong) {
+        // entry is accepted for signature symmetry; stop/target carry all the level math
         for (CandleBar bar : forwardBars) {
             if (isLong) {
                 if (bar.low() <= stop) return ProbabilityCandidate.STATUS_HIT_STOP;

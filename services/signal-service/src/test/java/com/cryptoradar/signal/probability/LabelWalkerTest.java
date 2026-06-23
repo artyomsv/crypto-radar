@@ -36,6 +36,14 @@ class LabelWalkerTest {
     }
 
     @Test
+    void straddleBarCountsAsStopForShort() {
+        // short entry 100, stop 105, target 95 — single bar touches both → STOP wins
+        List<CandleBar> fwd = List.of(bar(106, 94));
+        assertEquals(ProbabilityCandidate.STATUS_HIT_STOP,
+                LabelWalker.resolve(fwd, 100, 105, 95, false));
+    }
+
+    @Test
     void neitherHitWithinWindowExpires() {
         List<CandleBar> fwd = List.of(bar(101, 99), bar(102, 98));
         assertEquals(ProbabilityCandidate.STATUS_EXPIRED,
