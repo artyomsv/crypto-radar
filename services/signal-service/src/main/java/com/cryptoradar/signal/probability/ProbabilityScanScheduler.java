@@ -88,7 +88,9 @@ public class ProbabilityScanScheduler {
         return persisted;
     }
 
-    @Transactional
+    // NOT @Transactional — all HTTP/scoring/feature-assembly happens here, outside any tx.
+    // Holding a DB connection open across a 20s LLM round-trip causes connection-pool stalls
+    // (same bug class as the ShadowOutcomeEvaluator fix in commit 8c45bf0).
     void persistScored(CandidateGenerator generator, DirectionContext ctx, Candidate candidate) {
         TradingSignal signal = ctx.signal();
         String symbol = signal.getSymbol();
@@ -116,6 +118,11 @@ public class ProbabilityScanScheduler {
         row.configTag = generator.tag();
         row.featuresJson = featuresJson;
         row.status = ProbabilityCandidate.STATUS_PENDING;
+        persist(row);
+    }
+
+    @Transactional
+    void persist(ProbabilityCandidate row) {
         repository.persist(row);
     }
 
