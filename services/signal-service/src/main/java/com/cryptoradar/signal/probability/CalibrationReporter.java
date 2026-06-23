@@ -30,6 +30,7 @@ public class CalibrationReporter {
     public record Report(String configTag, int totalClosed, double realizedWinRate,
                          List<Bucket> stats, List<Bucket> llm, List<Bucket> calibrated) {}
 
+    @Transactional
     public Report report() {
         return report(DEFAULT_TAG);
     }
