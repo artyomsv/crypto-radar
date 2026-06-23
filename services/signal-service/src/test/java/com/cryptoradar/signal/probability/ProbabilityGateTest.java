@@ -97,6 +97,23 @@ class ProbabilityGateTest {
         assertFalse(model.isTrained());
     }
 
+    @Test
+    void logisticRegressionTrainsOnSevenFeatures() {
+        // Feature 0 perfectly separates; widths other than 6 must work.
+        double[][] x = {
+                {3,0,0,0,0,0,0}, {2,0,0,0,0,0,0}, {4,0,0,0,0,0,0},
+                {-3,0,0,0,0,0,0}, {-2,0,0,0,0,0,0}, {-4,0,0,0,0,0,0}
+        };
+        int[] y = {1, 1, 1, 0, 0, 0};
+        LogisticRegression model = new LogisticRegression(7, 1.0);
+        assertEquals(0.5, model.predict(new double[7]), EPS); // untrained
+        assertFalse(model.isTrained());
+        model.train(x, y, 2000, 0.5, 0.0);
+        assertTrue(model.isTrained());
+        assertTrue(model.predict(new double[]{3.5, 0, 0, 0, 0, 0, 0}) > 0.5);
+        assertTrue(model.predict(new double[]{-3.5, 0, 0, 0, 0, 0, 0}) < 0.5);
+    }
+
     // ---- CalibrationReporter bucketing ----
 
     @Test
