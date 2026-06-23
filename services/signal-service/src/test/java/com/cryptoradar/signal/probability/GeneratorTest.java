@@ -40,4 +40,32 @@ class GeneratorTest {
         assertEquals(94.0, c.get().target(), EPS);
         assertEquals("v2-1to1-flip", gen.tag());
     }
+
+    @Test
+    void featureDirGeneratorSkipsWhenModelUntrained() {
+        FeatureDirectionGenerator gen = new FeatureDirectionGenerator();
+        gen.trainer = new DirectionModelTrainer(); // model().isTrained() == false
+        gen.stopAtrMult = 1.5;
+        gen.targetR = 1.0;
+        gen.tag = "v3-feature-dir";
+        gen.enabled = true;
+        gen.runLlm = true;
+        assertTrue(gen.build(ctx(50.0)).isEmpty());
+    }
+
+    @Test
+    void featureDirGeneratorSkipsWhenIndicatorsNull() {
+        FeatureDirectionGenerator gen = new FeatureDirectionGenerator();
+        gen.trainer = new DirectionModelTrainer();
+        gen.stopAtrMult = 1.5;
+        gen.targetR = 1.0;
+        gen.tag = "v3-feature-dir";
+        gen.enabled = true;
+        gen.runLlm = true;
+        TradingSignal s = new TradingSignal();
+        s.setSymbol("BTCUSDT");
+        s.setOverallScore(10);
+        DirectionContext noInd = new DirectionContext(s, List.<CandleBar>of(), 4.0, 100.0, null, Map.of());
+        assertTrue(gen.build(noInd).isEmpty());
+    }
 }
