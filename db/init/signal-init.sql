@@ -196,3 +196,11 @@ INSERT INTO deployment_markers (deployed_at, version, description) VALUES
      'forward-evaluation, /api/signals/probability/calibration reliability curve. ' ||
      'No live execution change.')
 ON CONFLICT (deployed_at) DO NOTHING;
+
+INSERT INTO deployment_markers (deployed_at, version, description) VALUES
+    ('2026-06-23T00:00:00Z', 'v10-probability-feature-direction',
+     'Parallel shadow generator v3-feature-dir: trade direction from a standardized ' ||
+     'logistic over candle indicators (RSI/%B/MACD/momentum/vol/volume), trained from ' ||
+     'historical candles with forward 1:1 labels. Runs alongside v2-1to1-flip control ' ||
+     '(identical 1:1 geometry); per-tag calibration. No live execution change.')
+ON CONFLICT (deployed_at) DO NOTHING;

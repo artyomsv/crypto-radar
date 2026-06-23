@@ -244,6 +244,15 @@ rate (70+ bucket negative expectancy). Lives in `services/signal-service/.../pro
   `docs/superpowers/specs/2026-06-18-ai-probability-gate-design.md`.
 - Observed at deploy: stats P ≈ 0.13–0.18 (anchored to the real ~19% target-before-stop base
   rate at 2:1 R:R), LLM P ≈ 0.35–0.62 — the divergence is what calibration will adjudicate.
+- **Parallel generators (v10)**: the hourly scan now iterates CDI `CandidateGenerator`
+  beans. `FlipGenerator` is the v2 control (invert(sign(overallScore)), 1:1).
+  `FeatureDirectionGenerator` (`v3-feature-dir`) derives direction from `DirectionModel`
+  — a z-score-standardized logistic over the 6 candle `TechnicalIndicators`, trained by
+  `DirectionModelTrainer` from historical 1h candles with forward 1:1 labels
+  (`LabelWalker`). Same 1:1 geometry as the flip so direction is the only variable.
+  Calibration is per-tag: `GET /api/signals/probability/calibration?tag=v3-feature-dir`.
+  Still shadow. Tests whether raw features beat the dimension-score direction the flip
+  showed is a coin-flip in either polarity.
 
 ## Further reading
 
