@@ -19,11 +19,10 @@ public class CalibrationReporter {
 
     private static final int BUCKETS = 10;
 
+    private static final String DEFAULT_TAG = "v2-1to1-flip";
+
     @Inject
     ProbabilityCandidateRepository repository;
-
-    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "probability.config-tag", defaultValue = "v2-1to1-flip")
-    String configTag;
 
     /** One predicted-probability bucket and the realized win rate within it. */
     public record Bucket(String range, int sampleSize, double avgPredicted, double realizedWinRate) {}
@@ -31,8 +30,12 @@ public class CalibrationReporter {
     public record Report(String configTag, int totalClosed, double realizedWinRate,
                          List<Bucket> stats, List<Bucket> llm, List<Bucket> calibrated) {}
 
-    @Transactional
     public Report report() {
+        return report(DEFAULT_TAG);
+    }
+
+    @Transactional
+    public Report report(String configTag) {
         List<ProbabilityCandidate> closed = repository.findClosedForTag(configTag);
         List<double[]> statsPairs = new ArrayList<>();
         List<double[]> llmPairs = new ArrayList<>();
