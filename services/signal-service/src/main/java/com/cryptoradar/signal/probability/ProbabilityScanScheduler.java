@@ -7,8 +7,8 @@ import com.cryptoradar.signal.service.CandleClient;
 import com.cryptoradar.signal.service.SignalService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.scheduler.Scheduled;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
@@ -20,11 +20,11 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Hourly shadow scan: for every symbol in the current overview, synthesize one
- * ATR-geometry candidate (direction from the dimension-score sign), estimate its
- * win probability two ways (calibrated stats model + LLM overlay), and persist it
- * as a PENDING shadow candidate. Places no orders — this only collects the data
- * and predictions that the calibration report and Phase 2 model will use.
+ * Hourly shadow scan: for every symbol in the current overview, each enabled
+ * {@link CandidateGenerator} produces one ATR-geometry candidate, which is scored
+ * (stats always; LLM only when the generator opts in) and persisted as a PENDING
+ * shadow candidate tagged by {@code generator.tag()}. Places no orders — only
+ * collects data and predictions for the calibration report and Phase 2 model.
  */
 @ApplicationScoped
 public class ProbabilityScanScheduler {
@@ -41,19 +41,7 @@ public class ProbabilityScanScheduler {
     @Inject ProbabilityCandidateRepository repository;
     @Inject FeatureAssembler featureAssembler;
     @Inject ObjectMapper mapper;
-
-    // Phase 2 geometry/direction, data-driven from shadow backtest: the
-    // dimension-score direction was anti-predictive (MAE ~4x MFE) and the 2:1
-    // target almost never hit, so default to inverted direction + 1:1 geometry
-    // and keep proving it out-of-sample in shadow. All configurable.
-    @ConfigProperty(name = "probability.geometry.stop-atr-mult", defaultValue = "1.5")
-    double stopAtrMult;
-    @ConfigProperty(name = "probability.geometry.target-r", defaultValue = "1.0")
-    double targetR;
-    @ConfigProperty(name = "probability.direction.invert", defaultValue = "true")
-    boolean invertDirection;
-    @ConfigProperty(name = "probability.config-tag", defaultValue = "v2-1to1-flip")
-    String configTag;
+    @Inject jakarta.enterprise.inject.Instance<CandidateGenerator> generators;
 
     @Scheduled(every = "{probability.scan.interval:1h}", delayed = "90s", identity = "probability-scan")
     void scan() {
@@ -61,48 +49,57 @@ public class ProbabilityScanScheduler {
         int persisted = 0;
         for (TradingSignal signal : signals) {
             try {
-                if (scanSymbol(signal)) persisted++;
+                persisted += scanSymbol(signal);
             } catch (RuntimeException e) {
                 LOG.warnf("Probability scan failed for %s: %s", signal.getSymbol(), e.getMessage());
             }
         }
-        LOG.infof("Probability scan complete — %d/%d candidates persisted", persisted, signals.size());
+        LOG.infof("Probability scan complete — %d candidates persisted across %d symbols",
+                persisted, signals.size());
     }
 
-    @Transactional
-    boolean scanSymbol(TradingSignal signal) {
+    int scanSymbol(TradingSignal signal) {
         String symbol = signal.getSymbol();
         List<CandleBar> bars = candleClient.fetchRecent(symbol, CANDLE_INTERVAL, CANDLE_LIMIT);
         if (bars.size() < ATR_PERIOD + 1) {
             LOG.debugf("Skipping %s — insufficient candles (%d)", symbol, bars.size());
-            return false;
+            return 0;
         }
-        double atr = atr(bars);
+        double atr = AtrCalculator.atr(bars, ATR_PERIOD);
         double entry = bars.get(bars.size() - 1).close();
-        if (atr <= 0 || entry <= 0) return false;
+        if (atr <= 0 || entry <= 0) return 0;
 
         Map<String, Double> dimScores = dimensionScores(signal);
-        // Direction from the dimension-score sign, optionally inverted (the sign
-        // was shown anti-predictive in the ranging shadow window).
-        boolean bullish = signal.getOverallScore() >= 0;
-        if (invertDirection) bullish = !bullish;
-        String direction = bullish ? Candidate.LONG : Candidate.SHORT;
-        Candidate candidate = CandidateBuilder.build(direction, entry, atr, stopAtrMult, targetR);
+        TechnicalIndicators indicators = TechnicalIndicators.compute(bars);
+        DirectionContext ctx = new DirectionContext(signal, bars, atr, entry, indicators, dimScores);
 
-        double statsProb = estimator.statsProbability(dimScores);
-        Optional<GeminiProbabilityClient.LlmEstimate> llm =
-                estimator.llmProbability(buildPrompt(symbol, candidate, signal, dimScores));
-        Double llmProb = llm.map(GeminiProbabilityClient.LlmEstimate::probability).orElse(null);
-        Double calibratedProb = calibrator.calibrate(llmProb);
-        String featuresJson = toJson(featureAssembler.assemble(signal, candidate, bars, dimScores));
-
-        persist(symbol, candidate, statsProb, llm, calibratedProb, featuresJson);
-        return true;
+        int persisted = 0;
+        for (CandidateGenerator generator : generators) {
+            if (!generator.enabled()) continue;
+            try {
+                Optional<Candidate> candidate = generator.build(ctx);
+                if (candidate.isEmpty()) continue;
+                persistScored(generator, ctx, candidate.get());
+                persisted++;
+            } catch (RuntimeException e) {
+                LOG.warnf("Generator %s failed for %s: %s", generator.tag(), symbol, e.getMessage());
+            }
+        }
+        return persisted;
     }
 
-    private void persist(String symbol, Candidate candidate, double statsProb,
-                         Optional<GeminiProbabilityClient.LlmEstimate> llm,
-                         Double calibratedProb, String featuresJson) {
+    @Transactional
+    void persistScored(CandidateGenerator generator, DirectionContext ctx, Candidate candidate) {
+        TradingSignal signal = ctx.signal();
+        String symbol = signal.getSymbol();
+        double statsProb = estimator.statsProbability(ctx.dimScores());
+        Optional<GeminiProbabilityClient.LlmEstimate> llm = generator.runLlm()
+                ? estimator.llmProbability(buildPrompt(symbol, candidate, signal, ctx.dimScores()))
+                : Optional.empty();
+        Double llmProb = llm.map(GeminiProbabilityClient.LlmEstimate::probability).orElse(null);
+        Double calibratedProb = calibrator.calibrate(generator.tag(), llmProb);
+        String featuresJson = toJson(featureAssembler.assemble(signal, candidate, ctx.bars(), ctx.dimScores()));
+
         ProbabilityCandidate row = new ProbabilityCandidate();
         row.scannedAt = Instant.now();
         row.symbol = symbol;
@@ -113,10 +110,10 @@ public class ProbabilityScanScheduler {
         row.atr = candidate.atr();
         row.riskReward = candidate.riskReward();
         row.statsProb = statsProb;
-        row.llmProb = llm.map(GeminiProbabilityClient.LlmEstimate::probability).orElse(null);
+        row.llmProb = llmProb;
         row.llmReasoning = llm.map(GeminiProbabilityClient.LlmEstimate::reasoning).orElse(null);
         row.calibratedProb = calibratedProb;
-        row.configTag = configTag;
+        row.configTag = generator.tag();
         row.featuresJson = featuresJson;
         row.status = ProbabilityCandidate.STATUS_PENDING;
         repository.persist(row);
@@ -151,20 +148,5 @@ public class ProbabilityScanScheduler {
         sb.append("Respond with ONLY a JSON object: ");
         sb.append("{\"probability\": <0..1 chance target hit before stop>, \"reasoning\": \"<one sentence>\"}");
         return sb.toString();
-    }
-
-    /** Simple-average ATR over the last ATR_PERIOD true ranges. */
-    private double atr(List<CandleBar> bars) {
-        double sum = 0;
-        int count = 0;
-        for (int i = bars.size() - ATR_PERIOD; i < bars.size(); i++) {
-            CandleBar cur = bars.get(i);
-            CandleBar prev = bars.get(i - 1);
-            double tr = Math.max(cur.high() - cur.low(),
-                    Math.max(Math.abs(cur.high() - prev.close()), Math.abs(cur.low() - prev.close())));
-            sum += tr;
-            count++;
-        }
-        return count == 0 ? 0 : sum / count;
     }
 }
