@@ -114,6 +114,14 @@ class ProbabilityGateTest {
         assertTrue(model.predict(new double[]{-3.5, 0, 0, 0, 0, 0, 0}) < 0.5);
     }
 
+    @Test
+    void logisticRegressionNoOpsOnTooNarrowRows() {
+        LogisticRegression model = new LogisticRegression(7, 1.0);
+        model.train(new double[][]{{1, 2}}, new int[]{1}, 100, 0.5, 0.0);
+        assertFalse(model.isTrained());
+        assertEquals(0.5, model.predict(new double[]{1, 2}), 1e-9); // too-narrow predict input
+    }
+
     // ---- CalibrationReporter bucketing ----
 
     @Test

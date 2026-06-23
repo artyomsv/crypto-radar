@@ -18,7 +18,7 @@ public final class LogisticRegression {
 
     public LogisticRegression(int features, double featureScale) {
         if (features <= 0) throw new IllegalArgumentException("features must be positive: " + features);
-        if (featureScale == 0) throw new IllegalArgumentException("featureScale must be non-zero");
+        if (featureScale == 0 || Double.isNaN(featureScale)) throw new IllegalArgumentException("featureScale must be non-zero or NaN: " + featureScale);
         this.features = features;
         this.featureScale = featureScale;
         this.weights = new double[features];
@@ -33,12 +33,14 @@ public final class LogisticRegression {
     }
 
     public double predict(double[] x) {
+        if (x.length < features) return 0.5;
         if (!trained) return 0.5;
         return sigmoid(dot(weights, bias, x));
     }
 
     public void train(double[][] X, int[] y, int epochs, double learningRate, double l2) {
         if (X.length == 0 || X.length != y.length) return;
+        if (X[0].length < features) return;
         double[] w = new double[features];
         double b = 0.0;
         int n = X.length;
