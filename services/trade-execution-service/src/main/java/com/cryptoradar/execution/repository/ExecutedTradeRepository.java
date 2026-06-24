@@ -8,6 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @ApplicationScoped
@@ -15,6 +16,35 @@ public class ExecutedTradeRepository implements PanacheRepository<ExecutedTrade>
 
     private static final List<TradeStatus> OPEN_STATUSES =
             List.of(TradeStatus.PENDING_PLACE, TradeStatus.OPEN, TradeStatus.CLOSING);
+
+    /**
+     * Acquire a Postgres transaction-scoped advisory lock keyed on
+     * (account, symbol, direction). Concurrent transactions on the same key
+     * block until the holder commits or rolls back, then proceed with a fresh
+     * snapshot — so the breakout mutual-exclusion read sees committed peers.
+     *
+     * <p>Detector alerts (donchian / turtle-s1 / turtle-s2) arrive as separate
+     * concurrent {@code @Transactional} Redis messages; a plain read-then-insert
+     * races and lets two fires for one symbol+direction both pass the guard and
+     * double-open. This lock serializes that check-and-insert. Auto-released at
+     * transaction end — no explicit unlock, so it cannot leak.
+     */
+    public void lockBreakoutKey(Long accountId, String symbol, String direction) {
+        long key = breakoutLockKey(accountId, symbol, direction);
+        getEntityManager()
+                .createNativeQuery("SELECT pg_advisory_xact_lock(:key)")
+                .setParameter("key", key)
+                .getSingleResult();
+    }
+
+    /**
+     * Stable 64-bit lock key for a breakout symbol+direction on an account.
+     * Hash collisions across distinct keys only cause occasional (harmless)
+     * extra serialization, never a missed exclusion.
+     */
+    public static long breakoutLockKey(Long accountId, String symbol, String direction) {
+        return Objects.hash(accountId, symbol, direction);
+    }
 
     public List<ExecutedTrade> findOpenForAccount(Long accountId) {
         return find("exchangeAccountId = ?1 and status in ?2",

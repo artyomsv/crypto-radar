@@ -20,6 +20,7 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -41,15 +42,17 @@ public class OrderPlacer {
     private final ExecutedTradeRepository tradeRepo;
     private final ExecutionEventService events;
     private final StrategyPerformanceSizer sizer;
+    private final StrategyExitPolicy exitPolicy;
 
     public OrderPlacer(BybitV5RestClient bybit, InstrumentRegistry instruments,
                        ExecutedTradeRepository tradeRepo, ExecutionEventService events,
-                       StrategyPerformanceSizer sizer) {
+                       StrategyPerformanceSizer sizer, StrategyExitPolicy exitPolicy) {
         this.bybit = bybit;
         this.instruments = instruments;
         this.tradeRepo = tradeRepo;
         this.events = events;
         this.sizer = sizer;
+        this.exitPolicy = exitPolicy;
     }
 
     public record PlacementRequest(String symbol, String direction, String strategy,
@@ -89,6 +92,16 @@ public class OrderPlacer {
             return fail(account, req, "qty computed as zero — skip");
         }
 
+        // Long-horizon breakout strategies (turtle/donchian) carry no fixed
+        // profit target — they exit on a reverse-Donchian breach (see
+        // DonchianExitMonitor) with the 2N stop as the catastrophic backstop.
+        // signal-service still ships a far-away placeholder target that trips
+        // Bybit's "TakeProfit < 10% of base price" rule (retCode 10001) and
+        // rejects the whole entry. Drop it here so the order carries only the
+        // stop-loss, and never persist the misleading value on the row.
+        BigDecimal effectiveTarget =
+                exitPolicy.isLongHorizon(req.strategy()) ? null : req.targetPrice();
+
         // 3. Insert row with PENDING_PLACE
         ExecutedTrade trade = new ExecutedTrade();
         trade.setExchangeAccountId(account.getId());
@@ -102,19 +115,22 @@ public class OrderPlacer {
         // execution event is missed (Bybit private WS keepalive bug).
         trade.setEntryPrice(req.entryPrice());
         trade.setStopPrice(req.stopPrice());
-        trade.setTargetPrice(req.targetPrice());
+        trade.setTargetPrice(effectiveTarget);
         trade.setDynamicStopPrice(req.stopPrice());
         trade.setLeverage(account.getDefaultLeverage());
         trade.setQty(BigDecimal.valueOf(qty));
         tradeRepo.persist(trade);
         trade.setExchangeOrderLinkId("ex-" + trade.getId());
 
-        // 4. Place order
+        // 4. Place order. takeProfit is omitted (NON_NULL serialization) when
+        //    there is no target — long-horizon strategies, or a caller that
+        //    supplied none.
         String side = "LONG".equals(req.direction()) ? "Buy" : "Sell";
+        String takeProfit = effectiveTarget == null ? null : effectiveTarget.toPlainString();
         PlaceOrderRequest orderReq = new PlaceOrderRequest(
                 "linear", req.symbol(), side, "Market",
                 String.valueOf(qty),
-                req.targetPrice().toPlainString(),
+                takeProfit,
                 req.stopPrice().toPlainString(),
                 "Full", "Market", "Market",
                 trade.getExchangeOrderLinkId(), null);
@@ -153,8 +169,20 @@ public class OrderPlacer {
             return trade;
         }
         trade.setStatus(TradeStatus.FAILED);
-        logEvent(account, trade, ExecutionEventType.ORDER_REJECTED,
-                Map.of("retCode", resp.retCode(), "retMsg", resp.retMsg()));
+        // Capture the request payload too — "Qty invalid" with retCode 10001
+        // is a generic param-error reply and the message alone doesn't say
+        // which field Bybit rejected. With qty / entry / stop / target in the
+        // event we can diff a failing order against a known-good one to spot
+        // the offending value next time.
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("retCode", resp.retCode());
+        meta.put("retMsg", resp.retMsg());
+        meta.put("qty", qty);
+        meta.put("entryPrice", req.entryPrice().toPlainString());
+        meta.put("stopPrice", req.stopPrice().toPlainString());
+        meta.put("targetPrice", effectiveTarget == null ? "none" : effectiveTarget.toPlainString());
+        meta.put("leverage", account.getDefaultLeverage());
+        logEvent(account, trade, ExecutionEventType.ORDER_REJECTED, meta);
         return trade;
     }
 

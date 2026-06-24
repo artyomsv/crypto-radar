@@ -300,6 +300,16 @@ public class SignalSubscriber {
         }
 
         String strategy = signalNode.path("strategy").asText(DEFAULT_STRATEGY);
+
+        // Detector alerts (donchian / turtle-s1 / turtle-s2) for one symbol
+        // arrive as separate concurrent @Transactional messages. Serialize them
+        // per symbol+direction so the dedup and mutual-exclusion reads below see
+        // committed peers — otherwise two fires race the guard and double-open.
+        boolean longHorizon = exitPolicy.isLongHorizon(strategy);
+        if (longHorizon) {
+            tradeRepo.lockBreakoutKey(account.getId(), symbol, direction);
+        }
+
         if (confluenceCheck.requiresConfluence(strategy, direction)
                 && !confluenceCheck.hasConfluence(symbol, direction)) {
             int windowMinutes = executionSettings.snapshot().confluenceWindowMinutes();
@@ -345,7 +355,11 @@ public class SignalSubscriber {
         BigDecimal entry = safeBd(signalNode.path("entryPrice").asText(null));
         BigDecimal stop = safeBd(signalNode.path("stopPrice").asText(null));
         BigDecimal target = safeBd(signalNode.path("targetPrice").asText(null));
-        if (entry == null || stop == null || target == null) return;
+        if (entry == null || stop == null) return;
+        // Long-horizon breakouts have no fixed target — OrderPlacer drops it
+        // and they exit on the reverse-Donchian breach. Only target-driven
+        // strategies require a target to be present.
+        if (!longHorizon && target == null) return;
 
         orderPlacer.place(account, new OrderPlacer.PlacementRequest(
                 symbol, direction, candidate.strategy(), candidate.signalId(), entry, stop, target));

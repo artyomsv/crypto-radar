@@ -29,12 +29,16 @@ import java.util.Map;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.matching;
+import static com.github.tomakehurst.wiremock.client.WireMock.notMatching;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @QuarkusTest
 @TestProfile(OrderPlacerTest.Profile.class)
@@ -209,6 +213,42 @@ class OrderPlacerTest {
                 new BigDecimal("50000"), new BigDecimal("49500"), new BigDecimal("51500"));
         ExecutedTrade trade = placer.place(account, req);
         assertEquals(TradeStatus.FAILED, trade.getStatus());
+    }
+
+    @Test
+    void longHorizonStrategyOmitsTakeProfit() {
+        // Turtle/Donchian are exit-on-reverse-channel trend-followers with NO
+        // fixed profit target. signal-service still ships a far-away garbage
+        // target (seen live: XRP target 0.0128 vs entry 1.0483) which trips
+        // Bybit's "TakeProfit < 10% of base price" rule (retCode 10001) and
+        // rejects the entire entry. The order must omit takeProfit for these
+        // strategies and keep only the 2N stop-loss.
+        stubPlaceOrderOk("OID-DON");
+        OrderPlacer.PlacementRequest req = new OrderPlacer.PlacementRequest(
+                "BTCUSDT", "SHORT", "donchian", "sig-don",
+                new BigDecimal("50000"), new BigDecimal("53000"), new BigDecimal("0.5"));
+        ExecutedTrade trade = placer.place(account, req);
+        assertEquals(TradeStatus.OPEN, trade.getStatus());
+        WireMock.verify(postRequestedFor(urlPathEqualTo("/v5/order/create"))
+                .withRequestBody(notMatching("(?s).*takeProfit.*"))
+                .withRequestBody(matching("(?s).*stopLoss.*")));
+        // The stored row carries no target — the garbage value is not persisted.
+        assertNull(trade.getTargetPrice());
+    }
+
+    @Test
+    void regularStrategyKeepsTakeProfit() {
+        // Non-breakout strategies retain their fixed take-profit (regression
+        // guard for the long-horizon TP-drop above).
+        stubPlaceOrderOk("OID-TC");
+        OrderPlacer.PlacementRequest req = new OrderPlacer.PlacementRequest(
+                "BTCUSDT", "LONG", "trend-continuation", "sig-tc",
+                new BigDecimal("50000"), new BigDecimal("49500"), new BigDecimal("51500"));
+        ExecutedTrade trade = placer.place(account, req);
+        assertEquals(TradeStatus.OPEN, trade.getStatus());
+        WireMock.verify(postRequestedFor(urlPathEqualTo("/v5/order/create"))
+                .withRequestBody(matching("(?s).*takeProfit.*")));
+        assertEquals(new BigDecimal("51500"), trade.getTargetPrice());
     }
 
     @Test
