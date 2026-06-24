@@ -173,6 +173,21 @@ public class OrderReconciler {
         if (match == null) return false;
         if (match.orderId() != null) consumedCloseIds.add(match.orderId());
 
+        return applyClose(account, trade, match);
+    }
+
+    /**
+     * Populate a trade's close metadata (status, realized PnL, fees, exit price,
+     * entry backfill, exit reason, R-multiple) from a {@link ClosedPnlV5} payload
+     * and emit one {@code RECONCILE_CLOSED_EXTERNALLY} event when any field
+     * changed. Idempotent — only NULL fields are filled.
+     *
+     * <p>Shared by the REST reconcile path (which finds the payload via Bybit's
+     * closed-pnl endpoint) and the WS execution path (which synthesizes the
+     * payload from a closing fill). The WS path is the durable source: Bybit's
+     * closed-pnl REST endpoint can lag for days on DEMO, leaving rows blank.
+     */
+    public boolean applyClose(ExchangeAccount account, ExecutedTrade trade, ClosedPnlV5 match) {
         boolean filled = false;
 
         if (trade.getStatus() != TradeStatus.CLOSED) {

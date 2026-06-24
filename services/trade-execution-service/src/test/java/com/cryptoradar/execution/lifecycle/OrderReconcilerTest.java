@@ -1,5 +1,6 @@
 package com.cryptoradar.execution.lifecycle;
 
+import com.cryptoradar.execution.client.bybit.dto.ClosedPnlV5;
 import com.cryptoradar.execution.model.ExchangeAccount;
 import com.cryptoradar.execution.model.ExecutedTrade;
 import com.cryptoradar.execution.model.TradeStatus;
@@ -452,6 +453,42 @@ class OrderReconcilerTest {
         ExecutedTrade refreshed = tradeRepo.findById(t.getId());
         assertEquals(TradeStatus.CLOSED, refreshed.getStatus());
         assertEquals(com.cryptoradar.execution.model.ExitReason.INITIAL_STOP, refreshed.getExitReason());
+    }
+
+    @Test
+    @Transactional
+    void applyCloseFromWsStyleFillPopulatesExitPnlAndR() {
+        // Mirrors the WS close-capture path: a SHORT trade closed by a Buy fill.
+        // The synthesized ClosedPnlV5 carries avgExitPrice + closedPnl + closeFee
+        // but NO avgEntryPrice (the trade already holds entry) and NO openFee
+        // (charged on the entry fill). applyClose must populate exit/pnl/fees/R
+        // without depending on the closed-pnl REST endpoint.
+        ExecutedTrade t = new ExecutedTrade();
+        t.setExchangeAccountId(account.getId());
+        t.setSymbol("BTCUSDT");
+        t.setDirection("SHORT");
+        t.setStatus(TradeStatus.OPEN);
+        t.setEntryPrice(new BigDecimal("50000"));
+        t.setStopPrice(new BigDecimal("50500"));   // SHORT: stop above entry, risk 500
+        t.setQty(new BigDecimal("0.001"));
+        t.setExchangeOrderLinkId("ex-ws-close");
+        tradeRepo.persist(t);
+
+        // exit 49000 → SHORT profit (50000-49000)/500 = 2.0R
+        ClosedPnlV5 wsClose = new ClosedPnlV5(
+                "BTCUSDT", "oid-ws", "Buy", "0.001",
+                "49000", null, "49000", "1.0", null, "0.05", "1700000100000", "1700000100000");
+
+        boolean filled = reconciler.applyClose(account, t, wsClose);
+
+        ExecutedTrade refreshed = tradeRepo.findById(t.getId());
+        assertTrue(filled);
+        assertEquals(TradeStatus.CLOSED, refreshed.getStatus());
+        assertEquals(0, new BigDecimal("49000").compareTo(refreshed.getExitPrice()));
+        assertEquals(0, new BigDecimal("1.0").compareTo(refreshed.getRealizedPnlUsdt()));
+        assertEquals(0, new BigDecimal("0.05").compareTo(refreshed.getFeesUsdt()));
+        assertNotNull(refreshed.getRealizedRMultiple());
+        assertEquals(0, new BigDecimal("2.0000").compareTo(refreshed.getRealizedRMultiple()));
     }
 
     @Test

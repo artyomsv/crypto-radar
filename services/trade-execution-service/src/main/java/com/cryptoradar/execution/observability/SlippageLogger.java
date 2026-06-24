@@ -98,6 +98,7 @@ public final class SlippageLogger {
             case EXPIRED -> "expired";
             case FLIP_CLOSE -> "flip_close";
             case KILL -> "kill";
+            case UNKNOWN -> "unknown";
         };
     }
 

@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS executed_trades (
         CHECK (status IN ('PENDING_PLACE', 'OPEN', 'CLOSING', 'CLOSED', 'FAILED', 'CANCELLED')),
     CONSTRAINT executed_trades_exit_reason_ck
         CHECK (exit_reason IS NULL OR exit_reason IN
-            ('TARGET', 'INITIAL_STOP', 'TRAIL_STOP', 'EXPIRED', 'FLIP_CLOSE', 'MANUAL', 'KILL', 'STAGNATION', 'DONCHIAN_EXIT'))
+            ('TARGET', 'INITIAL_STOP', 'TRAIL_STOP', 'EXPIRED', 'FLIP_CLOSE', 'MANUAL', 'KILL', 'STAGNATION', 'DONCHIAN_EXIT', 'UNKNOWN'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_executed_trades_signal          ON executed_trades(signal_id);

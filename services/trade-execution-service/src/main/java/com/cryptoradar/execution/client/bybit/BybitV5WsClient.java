@@ -1,5 +1,6 @@
 package com.cryptoradar.execution.client.bybit;
 
+import com.cryptoradar.execution.client.bybit.dto.ClosedPnlV5;
 import com.cryptoradar.execution.model.ExchangeAccount;
 import com.cryptoradar.execution.model.ExecutedTrade;
 import com.cryptoradar.execution.model.ExecutionEvent;
@@ -310,6 +311,17 @@ public class BybitV5WsClient {
     }
 
     private void handleExecution(ExchangeAccount account, JsonNode exec) {
+        // A closing fill (position-reducing) carries the real exit price and
+        // realized PnL. Capture it straight from the WS stream so close metadata
+        // never depends on the closed-pnl REST endpoint — which can lag for days
+        // on DEMO and leave rows with blank exit/PnL/R. The closing fill's
+        // orderLinkId is the close order's ("…-close") or empty for native
+        // SL/TP/manual closes, so it is matched by symbol+direction, not link id.
+        if (isClosingFill(exec)) {
+            applyClosingFill(account, exec);
+            return;
+        }
+
         String orderLinkId = exec.path("orderLinkId").asText(null);
         if (orderLinkId == null || orderLinkId.isEmpty()) return;
 
@@ -348,6 +360,65 @@ public class BybitV5WsClient {
                         "execQty", execQty == null ? "" : execQty.toPlainString(),
                         "tradeId", trade.getId()
                 )));
+    }
+
+    /**
+     * Apply a closing fill's real exit price + realized PnL to the matching open
+     * trade(s) for this account, routed through the same population logic as the
+     * REST reconcile path. Matched by symbol + direction because a closing fill's
+     * orderLinkId does not equal the trade's open orderLinkId.
+     */
+    private void applyClosingFill(ExchangeAccount account, JsonNode exec) {
+        String symbol = exec.path("symbol").asText(null);
+        BigDecimal execPrice = parseBd(exec.path("execPrice").asText(null));
+        if (symbol == null || execPrice == null) return;
+
+        String fillSide = exec.path("side").asText(null);
+        // A Buy fill closes a SHORT; a Sell fill closes a LONG.
+        String closedDirection = "Buy".equals(fillSide) ? "SHORT" : "LONG";
+        ClosedPnlV5 wsClose = closingFillToClosedPnl(exec);
+
+        for (ExecutedTrade t : tradeRepo.findOpenForAccount(account.getId())) {
+            if (!symbol.equals(t.getSymbol()) || !closedDirection.equals(t.getDirection())) continue;
+            boolean populated = reconciler.applyClose(account, t, wsClose);
+            if (populated) {
+                LOG.infof("WS close-capture trade=%d %s/%s exit=%s closedPnl=%s",
+                        t.getId(), symbol, closedDirection, execPrice.toPlainString(),
+                        exec.path("closedPnl").asText(""));
+            }
+            events.record(makeEvent(account.getId(), ExecutionEventType.POSITION_CLOSED,
+                    Map.of("symbol", symbol, "tradeId", t.getId(),
+                            "source", "ws_execution", "metadataPopulated", populated)));
+        }
+    }
+
+    /** True when the execution event reduced position size (a closing fill). */
+    static boolean isClosingFill(JsonNode exec) {
+        BigDecimal closedSize = parseBd(exec.path("closedSize").asText(null));
+        return closedSize != null && closedSize.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    /**
+     * Map a closing execution fill to a {@link ClosedPnlV5} so it can flow through
+     * {@code OrderReconciler.applyClose}. avgEntryPrice is left null (the trade
+     * already holds entry); only the close fee is known here (the open fee was
+     * charged on the entry fill).
+     */
+    static ClosedPnlV5 closingFillToClosedPnl(JsonNode exec) {
+        String execPrice = exec.path("execPrice").asText(null);
+        String execTime = exec.path("execTime").asText(null);
+        return new ClosedPnlV5(
+                exec.path("symbol").asText(null),
+                exec.path("orderId").asText(null),
+                exec.path("side").asText(null),
+                exec.path("execQty").asText(null),
+                execPrice,                                   // orderPrice
+                null,                                        // avgEntryPrice — trade already has it
+                execPrice,                                   // avgExitPrice — the real exit fill
+                exec.path("closedPnl").asText(null),
+                null,                                        // openFee — charged at entry, not here
+                exec.path("execFee").asText(null),           // closeFee
+                execTime, execTime);
     }
 
     private ExecutionEvent makeEvent(Long accountId, ExecutionEventType type,
