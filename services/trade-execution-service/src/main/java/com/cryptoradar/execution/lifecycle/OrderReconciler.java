@@ -110,7 +110,22 @@ public class OrderReconciler {
                 createOrphan(account, pos, direction);
             }
         }
+
+        // Self-heal CLOSED rows left with NULL pnl/exit/entry by a WS-close that
+        // could not fetch the closed-pnl payload (e.g. a Bybit outage). The
+        // OPEN-row loop above never revisits CLOSED rows, so without this sweep
+        // such rows stay permanently incomplete until a manual admin backfill.
+        // Reached only after the position fetch above succeeded, so it is
+        // naturally skipped while Bybit is unreachable and retried next cycle.
+        sweepIncompleteCloses(account, INCOMPLETE_SWEEP_LIMIT);
     }
+
+    /**
+     * Per-cycle cap on how many incomplete CLOSED rows the periodic reconcile
+     * sweep repairs, bounding the closed-pnl fetches added to one reconcile
+     * pass. A backlog drains across cycles; steady state is zero.
+     */
+    private static final int INCOMPLETE_SWEEP_LIMIT = 25;
 
     /**
      * Close a trade by querying Bybit's closed-pnl history for the symbol and
@@ -444,14 +459,26 @@ public class OrderReconciler {
     public int backfillIncompleteCloses(Long accountId, int limit) {
         ExchangeAccount account = accountRepo.findById(accountId);
         if (account == null) return 0;
-        List<ExecutedTrade> incomplete = tradeRepo.findIncompleteCloses(accountId, limit);
+        return sweepIncompleteCloses(account, limit);
+    }
+
+    /**
+     * Re-fetch Bybit closed-pnl for CLOSED rows on the account that still have
+     * NULL pnl/exit_reason/entry_price and fill what is recoverable. Shared by
+     * the admin endpoint ({@link #backfillIncompleteCloses}) and the periodic
+     * reconcile loop so a WS-close that landed during a Bybit outage self-heals
+     * on the next cycle instead of needing a manual admin call. Returns the
+     * count of trades whose data was meaningfully updated.
+     */
+    private int sweepIncompleteCloses(ExchangeAccount account, int limit) {
+        List<ExecutedTrade> incomplete = tradeRepo.findIncompleteCloses(account.getId(), limit);
         int recovered = 0;
         for (ExecutedTrade trade : incomplete) {
             if (closeFromReconcile(account, trade)) recovered++;
         }
         if (recovered > 0) {
-            LOG.infof("backfillIncompleteCloses account=%d recovered=%d/%d",
-                    accountId, recovered, incomplete.size());
+            LOG.infof("incomplete-close sweep account=%d recovered=%d/%d",
+                    account.getId(), recovered, incomplete.size());
         }
         return recovered;
     }

@@ -292,6 +292,38 @@ class OrderReconcilerTest {
 
     @Test
     @Transactional
+    void periodicReconcileSweepsIncompleteCloses() throws Exception {
+        // A CLOSED row left incomplete by a WS-close that fell back to status-only
+        // during a Bybit outage (no entry/exit/pnl/reason). The PERIODIC reconcile
+        // path — not just the admin backfill endpoint — must self-heal it once
+        // Bybit is reachable again. Before the fix, reconcileAccount only touched
+        // OPEN rows, so this row would stay incomplete forever.
+        ExecutedTrade t = new ExecutedTrade();
+        t.setExchangeAccountId(account.getId());
+        t.setSymbol("BTCUSDT");
+        t.setDirection("LONG");
+        t.setStatus(TradeStatus.CLOSED);
+        t.setStopPrice(new BigDecimal("49500"));
+        t.setTargetPrice(new BigDecimal("52000"));
+        t.setQty(new BigDecimal("0.001"));
+        t.setExchangeOrderLinkId("ex-test-sweep");
+        tradeRepo.persist(t);
+
+        stubPositionsEmpty();                               // OPEN-row loop finds nothing to do
+        stubClosedPnlFullPayload("50000", "49500", "-5.0", "Sell");
+
+        reconciler.reconcileAccount(account);               // periodic path, NOT backfillIncompleteCloses
+
+        ExecutedTrade refreshed = tradeRepo.findById(t.getId());
+        assertNotNull(refreshed.getEntryPrice());
+        assertEquals(0, new BigDecimal("50000").compareTo(refreshed.getEntryPrice()));
+        assertNotNull(refreshed.getExitPrice());
+        assertNotNull(refreshed.getRealizedPnlUsdt());
+        assertEquals(com.cryptoradar.execution.model.ExitReason.INITIAL_STOP, refreshed.getExitReason());
+    }
+
+    @Test
+    @Transactional
     void backfillIsIdempotent() throws Exception {
         // A row already fully populated should not be re-counted as recovered.
         ExecutedTrade t = new ExecutedTrade();
