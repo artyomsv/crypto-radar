@@ -32,6 +32,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -320,6 +321,81 @@ class OrderReconcilerTest {
         assertNotNull(refreshed.getExitPrice());
         assertNotNull(refreshed.getRealizedPnlUsdt());
         assertEquals(com.cryptoradar.execution.model.ExitReason.INITIAL_STOP, refreshed.getExitReason());
+    }
+
+    private Map<String, Object> closedPnlEntry(String orderId, String avgEntry, String avgExit,
+                                               String pnl, long createdMs) {
+        return Map.ofEntries(
+                Map.entry("symbol", "BTCUSDT"),
+                Map.entry("orderId", orderId),
+                Map.entry("side", "Buy"),   // closing a SHORT is a Buy
+                Map.entry("qty", "0.01"),
+                Map.entry("orderPrice", avgExit),
+                Map.entry("avgEntryPrice", avgEntry),
+                Map.entry("avgExitPrice", avgExit),
+                Map.entry("closedPnl", pnl),
+                Map.entry("openFee", "0.1"),
+                Map.entry("closeFee", "0.1"),
+                Map.entry("createdTime", String.valueOf(createdMs)),
+                Map.entry("updatedTime", String.valueOf(createdMs)));
+    }
+
+    private ExecutedTrade incompleteBtcShort(long closedMs, String linkId) {
+        ExecutedTrade t = new ExecutedTrade();
+        t.setExchangeAccountId(account.getId());
+        t.setSymbol("BTCUSDT");
+        t.setDirection("SHORT");
+        t.setStatus(TradeStatus.CLOSED);
+        t.setStopPrice(new BigDecimal("66000"));   // SHORT: stop above entry
+        t.setTargetPrice(new BigDecimal("60000"));
+        t.setQty(new BigDecimal("0.01"));
+        // Opened 1h before it closed — realistic, and keeps the close inside the
+        // [openedAt-1h, closedAt+24h] match window.
+        t.setOpenedAt(java.time.Instant.ofEpochMilli(closedMs - 3_600_000L));
+        t.setClosedAt(java.time.Instant.ofEpochMilli(closedMs));
+        t.setExchangeOrderLinkId(linkId);
+        return t;
+    }
+
+    @Test
+    @Transactional
+    void sweepDoesNotAttributeSameClosedPnlToTwoTrades() throws Exception {
+        // Reproduces the BTC 255/257 duplicate: two same-symbol SHORTs closed
+        // days apart whose wide match windows both contain both closed-pnl
+        // entries. First-in-window matching gave BOTH the same entry; the fix
+        // must give each its own (closest-in-time + dedup of consumed entries).
+        long now = System.currentTimeMillis();
+        long closeA = now - 2 * 3_600_000L;    // earlier close
+        long closeB = now - 30 * 60_000L;      // later close
+
+        ExecutedTrade a = incompleteBtcShort(closeA, "ex-dup-a");
+        ExecutedTrade b = incompleteBtcShort(closeB, "ex-dup-b");
+        tradeRepo.persist(a);
+        tradeRepo.persist(b);
+
+        // CLOSE-A listed FIRST so the old first-in-window logic would hand it to
+        // both trades. Each entry's createdTime sits next to one trade's close.
+        stubFor(get(urlPathEqualTo("/v5/position/closed-pnl"))
+                .willReturn(okJson(mapper.writeValueAsString(Map.of(
+                        "retCode", 0, "retMsg", "OK",
+                        "result", Map.of("list", List.of(
+                                closedPnlEntry("CLOSE-A", "64000", "65000", "-22.0", closeA),
+                                closedPnlEntry("CLOSE-B", "62000", "60000", "30.0", closeB))),
+                        "time", 1700000100000L)))));
+
+        int recovered = reconciler.backfillIncompleteCloses(account.getId(), 50);
+        assertEquals(2, recovered);
+
+        ExecutedTrade ra = tradeRepo.findById(a.getId());
+        ExecutedTrade rb = tradeRepo.findById(b.getId());
+        // The two trades must NOT share the same closed-pnl entry.
+        assertNotEquals(0, ra.getExitPrice().compareTo(rb.getExitPrice()),
+                "two trades must not be attributed the same closed-pnl entry");
+        // A (closed ~closeA) → CLOSE-A; B (closed ~closeB) → CLOSE-B.
+        assertEquals(0, new BigDecimal("65000").compareTo(ra.getExitPrice()));
+        assertEquals(0, new BigDecimal("60000").compareTo(rb.getExitPrice()));
+        assertEquals(0, new BigDecimal("-22.0").compareTo(ra.getRealizedPnlUsdt()));
+        assertEquals(0, new BigDecimal("30.0").compareTo(rb.getRealizedPnlUsdt()));
     }
 
     @Test

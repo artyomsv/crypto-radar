@@ -89,12 +89,16 @@ public class OrderReconciler {
             remoteOpen.add(pos.symbol() + "|" + pos.side());
         }
 
+        // Shared across the externally-closed loop and the incomplete-close sweep
+        // below so no closed-pnl entry is attributed to two trades in one cycle.
+        Set<String> consumedCloseIds = new HashSet<>();
+
         // Find local rows that are no longer on Bybit — closed externally.
         for (ExecutedTrade trade : local) {
             String side = "LONG".equals(trade.getDirection()) ? "Buy" : "Sell";
             String key = trade.getSymbol() + "|" + side;
             if (!remoteOpen.contains(key)) {
-                closeFromReconcile(account, trade);
+                closeFromReconcile(account, trade, consumedCloseIds);
             } else {
                 trade.setLastSyncAt(Instant.now());
             }
@@ -117,7 +121,7 @@ public class OrderReconciler {
         // such rows stay permanently incomplete until a manual admin backfill.
         // Reached only after the position fetch above succeeded, so it is
         // naturally skipped while Bybit is unreachable and retried next cycle.
-        sweepIncompleteCloses(account, INCOMPLETE_SWEEP_LIMIT);
+        sweepIncompleteCloses(account, INCOMPLETE_SWEEP_LIMIT, consumedCloseIds);
     }
 
     /**
@@ -140,6 +144,18 @@ public class OrderReconciler {
      * fetch error, or row was already complete).
      */
     public boolean closeFromReconcile(ExchangeAccount account, ExecutedTrade trade) {
+        return closeFromReconcile(account, trade, new HashSet<>());
+    }
+
+    /**
+     * As {@link #closeFromReconcile(ExchangeAccount, ExecutedTrade)}, but threads
+     * a {@code consumedCloseIds} set of closed-pnl orderIds already claimed earlier
+     * in the same reconcile pass. Two same-symbol trades whose match windows
+     * overlap would otherwise both be attributed the first in-window close; the
+     * set ensures each claims a distinct entry.
+     */
+    public boolean closeFromReconcile(ExchangeAccount account, ExecutedTrade trade,
+                                      Set<String> consumedCloseIds) {
         BybitResponse<BybitV5RestClient.ListResult<ClosedPnlV5>> pnlResp;
         try {
             pnlResp = bybit.getClosedPnl(account.getEnvironment(),
@@ -153,8 +169,9 @@ public class OrderReconciler {
             return false;
         }
 
-        ClosedPnlV5 match = pickMatchingClose(pnlResp.result().list(), trade);
+        ClosedPnlV5 match = pickMatchingClose(pnlResp.result().list(), trade, consumedCloseIds);
         if (match == null) return false;
+        if (match.orderId() != null) consumedCloseIds.add(match.orderId());
 
         boolean filled = false;
 
@@ -238,8 +255,15 @@ public class OrderReconciler {
      * <p>The acceptable window is from {@code openedAt - 1h} (catch fills
      * just before the row was persisted) through {@code closedAt + 24h}, or
      * "now" if the trade is still open at call time.
+     *
+     * <p>Among in-window candidates it returns the one whose {@code createdTime}
+     * sits nearest the trade's close time, and skips any orderId already in
+     * {@code consumedCloseIds}. Without both, two same-symbol trades with
+     * overlapping windows would be attributed the same first-in-window close
+     * (the BTC 255/257 duplicate).
      */
-    private static ClosedPnlV5 pickMatchingClose(List<ClosedPnlV5> closes, ExecutedTrade trade) {
+    private static ClosedPnlV5 pickMatchingClose(List<ClosedPnlV5> closes, ExecutedTrade trade,
+                                                 Set<String> consumedCloseIds) {
         if (closes.isEmpty()) return null;
         String openSide = "LONG".equals(trade.getDirection()) ? "Buy" : "Sell";
         String closeSide = "Buy".equals(openSide) ? "Sell" : "Buy";
@@ -249,18 +273,30 @@ public class OrderReconciler {
         Instant upperBound = trade.getClosedAt() != null
                 ? trade.getClosedAt().plusSeconds(MATCH_WINDOW_AFTER_CLOSE_SEC)
                 : Instant.now().plusSeconds(MATCH_WINDOW_AFTER_CLOSE_SEC);
+        // The close should sit nearest the trade's recorded close (≈ when Bybit
+        // closed it), or "now" for a just-detected external close.
+        Instant reference = trade.getClosedAt() != null ? trade.getClosedAt() : Instant.now();
 
+        ClosedPnlV5 best = null;
+        long bestDist = Long.MAX_VALUE;
         for (ClosedPnlV5 c : closes) {
             if (!closeSide.equals(c.side())) continue;
+            if (c.orderId() != null && consumedCloseIds.contains(c.orderId())) continue;
             Instant created = parseEpochMillis(c.createdTime());
             if (lowerBound != null && created != null && created.isBefore(lowerBound)) continue;
             if (created != null && created.isAfter(upperBound)) continue;
-            return c;
+            // Entries without a parseable time sort last but stay selectable.
+            long dist = created == null ? Long.MAX_VALUE - 1
+                    : Math.abs(created.toEpochMilli() - reference.toEpochMilli());
+            if (dist < bestDist) {
+                best = c;
+                bestDist = dist;
+            }
         }
         // No row matched within the window — refuse to guess. The caller
         // treats null as "no match", which is safer than attributing another
         // trade's PnL to this row.
-        return null;
+        return best;
     }
 
     private static Instant parseEpochMillis(String s) {
@@ -459,7 +495,7 @@ public class OrderReconciler {
     public int backfillIncompleteCloses(Long accountId, int limit) {
         ExchangeAccount account = accountRepo.findById(accountId);
         if (account == null) return 0;
-        return sweepIncompleteCloses(account, limit);
+        return sweepIncompleteCloses(account, limit, new HashSet<>());
     }
 
     /**
@@ -470,11 +506,11 @@ public class OrderReconciler {
      * on the next cycle instead of needing a manual admin call. Returns the
      * count of trades whose data was meaningfully updated.
      */
-    private int sweepIncompleteCloses(ExchangeAccount account, int limit) {
+    private int sweepIncompleteCloses(ExchangeAccount account, int limit, Set<String> consumedCloseIds) {
         List<ExecutedTrade> incomplete = tradeRepo.findIncompleteCloses(account.getId(), limit);
         int recovered = 0;
         for (ExecutedTrade trade : incomplete) {
-            if (closeFromReconcile(account, trade)) recovered++;
+            if (closeFromReconcile(account, trade, consumedCloseIds)) recovered++;
         }
         if (recovered > 0) {
             LOG.infof("incomplete-close sweep account=%d recovered=%d/%d",
