@@ -363,10 +363,13 @@ public class BybitV5WsClient {
     }
 
     /**
-     * Apply a closing fill's real exit price + realized PnL to the matching open
-     * trade(s) for this account, routed through the same population logic as the
-     * REST reconcile path. Matched by symbol + direction because a closing fill's
-     * orderLinkId does not equal the trade's open orderLinkId.
+     * Apply a closing fill's real exit price + realized PnL to the ONE open trade
+     * it closed, routed through the same population logic as the REST reconcile
+     * path. Matched by symbol + direction (the fill's orderLinkId is the close
+     * order's, not the trade's) and disambiguated by quantity: when a symbol holds
+     * two same-direction trades, the fill is attributed to the trade whose qty
+     * matches the closed size. Applying to every symbol+direction match attributed
+     * one trade's PnL to its sibling and left the other blank.
      */
     private void applyClosingFill(ExchangeAccount account, JsonNode exec) {
         String symbol = exec.path("symbol").asText(null);
@@ -376,20 +379,63 @@ public class BybitV5WsClient {
         String fillSide = exec.path("side").asText(null);
         // A Buy fill closes a SHORT; a Sell fill closes a LONG.
         String closedDirection = "Buy".equals(fillSide) ? "SHORT" : "LONG";
-        ClosedPnlV5 wsClose = closingFillToClosedPnl(exec);
+        BigDecimal fillQty = parseBd(exec.path("closedSize").asText(null));
 
-        for (ExecutedTrade t : tradeRepo.findOpenForAccount(account.getId())) {
-            if (!symbol.equals(t.getSymbol()) || !closedDirection.equals(t.getDirection())) continue;
-            boolean populated = reconciler.applyClose(account, t, wsClose);
-            if (populated) {
-                LOG.infof("WS close-capture trade=%d %s/%s exit=%s closedPnl=%s",
-                        t.getId(), symbol, closedDirection, execPrice.toPlainString(),
-                        exec.path("closedPnl").asText(""));
-            }
-            events.record(makeEvent(account.getId(), ExecutionEventType.POSITION_CLOSED,
-                    Map.of("symbol", symbol, "tradeId", t.getId(),
-                            "source", "ws_execution", "metadataPopulated", populated)));
+        ExecutedTrade target = pickTradeForClosingFill(
+                tradeRepo.findOpenForAccount(account.getId()), symbol, closedDirection, fillQty);
+        if (target == null) return;
+
+        ClosedPnlV5 wsClose = closingFillToClosedPnl(exec);
+        boolean populated = reconciler.applyClose(account, target, wsClose);
+        if (populated) {
+            LOG.infof("WS close-capture trade=%d %s/%s exit=%s closedPnl=%s",
+                    target.getId(), symbol, closedDirection, execPrice.toPlainString(),
+                    exec.path("closedPnl").asText(""));
         }
+        events.record(makeEvent(account.getId(), ExecutionEventType.POSITION_CLOSED,
+                Map.of("symbol", symbol, "tradeId", target.getId(),
+                        "source", "ws_execution", "metadataPopulated", populated)));
+    }
+
+    // A closing fill is attributed to an open trade only when their quantities
+    // agree within this relative tolerance. Guards the case where the fill's real
+    // trade already left the open set (a sibling on the same symbol+direction
+    // closed first): the lone remaining open trade then has a wildly different
+    // qty, and attributing the fill to it would copy one trade's PnL onto another.
+    private static final BigDecimal MATCH_QTY_REL_TOLERANCE = new BigDecimal("0.5");
+
+    /**
+     * Pick the open trade a closing fill belongs to: the symbol+direction match
+     * whose quantity is closest to the fill's closed size, provided that qty is
+     * within {@link #MATCH_QTY_REL_TOLERANCE} of the fill. Returns null when
+     * nothing matches closely enough (so the fill is skipped rather than
+     * mis-attributed). Without a fill qty, only a single match can be attributed.
+     */
+    static ExecutedTrade pickTradeForClosingFill(List<ExecutedTrade> openTrades,
+                                                 String symbol, String direction,
+                                                 BigDecimal fillQty) {
+        ExecutedTrade best = null;
+        BigDecimal bestDist = null;
+        int matchCount = 0;
+        for (ExecutedTrade t : openTrades) {
+            if (!symbol.equals(t.getSymbol()) || !direction.equals(t.getDirection())) continue;
+            matchCount++;
+            BigDecimal dist = (fillQty == null || t.getQty() == null)
+                    ? null : t.getQty().subtract(fillQty).abs();
+            if (best == null || (dist != null && (bestDist == null || dist.compareTo(bestDist) < 0))) {
+                best = t;
+                bestDist = dist;
+            }
+        }
+        if (best == null) return null;
+        // No usable fill qty: only safe to attribute when there is a single match.
+        if (fillQty == null || fillQty.signum() <= 0) {
+            return matchCount == 1 ? best : null;
+        }
+        if (best.getQty() == null) return null;
+        BigDecimal relDiff = best.getQty().subtract(fillQty).abs()
+                .divide(fillQty, 4, java.math.RoundingMode.HALF_UP);
+        return relDiff.compareTo(MATCH_QTY_REL_TOLERANCE) <= 0 ? best : null;
     }
 
     /** True when the execution event reduced position size (a closing fill). */
