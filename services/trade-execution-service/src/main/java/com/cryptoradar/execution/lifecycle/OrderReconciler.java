@@ -297,6 +297,11 @@ public class OrderReconciler {
         for (ClosedPnlV5 c : closes) {
             if (!closeSide.equals(c.side())) continue;
             if (c.orderId() != null && consumedCloseIds.contains(c.orderId())) continue;
+            // Quantity must agree: when a symbol holds two same-direction trades,
+            // side+time alone attributed one trade's closed-pnl to the other (the
+            // BCH donchian-vs-liquidity-sweep case — a 6.66-qty close landed on a
+            // 0.73-qty row). Skip entries whose size is far from this trade's.
+            if (!qtyMatches(trade.getQty(), c.qty())) continue;
             Instant created = parseEpochMillis(c.createdTime());
             if (lowerBound != null && created != null && created.isBefore(lowerBound)) continue;
             if (created != null && created.isAfter(upperBound)) continue;
@@ -312,6 +317,27 @@ public class OrderReconciler {
         // treats null as "no match", which is safer than attributing another
         // trade's PnL to this row.
         return best;
+    }
+
+    // A closed-pnl entry is attributable to a trade only when their quantities
+    // agree within this relative tolerance. Mirrors the WS close-capture guard.
+    private static final BigDecimal MATCH_QTY_REL_TOLERANCE = new BigDecimal("0.5");
+
+    /**
+     * True when the closed-pnl entry's quantity is close enough to the trade's to
+     * be the same fill. Lenient when either quantity is missing/unparseable —
+     * absence must not over-filter and reintroduce blank closes; only a clearly
+     * mismatched size is rejected.
+     */
+    static boolean qtyMatches(BigDecimal tradeQty, String entryQtyStr) {
+        BigDecimal entryQty = safeBd(entryQtyStr);
+        if (tradeQty == null || entryQty == null
+                || tradeQty.signum() <= 0 || entryQty.signum() <= 0) {
+            return true;
+        }
+        BigDecimal relDiff = tradeQty.subtract(entryQty).abs()
+                .divide(entryQty, 4, java.math.RoundingMode.HALF_UP);
+        return relDiff.compareTo(MATCH_QTY_REL_TOLERANCE) <= 0;
     }
 
     private static Instant parseEpochMillis(String s) {

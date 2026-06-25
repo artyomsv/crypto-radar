@@ -9,6 +9,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pure-unit tests for {@link OrderReconciler#inferExitReason}. The classifier
@@ -141,5 +143,28 @@ class OrderReconcilerInferenceTest {
         t.setDirection("LONG");
         // No levels, no pnl — we have nothing to infer from.
         assertEquals(ExitReason.MANUAL, OrderReconciler.inferExitReason(t, closeNoLevels(null)));
+    }
+
+    // --- qtyMatches: closed-pnl attribution must agree on size ---
+
+    @Test
+    void qtyMatchesRejectsFarMismatch() {
+        // The BCH bug: a 6.66-qty closed-pnl must NOT attach to a 0.73-qty trade.
+        assertFalse(OrderReconciler.qtyMatches(new BigDecimal("0.73"), "6.66"));
+    }
+
+    @Test
+    void qtyMatchesAcceptsEqualAndWithinTolerance() {
+        assertTrue(OrderReconciler.qtyMatches(new BigDecimal("6.66"), "6.66"));
+        // Full close with minor rounding — within the 0.5 relative tolerance.
+        assertTrue(OrderReconciler.qtyMatches(new BigDecimal("6.60"), "6.66"));
+    }
+
+    @Test
+    void qtyMatchesIsLenientWhenEitherQuantityMissing() {
+        // Absence must not over-filter and reintroduce blank closes.
+        assertTrue(OrderReconciler.qtyMatches(null, "6.66"));
+        assertTrue(OrderReconciler.qtyMatches(new BigDecimal("0.73"), null));
+        assertTrue(OrderReconciler.qtyMatches(new BigDecimal("0.73"), ""));
     }
 }
