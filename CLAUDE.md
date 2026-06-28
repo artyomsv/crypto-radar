@@ -253,6 +253,16 @@ rate (70+ bucket negative expectancy). Lives in `services/signal-service/.../pro
   Calibration is per-tag: `GET /api/signals/probability/calibration?tag=v3-feature-dir`.
   Still shadow. Tests whether raw features beat the dimension-score direction the flip
   showed is a coin-flip in either polarity.
+- **Trailing-exit track (v11)**: `FeatureDirectionTrailGenerator` (`v4-feature-dir-trail`)
+  emits the *identical* entries as v3 (delegates to `FeatureDirectionGenerator`); the only
+  difference is the exit. `ShadowOutcomeEvaluator` scores any tag in
+  `probability.eval.trailing-tags` (default `v4-feature-dir-trail`) with a trailing-stop
+  exit (`TrailExitSimulator` over the realized 1h path, reusing `TrailCalculator` +
+  `TrailConfig.DEFAULT` ladder) instead of a fixed 1:1 target; `closed_price` is the real
+  exit so realized R stays derivable. Rationale: a mid-experiment backtest of v3's realized
+  paths (winners run ~2.7 ATR, losers fail at ~0.45 ATR) showed trailing ~triples EV at the
+  same win rate (+0.08R → +0.21R net in-sample). LLM off (same candidates as v3). Still
+  shadow — accruing a live out-of-sample track to confirm before any promotion.
 
 ## Further reading
 

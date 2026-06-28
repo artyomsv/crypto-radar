@@ -204,3 +204,13 @@ INSERT INTO deployment_markers (deployed_at, version, description) VALUES
      'historical candles with forward 1:1 labels. Runs alongside v2-1to1-flip control ' ||
      '(identical 1:1 geometry); per-tag calibration. No live execution change.')
 ON CONFLICT (deployed_at) DO NOTHING;
+
+INSERT INTO deployment_markers (deployed_at, version, description) VALUES
+    ('2026-06-28T00:00:00Z', 'v11-probability-trailing-exit',
+     'Shadow generator v4-feature-dir-trail: identical entries to v3-feature-dir but ' ||
+     'scored with a trailing-stop exit (TrailConfig.DEFAULT ladder via TrailExitSimulator) ' ||
+     'instead of a fixed 1:1 target. A mid-experiment backtest of v3 realized paths showed ' ||
+     'winners run ~2.7 ATR vs losers failing at ~0.45 ATR, so trailing ~triples EV at the ' ||
+     'same win rate (+0.08R -> +0.21R net in-sample). This tag accrues a live out-of-sample ' ||
+     'track to confirm before any promotion. Still shadow — no live execution change.')
+ON CONFLICT (deployed_at) DO NOTHING;
