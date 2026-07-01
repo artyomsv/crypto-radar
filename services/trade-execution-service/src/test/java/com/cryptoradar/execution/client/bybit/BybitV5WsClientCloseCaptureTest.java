@@ -116,4 +116,63 @@ class BybitV5WsClientCloseCaptureTest {
         assertNull(BybitV5WsClient.pickTradeForClosingFill(open, "BTCUSDT", "SHORT", new BigDecimal("0.1")));
         assertNull(BybitV5WsClient.pickTradeForClosingFill(open, "SOLUSDT", "LONG", new BigDecimal("1.0")));
     }
+
+    private ExecutedTrade tradeWithEntry(String symbol, String dir, String qty, String entry) {
+        ExecutedTrade t = openTrade(symbol, dir, qty);
+        t.setEntryPrice(new BigDecimal(entry));
+        return t;
+    }
+
+    @Test
+    void selectClosedTradesMergedWholePosition() {
+        // The 6/30 case: turtle (867) + liquidity-sweep (3730) both short XLM net
+        // into one 4597 Bybit position; a single 4597 fill closes BOTH slices.
+        ExecutedTrade turtle = openTrade("XLMUSDT", "SHORT", "867");
+        ExecutedTrade liq = openTrade("XLMUSDT", "SHORT", "3730");
+        List<ExecutedTrade> open = List.of(turtle, liq);
+        List<ExecutedTrade> closed = BybitV5WsClient.selectClosedTrades(open, "XLMUSDT", "SHORT", new BigDecimal("4597"));
+        assertEquals(2, closed.size());
+        assertTrue(closed.contains(turtle) && closed.contains(liq));
+    }
+
+    @Test
+    void selectClosedTradesSingleWhenFillMatchesOneSliceNotSum() {
+        // Only the liquidity-sweep (3730) closed; turtle (867) is still open. The
+        // fill is nearer 3730 than the 4597 sum → attribute to the one slice only.
+        ExecutedTrade turtle = openTrade("XLMUSDT", "SHORT", "867");
+        ExecutedTrade liq = openTrade("XLMUSDT", "SHORT", "3730");
+        List<ExecutedTrade> open = List.of(turtle, liq);
+        List<ExecutedTrade> closed = BybitV5WsClient.selectClosedTrades(open, "XLMUSDT", "SHORT", new BigDecimal("3730"));
+        assertEquals(1, closed.size());
+        assertSame(liq, closed.get(0));
+    }
+
+    @Test
+    void selectClosedTradesSingleTradeSymbol() {
+        ExecutedTrade only = openTrade("ETHUSDT", "LONG", "1.50");
+        List<ExecutedTrade> closed = BybitV5WsClient.selectClosedTrades(List.of(only), "ETHUSDT", "LONG", new BigDecimal("1.50"));
+        assertEquals(1, closed.size());
+        assertSame(only, closed.get(0));
+    }
+
+    @Test
+    void perTradeCloseComputesPerSliceShortPnlAtSharedExit() {
+        // SHORT entry 100, qty 10, merged exit 98 → gross +20; exit price shared.
+        ExecutedTrade t = tradeWithEntry("XLMUSDT", "SHORT", "10", "100");
+        ClosedPnlV5 fill = new ClosedPnlV5("XLMUSDT", "oid", "Buy", "50", "98", null, "98", "-999", null, "1.0", "t", "t");
+        ClosedPnlV5 slice = BybitV5WsClient.perTradeClose(fill, t, new BigDecimal("98"), new BigDecimal("50"));
+        assertEquals("98", slice.avgExitPrice());
+        assertEquals(0, new BigDecimal("20").compareTo(new BigDecimal(slice.closedPnl())));  // (100-98)*10
+        // fee pro-rated by qty: 1.0 * 10/50 = 0.2
+        assertEquals(0, new BigDecimal("0.2").compareTo(new BigDecimal(slice.closeFee())));
+    }
+
+    @Test
+    void perTradeCloseComputesPerSliceLongPnl() {
+        // LONG entry 100, qty 5, merged exit 104 → gross +20.
+        ExecutedTrade t = tradeWithEntry("SOLUSDT", "LONG", "5", "100");
+        ClosedPnlV5 fill = new ClosedPnlV5("SOLUSDT", "oid", "Sell", "20", "104", null, "104", "-999", null, null, "t", "t");
+        ClosedPnlV5 slice = BybitV5WsClient.perTradeClose(fill, t, new BigDecimal("104"), new BigDecimal("20"));
+        assertEquals(0, new BigDecimal("20").compareTo(new BigDecimal(slice.closedPnl())));  // (104-100)*5
+    }
 }

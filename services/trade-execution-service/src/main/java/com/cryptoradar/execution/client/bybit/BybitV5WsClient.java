@@ -28,6 +28,8 @@ import org.jboss.logging.Logger;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -363,13 +365,13 @@ public class BybitV5WsClient {
     }
 
     /**
-     * Apply a closing fill's real exit price + realized PnL to the ONE open trade
-     * it closed, routed through the same population logic as the REST reconcile
-     * path. Matched by symbol + direction (the fill's orderLinkId is the close
-     * order's, not the trade's) and disambiguated by quantity: when a symbol holds
-     * two same-direction trades, the fill is attributed to the trade whose qty
-     * matches the closed size. Applying to every symbol+direction match attributed
-     * one trade's PnL to its sibling and left the other blank.
+     * Apply a closing fill's real exit price + realized PnL to the open trade(s)
+     * it closed. Bybit nets all same-symbol+direction positions into one, so a
+     * fill can close EITHER a single trade OR — when several strategies hold the
+     * symbol (e.g. turtle + liquidity-sweep both short) — the whole merged
+     * position at once. {@link #selectClosedTrades} distinguishes the two by
+     * quantity; for a merged close every slice exits at the same fill price and
+     * gets its own PnL/R computed from its own entry+qty.
      */
     private void applyClosingFill(ExchangeAccount account, JsonNode exec) {
         String symbol = exec.path("symbol").asText(null);
@@ -381,20 +383,101 @@ public class BybitV5WsClient {
         String closedDirection = "Buy".equals(fillSide) ? "SHORT" : "LONG";
         BigDecimal fillQty = parseBd(exec.path("closedSize").asText(null));
 
-        ExecutedTrade target = pickTradeForClosingFill(
+        List<ExecutedTrade> targets = selectClosedTrades(
                 tradeRepo.findOpenForAccount(account.getId()), symbol, closedDirection, fillQty);
-        if (target == null) return;
+        if (targets.isEmpty()) return;
 
         ClosedPnlV5 wsClose = closingFillToClosedPnl(exec);
-        boolean populated = reconciler.applyClose(account, target, wsClose);
-        if (populated) {
-            LOG.infof("WS close-capture trade=%d %s/%s exit=%s closedPnl=%s",
-                    target.getId(), symbol, closedDirection, execPrice.toPlainString(),
-                    exec.path("closedPnl").asText(""));
+        boolean merged = targets.size() > 1;
+        BigDecimal sumQty = merged ? sumQty(targets) : null;
+
+        for (ExecutedTrade target : targets) {
+            ClosedPnlV5 perTrade = merged ? perTradeClose(wsClose, target, execPrice, sumQty) : wsClose;
+            boolean populated = reconciler.applyClose(account, target, perTrade);
+            if (populated) {
+                LOG.infof("WS close-capture trade=%d %s/%s exit=%s merged=%s",
+                        target.getId(), symbol, closedDirection, execPrice.toPlainString(), merged);
+            }
+            events.record(makeEvent(account.getId(), ExecutionEventType.POSITION_CLOSED,
+                    Map.of("symbol", symbol, "tradeId", target.getId(),
+                            "source", "ws_execution", "metadataPopulated", populated, "merged", merged)));
         }
-        events.record(makeEvent(account.getId(), ExecutionEventType.POSITION_CLOSED,
-                Map.of("symbol", symbol, "tradeId", target.getId(),
-                        "source", "ws_execution", "metadataPopulated", populated)));
+    }
+
+    private static BigDecimal sumQty(List<ExecutedTrade> trades) {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (ExecutedTrade t : trades) {
+            if (t.getQty() == null) return null;
+            sum = sum.add(t.getQty());
+        }
+        return sum;
+    }
+
+    /**
+     * Which open trade(s) a closing fill closed. Bybit nets same-symbol+direction
+     * positions, so a fill may close one trade or the whole merged position:
+     * <ul>
+     *   <li>single trade whose qty ≈ fill → that trade;</li>
+     *   <li>fill ≈ the SUM of all same-symbol+direction trades AND nearer the sum
+     *       than any single trade → all of them (a merged-position close);</li>
+     *   <li>otherwise the closest single within tolerance, else none.</li>
+     * </ul>
+     */
+    static List<ExecutedTrade> selectClosedTrades(List<ExecutedTrade> openTrades,
+                                                  String symbol, String direction,
+                                                  BigDecimal fillQty) {
+        List<ExecutedTrade> matches = new ArrayList<>();
+        for (ExecutedTrade t : openTrades) {
+            if (symbol.equals(t.getSymbol()) && direction.equals(t.getDirection())) matches.add(t);
+        }
+        if (matches.isEmpty()) return List.of();
+        if (fillQty == null || fillQty.signum() <= 0) {
+            return matches.size() == 1 ? matches : List.of();   // cannot disambiguate
+        }
+
+        ExecutedTrade single = pickTradeForClosingFill(openTrades, symbol, direction, fillQty);
+        if (matches.size() <= 1) {
+            return single == null ? List.of() : List.of(single);
+        }
+
+        BigDecimal sum = sumQty(matches);
+        if (sum != null && sum.signum() > 0) {
+            BigDecimal sumDist = sum.subtract(fillQty).abs();
+            boolean sumWithinTol = sumDist.divide(fillQty, 4, RoundingMode.HALF_UP)
+                    .compareTo(MATCH_QTY_REL_TOLERANCE) <= 0;
+            BigDecimal singleDist = (single != null && single.getQty() != null)
+                    ? single.getQty().subtract(fillQty).abs() : null;
+            // Merged only when the fill is nearer the whole-position sum than any single slice.
+            if (sumWithinTol && (singleDist == null || sumDist.compareTo(singleDist) < 0)) {
+                return matches;
+            }
+        }
+        return single == null ? List.of() : List.of(single);
+    }
+
+    /**
+     * Split a merged-close fill for one slice: same exit price, per-trade PnL from
+     * the slice's own entry+qty, fee pro-rated by qty. Real-data-derived (real
+     * entry × real fill exit) — no fabrication.
+     */
+    static ClosedPnlV5 perTradeClose(ClosedPnlV5 fill, ExecutedTrade t,
+                                     BigDecimal execPrice, BigDecimal sumQty) {
+        String exit = execPrice.toPlainString();
+        String pnl = null;
+        if (t.getEntryPrice() != null && t.getQty() != null) {
+            BigDecimal gross = "SHORT".equals(t.getDirection())
+                    ? t.getEntryPrice().subtract(execPrice).multiply(t.getQty())
+                    : execPrice.subtract(t.getEntryPrice()).multiply(t.getQty());
+            pnl = gross.toPlainString();
+        }
+        String fee = null;
+        BigDecimal totalFee = parseBd(fill.closeFee());
+        if (totalFee != null && sumQty != null && sumQty.signum() > 0 && t.getQty() != null) {
+            fee = totalFee.multiply(t.getQty()).divide(sumQty, 8, RoundingMode.HALF_UP).toPlainString();
+        }
+        return new ClosedPnlV5(fill.symbol(), fill.orderId(), fill.side(),
+                t.getQty() == null ? null : t.getQty().toPlainString(),
+                exit, null, exit, pnl, null, fee, fill.createdTime(), fill.updatedTime());
     }
 
     // A closing fill is attributed to an open trade only when their quantities
