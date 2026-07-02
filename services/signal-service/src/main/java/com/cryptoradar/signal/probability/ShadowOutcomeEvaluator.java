@@ -47,9 +47,31 @@ public class ShadowOutcomeEvaluator {
     @Inject CandleClient candleClient;
     @Inject ProbabilityCandidateRepository repository;
 
-    @ConfigProperty(name = "probability.eval.trailing-tags", defaultValue = "v4-feature-dir-trail")
+    @ConfigProperty(name = "probability.eval.trailing-tags",
+            defaultValue = "v4-feature-dir-trail,v5-feature-dir-early")
     String trailingTagsCsv;
     private volatile Set<String> trailingTags;
+
+    // v5 uses an early-activation trail (activate at 0.5R, lock ~0.2R) instead of
+    // v4's DEFAULT ladder (activate 1.0R, lock 0.5R). Backtest suggested the early
+    // lock rescues the many trades that reach ~0.5R then reverse; live shadow
+    // confirms whether that survives real fills. Configurable so it can be tuned.
+    @ConfigProperty(name = "probability.eval.trail.v5.tag", defaultValue = "v5-feature-dir-early")
+    String v5Tag;
+    @ConfigProperty(name = "probability.eval.trail.v5.activation-r", defaultValue = "0.5")
+    double v5ActivationR;
+    @ConfigProperty(name = "probability.eval.trail.v5.step-r", defaultValue = "0.05")
+    double v5StepR;
+    @ConfigProperty(name = "probability.eval.trail.v5.offset-r", defaultValue = "0.3")
+    double v5OffsetR;
+
+    /** Trail parameters for a tag: v5 uses the early-activation config, all others DEFAULT. */
+    private TrailConfig trailConfigFor(String tag) {
+        if (v5Tag.equals(tag)) {
+            return new TrailConfig(v5ActivationR, v5StepR, v5OffsetR);
+        }
+        return TrailConfig.DEFAULT;
+    }
 
     /** Detached snapshot of a pending candidate — no entity crosses the HTTP boundary. */
     private record Pending(Long id, String symbol, String direction, Instant scannedAt,
@@ -141,7 +163,7 @@ public class ShadowOutcomeEvaluator {
         if (risk <= 0 || p.atr() <= 0) return false;
 
         TrailExitSimulator.Result r = TrailExitSimulator.simulate(
-                isLong, p.entry(), risk, p.atr(), TrailConfig.DEFAULT, bars, p.scannedAt());
+                isLong, p.entry(), risk, p.atr(), trailConfigFor(p.configTag()), bars, p.scannedAt());
         Excursion ex = new Excursion();
         ex.mfe = r.mfeAtr();
         ex.mae = r.maeAtr();

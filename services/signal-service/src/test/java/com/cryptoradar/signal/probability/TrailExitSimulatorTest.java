@@ -38,6 +38,21 @@ class TrailExitSimulatorTest {
     }
 
     @Test
+    void v5EarlyTrailLocksSmallProfitAtHalfR() {
+        // v5 config: activate 0.5R, step 0.05, offset 0.3 → locks +0.2R at 0.5R peak.
+        // SHORT reaches 0.5R (price 99.25), activates trail at +0.2R (price 99.70),
+        // then reverses up → exits at +0.2R instead of running back to the -1R stop.
+        TrailConfig early = new TrailConfig(0.5, 0.05, 0.3);
+        var r = TrailExitSimulator.simulate(false, ENTRY, RISK, ATR, early, bars(new double[][]{
+                {99.90, 99.25, 99.50},   // MFE 0.5R → trail locks +0.2R
+                {99.75, 99.60, 99.70}}), // favorable falls to +0.167R ≤ +0.2R trail → exit
+                T0);
+        assertTrue(r.resolved());
+        assertEquals(ProbabilityCandidate.STATUS_HIT_TARGET, r.status());
+        assertEquals(100.0 - 0.2 * RISK, r.exitPrice(), 1e-9);   // 99.70 = +0.2R locked
+    }
+
+    @Test
     void shortInitialStopWhenPriceRisesPastStop() {
         // High 101.6 → favorable -1.07R → original stop (101.5) taken at a loss.
         var r = sim(false, bars(new double[][]{{101.6, 100.5, 101.5}}));

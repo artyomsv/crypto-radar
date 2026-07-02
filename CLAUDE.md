@@ -263,6 +263,18 @@ rate (70+ bucket negative expectancy). Lives in `services/signal-service/.../pro
   paths (winners run ~2.7 ATR, losers fail at ~0.45 ATR) showed trailing ~triples EV at the
   same win rate (+0.08R → +0.21R net in-sample). LLM off (same candidates as v3). Still
   shadow — accruing a live out-of-sample track to confirm before any promotion.
+  **Live verdict (~900 paired closes): v4 trailing LOSES vs fixed 1:1** — identical on losers,
+  ~20% haircut on winners (captures ~0.8R vs 1.0R) because real winners tag-and-reverse more
+  than they run; the backtest was regime-optimistic. Kept running only for historical comparison.
+- **Early-trail track (v12)**: `FeatureDirectionEarlyTrailGenerator` (`v5-feature-dir-early`),
+  same v3 entries, exit = EARLY-activation trail (activate 0.5R, lock ~0.2R) vs v4's DEFAULT
+  (1.0R/0.5R). Per-tag trail config in `ShadowOutcomeEvaluator.trailConfigFor` (v5 →
+  `TrailConfig(activation-r, step-r, offset-r)` from `probability.eval.trail.v5.*`; all other
+  trailing tags → `TrailConfig.DEFAULT`). Hypothesis: banking a small lock rescues the fat
+  0.5–1.5R tag-and-reverse population a backtest showed drives v3/v4's losses (win 56%→71%,
+  ~2–3× EV in-sample). Caveat: the same backtest overstated v4 by ~0.28R vs live and a 0.2R
+  lock is slippage-sensitive, so this is a **live shadow to confirm**, not trusted on the
+  backtest. Judge on the 3-way paired realized-R (v3 vs v4 vs v5).
 
 ## Further reading
 

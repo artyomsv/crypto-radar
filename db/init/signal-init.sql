@@ -206,6 +206,17 @@ INSERT INTO deployment_markers (deployed_at, version, description) VALUES
 ON CONFLICT (deployed_at) DO NOTHING;
 
 INSERT INTO deployment_markers (deployed_at, version, description) VALUES
+    ('2026-07-02T00:00:00Z', 'v12-probability-early-trail',
+     'Shadow generator v5-feature-dir-early: same v3 entries, EARLY-activation trail ' ||
+     '(activate 0.5R, lock ~0.2R) vs v4''s DEFAULT ladder (activate 1.0R, lock 0.5R). ' ||
+     'Backtest suggested the early lock rescues the fat 0.5-1.5R tag-and-reverse ' ||
+     'population (win 56%->71%, EV ~2-3x) — but the same backtest overstated v4 by ' ||
+     '~0.28R vs live, and a 0.2R lock is slippage-sensitive, so this is a live shadow ' ||
+     'to confirm. v4 kept running for the historical comparison. Per-tag trail config ' ||
+     'in ShadowOutcomeEvaluator.trailConfigFor. Still shadow — no live execution change.')
+ON CONFLICT (deployed_at) DO NOTHING;
+
+INSERT INTO deployment_markers (deployed_at, version, description) VALUES
     ('2026-06-28T00:00:00Z', 'v11-probability-trailing-exit',
      'Shadow generator v4-feature-dir-trail: identical entries to v3-feature-dir but ' ||
      'scored with a trailing-stop exit (TrailConfig.DEFAULT ladder via TrailExitSimulator) ' ||
